@@ -30,6 +30,7 @@ local FORMAT_TONES = { "regard", "caution", "dim", "ok", "cardLength", "loss", "
 
 
 
+
 function A.aboutFacts()
 	local credit = type(A.windowCredit) == "function" and A.windowCredit() or nil
 	if type(credit) == "string" then
@@ -391,6 +392,7 @@ end
 
 
 
+
 function A.aboutWeeks(now, room)
 	now = type(now) == "number" and now or time()
 	local db = A.db()
@@ -482,6 +484,7 @@ function A.aboutCharacters()
 	end
 	return rows
 end
+
 
 
 

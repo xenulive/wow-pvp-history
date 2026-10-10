@@ -10,32 +10,7 @@
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 local _, A = ...
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -50,20 +25,10 @@ local BOUNDS = {
 }
 
 
-
 local BOUND_DEFAULT = 125
 
 
-
 local CATEGORY = "capture"
-
-
-
-
-
-
-
-
 
 
 
@@ -73,7 +38,6 @@ local CATEGORY_SET = {}
 for i = 1, #CATEGORIES do
 	CATEGORY_SET[CATEGORIES[i]] = true
 end
-
 
 
 local BAD_CATEGORY = "unknown-category"
@@ -95,49 +59,30 @@ end
 
 
 
-
-
-
-
-
-
-
 local FIELDS = {
 	"state", "restriction", "rounds", "rows", "kept", "attempt", "off",
 	"format", "rated", "bracket", "source", "reason", "id", "n", "build", "version",
 	"season", "arena",
 
-
 	"ids",
-
 
 	"rating", "winner",
 
-
-
 	"out", "from", "gap", "mmr",
-
 
 	"noRow", "noGuid", "secretGuid",
 
-
 	"left",
-
 
 	"seg", "mid", "thick", "cap",
 
-
 	"capped",
-
 
 	"hairline", "least", "gapFrom", "gapTo",
 
-
 	"total", "strip", "plot",
 
-
 	"head", "tiles", "note",
-
 
 	"reading", "lines",
 
@@ -148,227 +93,146 @@ local FIELDS = {
 	"named",
 	"players", "notes", "incomplete", "drops", "pinned",
 
-
 	"stored",
-
 
 	"evicted",
 
 	"shown",
 
-
 	"tagLines", "tagCut", "noteMarks",
-
 
 	"readAgainst", "readWith", "readSummed",
 
 	"offered",
 
-
 	"found",
-
 
 	"repaired",
 
 	"folded",
 
-
 	"ceiling",
-
-
 
 
 	"tagged", "untagged", "unchanged", "atCap", "bots", "pruned",
 
-
 	"handed",
-
 
 	"seat",
 
-
-
-
-
-
 	"gridOpen",
 
-
-
 	"roundsLeft", "roundsPartial",
+
 	"list", "met", "dossier", "panel", "listUp", "metUp", "listW", "listH", "metW", "metH",
 
 	"bandH", "bandUp",
-
-
 
 	"short", "bare",
 
 	"room",
 
-
-
 	"tones",
-
 
 	"ground",
 
-
 	"longest", "width",
-
 
 	"angle",
 
-
-
 	"wins", "widget", "won", "refused",
-
 
 	"seconds", "scale", "fitted",
 
 	"atlas",
 
 
-
-
-
 	"anchors", "bounds", "screen", "placed", "cursor", "step", "repaint",
-
 
 	"rect", "given",
 
-
 	"windows", "records", "refusals",
-
 
 	"fill",
 
-
 	"typed", "drafts",
-
 
 	"shape", "sides",
 
-
 	"tall", "below",
-
-
 
 
 	"pillsAgainst", "pillsWith", "pillsUnsided", "linesAgainst", "linesWith", "linesUnsided",
 	"shared", "timedLines",
 
 
-
-
 	"err",
-
 
 	"section", "deepest",
 
 	"column",
 
-
 	"viewport", "panes", "checks",
 
-
 	"kind",
-
 
 	"side",
 
 	"faction",
 
-
 	"bytes", "letters", "bound",
 
-
 	"theme", "air",
-
 
 	"loaded", "nextId",
 
 	"ringFrom", "ringDefault",
 
-
 	"target", "range", "scroll",
-
 
 
 	"held", "point", "x", "y", "paused", "unlocked",
 
-
 	"lockdown", "sources", "matched", "unmatched",
-
 
 	"unfinished", "comp",
 
 	"opacity",
 
 
-
 	"regen", "storeLockdown", "early",
 
 	"drag",
 
-
-
 	"entries", "text", "saved",
-
-
-
-
 
 
 	"route", "to", "via", "mode", "choices", "tally", "summary", "page", "options",
 	"frame1", "frame2", "frame3", "summaryCached", "windowsSkipped", "stylesSkipped", "stylesApplied",
 
-
-
 	"filters", "region", "view", "foot", "size", "unbracketed", "tallyCached",
 
-
 	"hero",
-
-
-
 
 
 	"losses", "duels", "knockout", "fled", "resolved", "nameOnly", "leftEarly", "unset", "others", "token",
 
 
-
-
-
-
-
 	"card", "key", "opened", "bars", "per", "lost", "drawn", "anchor", "formats",
-
-
-
 
 	"check", "bottom", "top",
 
-
-
-
 	"header", "pairs", "noteLine", "tagLine", "lastSeen",
-
 
 	"terms", "excluding", "scoped",
 
-
 	"filter", "choice",
-
 
 	"drew", "withdrawn",
 
-
 	"tiers",
 
-
 	"groups", "rule",
-
 
 	"dock", "dockFrom", "move",
 
@@ -376,203 +240,123 @@ local FIELDS = {
 
 	"moved",
 
-
 	"roundsDropped",
-
 
 	"resultDropped",
 
-
 	"ladder",
 
-
 	"unplaced",
-
-
 
 	"with", "against", "matchWith", "matchAgainst",
 
 	"marked",
 
-
-
 	"sort", "repStep", "fmt", "sections",
 
-
-
-
 	"tileForms", "lead", "ratedPlayers", "unratedPlayers", "repBars",
-
 
 	"search", "empty",
 
 	"last", "lastFit",
 
-
 	"rounded", "breaks",
-
 
 	"result", "stripRoom",
 
-
 	"heads",
-
-
 
 	"listHead", "namesRows",
 
 	"headColor", "namesColor",
 
-
-
 	"grid", "gridFold", "line",
-
-
-
 
 
 	"delta", "offset", "landed", "first", "firstAfter", "content", "extent", "snapTo", "wheelN",
 
-
 	"d",
 
-
-
-
 	"tries", "cls", "tok",
-
 
 	"measured", "drawnWidth", "reserved", "drawn",
 
 	"cols",
 
-
 	"height", "srcBottom",
-
-
 
 
 	"floor", "ranked", "under", "shownUnder", "spec", "class", "ends",
 
-
 	"weeks", "cells", "blank", "draws",
-
-
-
-
-
 
 
 	"labels", "widths", "rules", "rate", "centre", "shed", "edge", "trend", "inset", "barWidth",
 
-
 	"asides", "moment",
-
 
 	"overGap", "overGapFrom",
 
-
 	"chips", "need",
-
-
-
 
 	"rowHeights", "nameForm", "ratingForm", "chart", "cell",
 
 	"statsView",
 
-
 	"seasonBreaks", "icons", "squares",
 
 	"stripSeason",
-
 
 	"stripFloor", "widthFrom",
 
 	"record",
 
-
-
 	"over1", "over5", "over10", "over50", "over100", "over500", "over1000",
-
-
 
 	"drainMean", "drainMax", "samples",
 
-
 	"peak", "session",
-
 
 	"window",
 
-
-
 	"foldUs", "newUs", "foldBytes", "newBytes", "calls", "between",
-
 
 	"cardNote", "cardTags", "cardTagLines", "cardW", "cardH",
 
-
 	"cardMetLast",
-
 
 	"chipRight", "cardRight", "chipFrom", "nameClass",
 
-
 	"cardIndex",
 
-
 	"cardNames",
-
 
 	"unmet",
 
 	"game",
 
-
-
 	"verdict", "chip", "reached", "markFrom", "markTo", "cards",
-
-
 
 	"switch", "alerts", "groupNotes",
 
 
-
-
-
-
 	"today", "todayN", "tileX", "title", "ruleWidth",
-
-
 
 	"counts", "find", "meter", "band", "slot", "columns",
 
-
-
 	"meterRoom",
-
-
 
 	"bests", "firstWeek", "lastWeek", "dropped", "undated", "chars", "segments", "copy",
 
-
-
-
 	"fontRole", "created", "gameFaces", "ownFaces",
 
-
 	"nameCut",
-
-
 
 	"baseline",
 }
 
 
-
 local REFUSED = "refused"
-
 
 
 
@@ -580,17 +364,7 @@ local reported = false
 
 
 
-
-
-
 local tracing = false
-
-
-
-
-
-
-
 
 
 
@@ -602,10 +376,6 @@ function A.debugAllowance()
 end
 
 
-
-
-
-
 local CENSUS_SHARE = 0.5
 
 
@@ -615,17 +385,7 @@ end
 
 
 
-
-
-
-
-
-
-
-
 local memo = {}
-
-
 
 
 local calls = {}
@@ -646,12 +406,6 @@ end
 
 
 
-
-
-
-
-
-
 local function signature(entry)
 	local parts = { tostring(entry.ev) }
 	for i = 1, #FIELDS do
@@ -669,22 +423,11 @@ end
 
 
 
-
-
-
-
-
-
 local function refreshSettingsWindow()
 	if A.refreshOptionsWindow then
 		pcall(A.refreshOptionsWindow)
 	end
 end
-
-
-
-
-
 
 
 
@@ -713,16 +456,10 @@ function A.debugEnabled()
 end
 
 
-
-
-
-
 function A.debugTextEnabled()
 	local ui = uiState()
 	return ui ~= nil and ui.debugText == true
 end
-
-
 
 
 
@@ -735,10 +472,6 @@ function A.setDebug(enabled)
 	refreshSettingsWindow()
 	return true
 end
-
-
-
-
 
 
 
@@ -777,9 +510,6 @@ local function store()
 end
 
 
-
-
-
 local function ringFor(held, category)
 	local ring = held.rings[category]
 	if type(ring) ~= "table" then
@@ -788,7 +518,6 @@ local function ringFor(held, category)
 	end
 	if type(ring.current) ~= "table" then
 		ring.current = {}
-
 
 		forget(category)
 	end
@@ -803,12 +532,6 @@ function A.debugStore()
 	end
 	return held
 end
-
-
-
-
-
-
 
 
 
@@ -856,8 +579,6 @@ function A.debugEntries()
 end
 
 
-
-
 local function latestStamp(entry)
 	local latest = entry.at
 	local function later(stamp)
@@ -869,12 +590,6 @@ local function latestStamp(entry)
 	later(entry.againAt)
 	return latest
 end
-
-
-
-
-
-
 
 
 
@@ -910,15 +625,9 @@ end
 
 
 
-
-
-
-
-
 local function identityShaped(text)
 	return text:match("^%a+%-%d") ~= nil or text:match("^%u[%w']*%-%u") ~= nil
 end
-
 
 
 local ERROR_MAX = 240
@@ -931,12 +640,6 @@ local ERROR_GUID = "<guid>"
 
 
 
-
-
-
-
-
-
 local function errorText(value)
 	local text = tostring(value)
 
@@ -944,10 +647,7 @@ local function errorText(value)
 	text = text:gsub("^Interface[\\/]+AddOns[\\/]+", "")
 
 
-
-
 	text = text:gsub("[Pp]layer%-%d+%-%w+", ERROR_GUID)
-
 
 
 	text = text:gsub("(%u[%w']*%w)%-(%u[%w']*%w)", ERROR_NAME)
@@ -957,16 +657,6 @@ local function errorText(value)
 	end
 	return text
 end
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -1001,13 +691,6 @@ end
 
 
 
-
-
-
-
-
-
-
 function A.trace(ev, fields, cat)
 	if not A.debugEnabled() or tracing then
 		return
@@ -1038,7 +721,6 @@ function A.trace(ev, fields, cat)
 				local kept
 				if key == "err" then
 
-
 					if fields.err ~= nil then
 						kept = errorText(fields.err)
 					end
@@ -1057,14 +739,11 @@ function A.trace(ev, fields, cat)
 		local last = list[#list]
 		if last and same(last, entry) then
 
-
-
 			held.seq = held.seq - 1
 			last.rep = (last.rep or 1) + 1
 			last.lastAt = entry.at
 			return
 		end
-
 
 
 
@@ -1083,10 +762,6 @@ function A.trace(ev, fields, cat)
 		end
 
 		if stands and stands.written >= SIGNATURE_ALLOWANCE then
-
-
-
-
 
 
 			held.seq = held.seq - 1
@@ -1118,12 +793,7 @@ function A.trace(ev, fields, cat)
 
 
 
-
-
-
 	pcall(function()
-
-
 		A.noteError(err, "debug-ring")
 
 		if not reported then
@@ -1135,12 +805,6 @@ function A.trace(ev, fields, cat)
 
 	tracing = false
 end
-
-
-
-
-
-
 
 
 
@@ -1201,7 +865,6 @@ end
 
 
 
-
 function A.debugIsolated(fn)
 	local held, keptMemo, keptCalls = WowPvpHistoryDebugDB, memo, calls
 	local aside = { rings = {} }
@@ -1215,15 +878,6 @@ function A.debugIsolated(fn)
 	end
 	return aside, a, b
 end
-
-
-
-
-
-
-
-
-
 
 
 
@@ -1261,7 +915,6 @@ function A.debugLine(entry)
 
 	local line = ("#%s %s %s/%s"):format(tostring(entry.seq), tostring(entry.at),
 		tostring(entry.cat), tostring(entry.ev))
-
 
 
 	if type(entry.rep) == "number" and entry.rep > 1 then
@@ -1309,10 +962,6 @@ end
 
 
 
-
-
-
-
 function A.debugCensus()
 	local out = {}
 	for i = 1, #CATEGORIES do
@@ -1323,7 +972,6 @@ function A.debugCensus()
 		for j = 1, #entries do
 			local ev = tostring(entries[j].ev)
 			counts[ev] = (counts[ev] or 0) + 1
-
 
 			if top == nil or counts[ev] > counts[top] then
 				top = ev
@@ -1341,9 +989,6 @@ function A.debugCensus()
 	end
 	return out
 end
-
-
-
 
 
 function A.debugCensusLine()
@@ -1383,10 +1028,7 @@ function A.debugLines(limit, cat)
 end
 
 
-
 local EXPORT_PREFIX = "WPHD!1!"
-
-
 
 
 function A.debugExport()
@@ -1396,9 +1038,6 @@ function A.debugExport()
 	end
 	return EXPORT_PREFIX .. table.concat(lines, " | "), nil, #lines
 end
-
-
-
 
 
 
@@ -1435,9 +1074,6 @@ end
 
 
 
-
-
-
 A.on("PLAYER_LOGIN", function()
 	local version, build
 	local ok, one, two = pcall(GetBuildInfo)
@@ -1448,8 +1084,6 @@ A.on("PLAYER_LOGIN", function()
 
 	local db = A.db()
 	local held = db and type(db.matches) == "table" and #db.matches or nil
-
-
 
 
 	local ui = uiState()

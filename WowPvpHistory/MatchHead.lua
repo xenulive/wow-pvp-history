@@ -266,7 +266,6 @@ end
 
 
 
-
 function A.matchHeadGame()
 	return A.theme() ~= "flat"
 end

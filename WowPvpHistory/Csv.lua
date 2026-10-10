@@ -7,22 +7,6 @@
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 local _, A = ...
 
 
@@ -32,21 +16,10 @@ local SIGNATURE = "WPHCSV"
 
 
 
-
-
-
-
-
-
 local FORMAT_VERSION = 5
 
 
 local SOURCE = "csv"
-
-
-
-
-
 
 
 
@@ -72,16 +45,10 @@ local function packEncode(value)
 end
 
 
-
-
-
-
 local function textEncode(value)
 	local text = tostring(value)
 	text = text:gsub("%%", "%%25")
 	text = text:gsub("|", "%%7C")
-
-
 
 	local first = text:sub(1, 1)
 	if first == "=" or first == "+" or first == "-" or first == "@" then
@@ -124,7 +91,6 @@ local function packSplit(cell)
 	for entry in tostring(cell):gmatch("[^" .. ENTRY_SEPARATOR .. "]+") do
 		local fields = {}
 
-
 		local from = 1
 		while true do
 			local at = entry:find(FIELD_SEPARATOR, from, true)
@@ -145,17 +111,9 @@ end
 
 
 
-
-
-
-
-
-
 local FNV_OFFSET = 2166136261
 local FNV_PRIME = 16777619
 local WORD = 4294967296
-
-
 
 
 
@@ -214,18 +172,9 @@ local function fnv1a(text)
 end
 
 
-
-
-
-
 function A.csvChecksum(text)
 	return fnv1a(tostring(text))
 end
-
-
-
-
-
 
 
 
@@ -236,8 +185,6 @@ local ROW_MARK = "\30"
 
 
 
-
-
 local function normalize(rows, from)
 	local parts = {}
 	for i = from, #rows do
@@ -245,11 +192,6 @@ local function normalize(rows, from)
 	end
 	return table.concat(parts, ROW_MARK)
 end
-
-
-
-
-
 
 
 
@@ -268,8 +210,6 @@ local function escape(value)
 	end
 	return text
 end
-
-
 
 
 
@@ -321,7 +261,6 @@ local function parseCsv(text)
 		else
 
 
-
 			return nil, "unreadable"
 		end
 	end
@@ -336,8 +275,6 @@ local function parseCsv(text)
 
 	return rows
 end
-
-
 
 
 
@@ -379,7 +316,6 @@ end
 
 local MATCH_COLUMNS = {
 
-
 	{
 		name = "matchId",
 		kind = "number",
@@ -389,17 +325,10 @@ local MATCH_COLUMNS = {
 	top("rated", "flag"),
 
 
-
-
-
-
 	top("fixture", "flag"),
 	top("bracket", "number"),
 
-
-
 	top("season", "number"),
-
 
 
 	top("gameSeason", "number"),
@@ -419,9 +348,6 @@ local MATCH_COLUMNS = {
 	top("opponentName", "text"),
 	top("duelToTheDeath", "flag"),
 	{
-
-
-
 
 
 
@@ -448,15 +374,13 @@ local MATCH_COLUMNS = {
 				end
 
 
+
 				entries[i] = {
 					round.endedEpoch,
 					round.won == nil and "" or (round.won and "true" or "false"),
 					round.ratingPost == nil and "" or round.ratingPost,
 					mates,
 				}
-
-
-
 				local typed = A.typedRound(record, i)
 				if typed ~= nil then
 					entries[i][5] = typed
@@ -504,8 +428,6 @@ local MATCH_COLUMNS = {
 					end
 					round.mates = seats
 				end
-
-
 
 
 				local typed = fields[5]
@@ -570,15 +492,11 @@ local MATCH_COLUMNS = {
 	under("manual", "manualNote", "text", "note"),
 	under("manual", "edits", "number", "edits"),
 
-
-
 	under("manual", "manualFirstAt", "text", "firstAt"),
 	under("manual", "manualFirstEpoch", "number", "firstEpoch"),
 	under("manual", "manualLastAt", "text", "lastAt"),
 	under("manual", "manualLastEpoch", "number", "lastEpoch"),
 }
-
-
 
 
 for i = 1, #MATCH_COLUMNS do
@@ -589,7 +507,6 @@ for i = 1, #MATCH_COLUMNS do
 end
 
 local PARTICIPANT_COLUMNS = {
-
 
 	{ name = "guid", kind = "text" },
 	top("name", "text"),
@@ -612,9 +529,7 @@ local PARTICIPANT_COLUMNS = {
 	top("mmrPre", "number"),
 	top("mmrPost", "number"),
 
-
 	top("seat", "number"),
-
 
 	top("dispels", "number"),
 	{
@@ -629,7 +544,6 @@ local PARTICIPANT_COLUMNS = {
 			for id in pairs(stats) do
 				ids[#ids + 1] = id
 			end
-
 
 			table.sort(ids)
 			local entries = {}
@@ -653,12 +567,6 @@ local PARTICIPANT_COLUMNS = {
 		end,
 	},
 }
-
-
-
-
-
-
 
 
 
@@ -695,9 +603,6 @@ end
 
 
 
-
-
-
 local function number(value)
 	local text = ("%.14g"):format(value)
 	if tonumber(text) ~= value then
@@ -708,9 +613,6 @@ end
 
 
 local function cell(column, subject, record)
-
-
-
 
 
 	local value = nil
@@ -734,9 +636,6 @@ local function cell(column, subject, record)
 	end
 	return textEncode(value)
 end
-
-
-
 
 
 
@@ -766,7 +665,6 @@ local function fill(column, subject, text)
 		return column.set(subject, text) ~= false
 	end
 
-
 	column.set(subject, packDecode(text))
 	return true
 end
@@ -778,22 +676,7 @@ end
 
 
 
-
-
-
-
-
-
-
 local PART_LIMIT = 25000
-
-
-
-
-
-
-
-
 
 
 
@@ -815,7 +698,6 @@ local function matchRows(record, into)
 	end
 
 	if #guids == 0 then
-
 		local row = {}
 		for i = 1, #head do
 			row[i] = head[i]
@@ -858,12 +740,6 @@ end
 
 
 
-
-
-
-
-
-
 local function recordDate(record)
 	if type(record.completedEpoch) ~= "number" then
 		return nil
@@ -874,9 +750,6 @@ local function recordDate(record)
 	end
 	return nil
 end
-
-
-
 
 
 local function selected(db, filter)
@@ -907,7 +780,6 @@ local function selected(db, filter)
 	end
 	return out
 end
-
 
 
 
@@ -949,7 +821,6 @@ local function buildParts(db, filter)
 	end
 
 
-
 	if #parts == 0 then
 		open()
 	end
@@ -962,20 +833,11 @@ end
 
 
 
-
-
-
-
-
-
-
 function A.csvExport(filter, part)
 	local db = A.db()
 	if not db then
 		return nil, "no database"
 	end
-
-
 
 
 
@@ -1018,7 +880,6 @@ function A.csvExport(filter, part)
 
 
 
-
 	A.trace("csv-export", {
 		format = (filter and filter.format) or "all",
 		rows = dataRows,
@@ -1027,8 +888,6 @@ function A.csvExport(filter, part)
 
 	return table.concat(lines, "\n"), dataRows, held.matches, part, #parts
 end
-
-
 
 
 
@@ -1059,15 +918,8 @@ end
 
 
 
-
-
-
-
-
-
 local function naturalKey(record)
 	return table.concat({
-
 
 		record.completedEpoch ~= nil and number(record.completedEpoch) or "",
 		record.format ~= nil and tostring(record.format) or "",
@@ -1077,17 +929,10 @@ end
 
 
 
-
-
-
-
-
-
 function A.csvPreview(text, forced)
 	if type(text) ~= "string" then
 		return nil, A.csvRefusalText("nothing"), "nothing"
 	end
-
 
 
 	local trimmed = text:gsub("^%s+", ""):gsub("%s+$", "")
@@ -1123,7 +968,6 @@ function A.csvPreview(text, forced)
 	end
 
 
-
 	local claimed = tonumber(rows[1][3])
 	if claimed ~= dataRows and not forced then
 		return nil, A.csvRefusalText("count"), "count"
@@ -1148,11 +992,6 @@ end
 
 
 
-
-
-
-
-
 local function readRow(row, width)
 	if #row ~= width then
 		return nil
@@ -1173,8 +1012,6 @@ local function readRow(row, width)
 	local offset = #MATCH_COLUMNS
 	local guid = row[offset + 1]
 	if guid == "" then
-
-
 
 		for i = 2, #PARTICIPANT_COLUMNS do
 			if row[offset + i] ~= "" then
@@ -1199,26 +1036,12 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 function A.csvImport(text, forced)
 	local preview, why, token = A.csvPreview(text, forced)
 	if not preview then
 		A.trace("csv-import", { state = "refused", reason = token }, "data")
 		return nil, why, token
 	end
-
 
 
 	if A.sandboxed() then
@@ -1241,11 +1064,7 @@ function A.csvImport(text, forced)
 	local width = #MATCH_COLUMNS + #PARTICIPANT_COLUMNS
 	local added, skipped, refused = 0, 0, 0
 
-
 	local addedIds = {}
-
-
-
 	local refiledIds = {}
 	local roundsDropped = 0
 	local resultDropped = 0
@@ -1282,14 +1101,10 @@ function A.csvImport(text, forced)
 			end
 		end
 
-
-
-
 		if type(manual) == "table" and manual.result ~= nil and not A.resultOfferable(record) then
 			manual.result = nil
 			resultDropped = resultDropped + 1
 		end
-
 
 
 
@@ -1304,19 +1119,13 @@ function A.csvImport(text, forced)
 		if refiled then
 			refiledIds[#refiledIds + 1] = tostring(record.id)
 		end
-
-
-
 		record.imported = { at = A.stamp(), source = SOURCE, forced = forced or nil }
 		db.matches[#db.matches + 1] = record
 		added = added + 1
 		addedIds[#addedIds + 1] = "match:" .. record.id
 
-
 		A.trace("csv-record", { state = forced and "forced" or "added" }, "data")
 	end
-
-
 
 
 
@@ -1333,9 +1142,6 @@ function A.csvImport(text, forced)
 		end
 		return "same"
 	end
-
-
-
 
 
 
@@ -1368,7 +1174,6 @@ function A.csvImport(text, forced)
 		if record and continuation and not joins then
 
 
-
 			record = nil
 		end
 
@@ -1378,13 +1183,8 @@ function A.csvImport(text, forced)
 			if not joins then
 				close()
 				current, currentKey, currentRow = record, key, row
-
-
 				current.participants = {}
 			end
-
-
-
 
 			if current and guid ~= nil then
 				current.participants[guid] = participant
@@ -1399,20 +1199,13 @@ function A.csvImport(text, forced)
 	end
 
 
-
 	local moved
 	if added > 0 then
-
 		moved = A.orderByCompletion(db.matches)
 
 
-
 		A.rebuildIndex()
-
-
 		pcall(A.notePrune, "csv", #db.matches - added)
-
-
 		pcall(A.storeReplaced)
 	end
 
@@ -1421,39 +1214,18 @@ function A.csvImport(text, forced)
 		rows = preview.dataRows,
 		n = added,
 		kept = skipped,
-
-
 		refusals = refused,
 		moved = moved,
 		records =#addedIds > 0 and table.concat(addedIds, "+") or nil,
 
-
 		ids = #refiledIds > 0 and table.concat(refiledIds, ",") or nil,
 		roundsDropped = roundsDropped,
-
 		resultDropped = resultDropped,
 	}, "data")
 
 	return { added = added, skipped = skipped, refused = refused, roundsDropped = roundsDropped,
 		resultDropped = resultDropped }
 end
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -1475,7 +1247,6 @@ local function buildFrame()
 		"BasicFrameTemplateWithInset")
 	frame:SetSize(A.metric("sheetWidth"), A.metric("sheetHeight"))
 	frame:SetPoint("CENTER")
-
 
 	A.registerPlacedWindow(frame, "CENTER", 0, 0)
 	frame:SetFrameStrata("DIALOG")
@@ -1509,8 +1280,6 @@ local function buildFrame()
 	box:SetMultiLine(true)
 	box:SetAutoFocus(false)
 
-
-
 	box:SetFontObject("ChatFontNormal")
 
 	box:SetMaxLetters(0)
@@ -1522,7 +1291,6 @@ local function buildFrame()
 	local confirm = A.pill(frame, nil, nil, A.metric("sheetButton"))
 	confirm:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -16, 14)
 	frame.confirm = confirm
-
 
 
 	A.registerChrome(frame)
@@ -1542,11 +1310,6 @@ local function frameOrNil()
 	sheet = built
 	return sheet
 end
-
-
-
-
-
 
 
 

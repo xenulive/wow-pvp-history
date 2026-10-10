@@ -5,26 +5,7 @@
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 local _, A = ...
-
-
 
 
 
@@ -39,12 +20,6 @@ function A.canary()
 	end
 	return canary
 end
-
-
-
-
-
-
 
 
 
@@ -68,13 +43,8 @@ function A.noteCanary(constants)
 	canary.matches = #db.matches
 
 
-
-
-
 	local ok, stamp = pcall(A.stamp)
 	canary.at = ok and stamp or nil
-
-
 	local okEpoch, epoch = pcall(time)
 	canary.epoch = okEpoch and epoch or nil
 
@@ -91,21 +61,7 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
-
 local PRUNE_LOG_BOUND = 8
-
-
-
 
 
 
@@ -120,8 +76,6 @@ function A.notePrune(op, before)
 		log = {}
 		db.pruneLog = log
 	end
-
-
 
 	local ok, epoch = pcall(time)
 	log[#log + 1] = {
@@ -159,19 +113,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 function A.canaryState()
 	local db = A.db()
 	if not db then
@@ -182,7 +123,6 @@ function A.canaryState()
 	local canary = A.canary()
 	local seen = canary and canary.matches
 	local held = seen
-
 
 	local stampedAt = canary and canary.epoch
 	local via, undated
@@ -205,8 +145,6 @@ function A.canaryState()
 		at = canary and canary.at,
 		constants = canary and canary.constants,
 		constantsAt = canary and canary.constantsAt,
-
-
 		lost = canary and canary.lost,
 	}
 
@@ -229,17 +167,8 @@ end
 
 
 
-
-
-
-
-
-
-
 function A.canaryLossLines(state)
 	local lines = {}
-
-
 
 	local held = ("%d %s"):format(state.held, state.held == 1 and "match" or "matches")
 	if state.via then
@@ -257,7 +186,6 @@ function A.canaryLossLines(state)
 			.. "records the client dropped"
 
 
-
 		lines[#lines + 1] = "the previous save is still at WTF\\Account\\<id>\\SavedVariables\\"
 			.. "WowPvpHistory.lua.bak until the next clean exit writes over it"
 	else
@@ -267,15 +195,10 @@ function A.canaryLossLines(state)
 			.. "line. Nothing is recoverable from in game"
 
 
-
-
-
 		lines[#lines + 1] = "the client keeps one previous copy. WTF\\Account\\<id>\\"
 			.. "SavedVariables\\WowPvpHistory.lua.bak still holds it until the next clean exit "
 			.. "writes over it: exit now and copy that file out"
 	end
-
-
 
 
 	local restorable = A.backupLossLine()
@@ -285,13 +208,6 @@ function A.canaryLossLines(state)
 
 	return lines
 end
-
-
-
-
-
-
-
 
 
 
@@ -314,7 +230,6 @@ function A.canaryReading(state)
 				state.via and ("the last " .. pruneWord(state.via) .. " left")
 					or "this character last saw")
 	elseif state.state == "unknown" then
-
 		text = ("%d %s held against %d stored, beside a deliberate change to the history that "
 			.. "carries no time. Whether it came after this character's count cannot be told, so "
 			.. "neither a loss nor agreement is claimed")
@@ -325,9 +240,7 @@ function A.canaryReading(state)
 	end
 
 
-
 	if state.lost and state.state ~= "lost" and state.state ~= "short" then
-
 		text = text .. (". A loss of %d %s was recorded %s"):format(state.lost.matches,
 			state.lost.matches == 1 and "match" or "matches",
 			state.lost.at and tostring(state.lost.at) or "at a login whose clock did not answer")
@@ -342,17 +255,10 @@ function A.canaryLine(state)
 end
 
 
-
-
-
-
 function A.canaryWillAnnounce()
 	local state = A.canaryState()
 	return state.state == "lost" or state.state == "short"
 end
-
-
-
 
 
 
@@ -366,15 +272,6 @@ local function check()
 
 
 
-
-
-
-
-
-
-
-
-
 	A.trace("canary", {
 		state = state.state,
 		n = state.stored,
@@ -384,7 +281,6 @@ local function check()
 	})
 
 	if state.state == "lost" or state.state == "short" then
-
 		local lines = A.canaryLossLines(state)
 		for i = 1, #lines do
 			A.say(lines[i], "fault")
@@ -393,7 +289,6 @@ local function check()
 
 	local canary = A.noteCanary()
 	if canary and (state.state == "lost" or state.state == "short") then
-
 
 		canary.lost = { matches = state.held, at = canary.at }
 	end

@@ -6,17 +6,6 @@
 
 
 
-
-
-
-
-
-
-
-
-
-
-
 local _, A = ...
 
 local ADDON_PATH = "Interface\\AddOns\\WowPvpHistory\\"
@@ -28,7 +17,6 @@ local ADDON_PATH = "Interface\\AddOns\\WowPvpHistory\\"
 local FLAT = {
 	panel       = { 0.090, 0.102, 0.122 },
 	panelDeep   = { 0.071, 0.082, 0.102 },
-
 
 
 	sessionGround = { 0.102, 0.114, 0.137 },
@@ -48,39 +36,26 @@ local FLAT = {
 	loss        = { 0.880, 0.360, 0.340 },
 
 
-
-
 	horde       = { 0.784, 0.180, 0.220 },
 	alliance    = { 0.380, 0.600, 0.960 },
 
 
-
 	cardMatches = { 0.435, 0.659, 0.863 },
 
-
 	cardLength  = { 0.659, 0.545, 0.878 },
-
 
 
 	caution     = { 0.784, 0.514, 0.306 },
 
 
 
-
-
-
 	regard      = { 0.290, 0.678, 0.780 },
-
-
 
 
 	noteWord    = { 0.851, 0.682, 0.235 },
 
 
-
-
 	caveat      = { 1, 0.624, 0.227 },
-
 
 
 
@@ -88,15 +63,10 @@ local FLAT = {
 
 
 
-
-
-
-
 	fault       = { 1, 0.353, 0.353 },
 	standing    = { 0.784, 0.643, 0.361 },
 
 	routine     = { 0.541, 0.573, 0.612 },
-
 
 	event       = { 0.902, 0.910, 0.925 },
 	ok          = { 0.373, 0.812, 0.502 },
@@ -107,52 +77,27 @@ local FLAT = {
 
 
 
-
-
-
-
-
-
 	inset       = { 0.071, 0.082, 0.102 },
 	insetEdge   = { 1, 1, 1, 0.09 },
-
-
 	insetDeep   = { 0, 0, 0, 0 },
-
 	listGround  = { 0, 0, 0, 0 },
 	listEdge    = { 0, 0, 0, 0 },
 
 
-
 	pinGround   = { 0.090, 0.102, 0.122 },
-
-
 
 	label       = { 0.541, 0.573, 0.612 },
 
-
-
 	labelMuted  = { 0.541, 0.573, 0.612 },
-
-
 	sessionRule = { 1, 1, 1, 0.09 },
-
-
 	gridRule    = { 0, 0, 0, 0 },
-
-
-
 	sessionOpen = { 0.102, 0.114, 0.137 },
-
-
 
 
 	underText   = { 0.357, 0.384, 0.420 },
 	underWin    = { 0.310, 0.780, 0.470, 0.30 },
 	underLoss   = { 0.880, 0.360, 0.340, 0.30 },
-
 	barMid      = { 1, 1, 1, 0.25 },
-
 
 
 	heatLoss    = { 0.878, 0.361, 0.341 },
@@ -161,15 +106,11 @@ local FLAT = {
 	heatBlank   = { 1, 1, 1, 0.10 },
 
 
-
 	tierBand    = { 1, 1, 1, 0.045 },
 	tierRule    = { 1, 1, 1, 0.50 },
 
 
-
-
 	cardGround  = { 0, 0, 0, 0 },
-
 
 
 
@@ -177,14 +118,10 @@ local FLAT = {
 
 
 
-
-
 	cardPanel   = { 0.059, 0.071, 0.086, 0.96 },
 	cardBorder  = { 1, 1, 1, 0.14 },
 	chipEdge    = { 1, 1, 1, 0.14 },
-
 	chipText    = { 0.765, 0.784, 0.812 },
-
 
 
 
@@ -194,16 +131,10 @@ local FLAT = {
 
 
 
-
-
-
-
-
 local BLIZZARD = {}
 for name, value in pairs(FLAT) do
 	BLIZZARD[name] = value
 end
-
 
 
 BLIZZARD.panel     = { 0, 0, 0, 0 }
@@ -216,9 +147,6 @@ BLIZZARD.hairline  = { 1, 1, 1, 0.12 }
 BLIZZARD.divider   = { 1, 1, 1, 0.07 }
 BLIZZARD.selection = { 1, 0.820, 0, 0.20 }
 BLIZZARD.hover     = { 1, 1, 1, 0.10 }
-
-
-
 
 BLIZZARD.inset       = { 0, 0, 0, 0.38 }
 BLIZZARD.insetEdge   = { 1, 0.820, 0, 0.22 }
@@ -235,12 +163,9 @@ BLIZZARD.sessionOpen = { 1, 0.820, 0, 0.06 }
 
 BLIZZARD.cardGround = { 0.090, 0.102, 0.122, 0.86 }
 
-
-
 BLIZZARD.cardPanel  = { 0.031, 0.031, 0.078, 0.92 }
 BLIZZARD.cardBorder = { 0.557, 0.557, 0.588, 1 }
 BLIZZARD.chipEdge   = { 1, 1, 1, 0.22 }
-
 
 
 BLIZZARD.chat      = "00ff00"
@@ -254,10 +179,7 @@ local DEFAULT_THEME = "blizzard"
 
 
 
-
 local heldTheme
-
-
 
 
 function A.theme()
@@ -278,15 +200,11 @@ function A.palette()
 end
 
 
-
-
-
 function A.color(name)
 	local p = A.palette()
 	local c = p[name] or FLAT[name] or FLAT.text
 	return c[1], c[2], c[3], c[4]
 end
-
 
 
 function A.colorHex(r, g, b, a)
@@ -295,12 +213,6 @@ function A.colorHex(r, g, b, a)
 	end
 	return ("%02x%02x%02x%02x"):format(byte(r, 0), byte(g, 0), byte(b, 0), byte(a, 1))
 end
-
-
-
-
-
-
 
 
 
@@ -319,15 +231,7 @@ end
 
 
 
-
-
-
-
-
-
 A.REGISTERS = { "fault", "standing", "event", "routine" }
-
-
 
 
 local REGISTER_TEXT = {
@@ -336,8 +240,6 @@ local REGISTER_TEXT = {
 local REGISTER_MARK = {
 	fault = "fault", standing = "standing", event = "event", routine = "ok",
 }
-
-
 
 
 
@@ -350,14 +252,9 @@ function A.registerEscape(register)
 end
 
 
-
 function A.registerMark(register)
 	return REGISTER_MARK[register]
 end
-
-
-
-
 
 
 
@@ -370,19 +267,8 @@ function A.classColor(token)
 	return A.color("dimmer")
 end
 
-
-
 local specIcons = nil
-
 local specIconMissed = {}
-
-
-
-
-
-
-
-
 
 
 
@@ -390,7 +276,6 @@ local specIconMissed = {}
 local function buildSpecIcons()
 	local out = {}
 	local count = type(GetNumClasses) == "function" and GetNumClasses() or 0
-
 
 	local specInfo = type(C_SpecializationInfo) == "table" and C_SpecializationInfo or nil
 	local numSpecs = (specInfo and type(specInfo.GetNumSpecializationsForClassID) == "function"
@@ -420,10 +305,6 @@ end
 
 
 
-
-
-
-
 function A.specIcon(classToken, spec)
 	if type(classToken) ~= "string" or type(spec) ~= "string" or spec == "" then
 		return nil
@@ -448,12 +329,10 @@ function A.specIcon(classToken, spec)
 end
 
 
-
 function A.resetSpecIcons()
 	specIcons = nil
 	specIconMissed = {}
 end
-
 
 
 function A.chatColor()
@@ -461,12 +340,9 @@ function A.chatColor()
 end
 
 
-
 function A.linkColor()
 	return A.palette().link or FLAT.link
 end
-
-
 
 
 function A.displayName()
@@ -475,13 +351,9 @@ end
 
 
 
-
-
-
 function A.chatPrefix()
 	return "|cff" .. A.chatColor() .. "PvPHistory:|r "
 end
-
 
 
 local function repaintTheme()
@@ -502,9 +374,6 @@ local function repaintTheme()
 end
 
 
-
-
-
 function A.setTheme(name)
 	if not PALETTES[name] then
 		return false
@@ -516,7 +385,6 @@ function A.setTheme(name)
 	end
 
 
-
 	local released = heldTheme ~= nil
 	heldTheme = nil
 
@@ -526,7 +394,6 @@ function A.setTheme(name)
 		end
 		return released
 	end
-
 
 
 	if name == DEFAULT_THEME then
@@ -541,15 +408,12 @@ end
 
 
 
-
 function A.holdTheme(name)
 	if name ~= nil and not PALETTES[name] then
 		return false
 	end
 	heldTheme = name
 	repaintTheme()
-
-
 	if type(A.trace) == "function" then
 		A.trace("view", { source = "typed-appearance", theme = A.theme(), state = A.storedTheme() },
 			"ui")
@@ -573,7 +437,6 @@ function A.storedTheme()
 end
 
 
-
 function A.themeChoices()
 	return {
 		{ value = "blizzard", label = "Match the game", tooltip = "Keep the client's frame art and colours." },
@@ -586,13 +449,8 @@ end
 
 
 
-
-
-
 local SIZES = {
 	huge   = { size = 34, flags = "" },
-
-
 
 
 	bannerName   = { size = 16, flags = "OUTLINE" },
@@ -601,10 +459,7 @@ local SIZES = {
 	bannerLabel  = { size = 13, flags = "OUTLINE" },
 
 	bannerMark   = { size = 10, flags = "" },
-
-
 	dossier = { size = 22, flags = "" },
-
 	cardName  = { size = 18, flags = "" },
 	cardText  = { size = 14, flags = "" },
 	cardLabel = { size = 13, flags = "" },
@@ -615,7 +470,6 @@ local SIZES = {
 	tiny   = { size = 10, flags = "OUTLINE" },
 	micro  = { size = 9,  flags = "OUTLINE" },
 
-
 	stripLabel  = { size = 12, flags = "" },
 	stripFigure = { size = 26, flags = "" },
 	stripChange = { size = 14, flags = "" },
@@ -623,27 +477,18 @@ local SIZES = {
 }
 
 
-
-
 local ROLES = {
 	number      = { file = "IBMPlexMono-SemiBold.ttf",       scale = "large",  fallback = "GameFontNormalLarge" },
 	numberHuge  = { file = "IBMPlexMono-SemiBold.ttf",       scale = "huge",   fallback = "GameFontNormalHuge" },
 	numberSmall = { file = "IBMPlexMono-Regular.ttf",        scale = "body",   fallback = "GameFontHighlightSmall" },
 	numberMicro = { file = "IBMPlexMono-Regular.ttf",        scale = "micro",  fallback = "GameFontDisableSmall" },
-
-
 	stripLabel  = { file = "BarlowSemiCondensed-SemiBold.ttf", scale = "stripLabel", fallback = "GameFontDisableSmall" },
 	stripFigure = { file = "IBMPlexMono-SemiBold.ttf",       scale = "stripFigure", fallback = "GameFontNormalHuge" },
 	stripChange = { file = "IBMPlexMono-Regular.ttf",        scale = "stripChange", fallback = "GameFontHighlight" },
 	stripTier   = { file = "IBMPlexMono-Regular.ttf",        scale = "stripTier",   fallback = "GameFontHighlightSmall" },
 	label       = { file = "IBMPlexMono-SemiBold.ttf",       scale = "label",  fallback = "GameFontDisableSmall" },
 	heading     = { file = "BarlowSemiCondensed-SemiBold.ttf", scale = "medium", fallback = "GameFontNormal" },
-
-
 	headingLarge = { file = "BarlowSemiCondensed-SemiBold.ttf", scale = "large", fallback = "GameFontNormalLarge" },
-
-
-
 
 	announceName   = { file = "BarlowSemiCondensed-SemiBold.ttf", scale = "bannerName",   fallback = "GameFontNormalLargeOutline",
 		names = true },
@@ -651,12 +496,8 @@ local ROLES = {
 	announceTag    = { file = "BarlowSemiCondensed-Regular.ttf",  scale = "bannerTag",    fallback = "GameFontNormalOutline" },
 	announceLabel  = { file = "BarlowSemiCondensed-SemiBold.ttf", scale = "bannerLabel",  fallback = "GameFontNormalOutline" },
 	announceMark   = { file = "BarlowSemiCondensed-SemiBold.ttf", scale = "bannerMark",   fallback = "GameFontNormalOutline" },
-
-
 	dossierName = { file = "BarlowSemiCondensed-SemiBold.ttf", scale = "dossier", fallback = "GameFontNormalLarge",
 		names = true },
-
-
 	cardHead    = { file = "BarlowSemiCondensed-SemiBold.ttf", scale = "body",      fallback = "GameFontHighlightSmall" },
 	cardName    = { file = "BarlowSemiCondensed-SemiBold.ttf", scale = "cardName",  fallback = "GameFontNormalLarge",
 		names = true },
@@ -668,48 +509,31 @@ local ROLES = {
 	note        = { file = "BarlowSemiCondensed-Regular.ttf",  scale = "tiny",   fallback = "GameFontDisableSmall" },
 
 
-
-
-
 	rowClock    = { file = "IBMPlexMono-Regular.ttf",          scale = "micro",  flags = "",
 		fallback = "GameFontDisableSmall" },
 	rowNote     = { file = "BarlowSemiCondensed-Regular.ttf",  scale = "tiny",   flags = "",
 		fallback = "GameFontDisableSmall" },
 
-
 	nameText    = { file = "BarlowSemiCondensed-Regular.ttf",  scale = "body",   fallback = "GameFontHighlightSmall",
 		names = true },
 	nameMedium  = { file = "BarlowSemiCondensed-Medium.ttf",   scale = "body",   fallback = "GameFontHighlight",
 		names = true },
-
-
 	nameNote    = { file = "BarlowSemiCondensed-Regular.ttf",  scale = "tiny",   flags = "",
 		fallback = "GameFontDisableSmall", names = true },
 }
 
 
 
-
-
-
 local NAME_ALPHABETS = { "roman", "russian", "korean", "simplifiedchinese", "traditionalchinese" }
-
-
 
 
 local ALPHABET_SOURCE = "GameFontNormal"
 
 
-
 local FAMILY_CALL = "CreateFontFamily"
 
 
-
-
 local DEFAULT_FALLBACK = "GameFontHighlightSmall"
-
-
-
 
 
 
@@ -759,10 +583,7 @@ local function gatedFace(spec)
 end
 
 
-
-
 local function build(role, spec)
-
 
 	if type(CreateFont) ~= "function" then
 		return _G[spec.fallback]
@@ -774,7 +595,6 @@ local function build(role, spec)
 	end
 
 	local scale = SIZES[spec.scale] or SIZES.body
-
 
 	local flags = scale.flags
 	if spec.flags ~= nil then
@@ -796,11 +616,7 @@ local function build(role, spec)
 	return object
 end
 
-
 local familyBuilds = {}
-
-
-
 
 
 local function alphabetFile(alphabet)
@@ -818,11 +634,6 @@ local function alphabetFile(alphabet)
 	end
 	return nil
 end
-
-
-
-
-
 
 
 
@@ -854,7 +665,6 @@ local function buildFamily(role, spec)
 			flags = spec.flags
 		end
 		local own = ADDON_PATH .. "fonts\\" .. spec.file
-
 
 		local members = {}
 		for i = 1, #NAME_ALPHABETS do
@@ -889,7 +699,6 @@ local function buildFamily(role, spec)
 	end
 
 	if A.trace then
-
 		A.trace("fontFamily", {
 			fontRole = role,
 			reason = held.reason,
@@ -900,10 +709,6 @@ local function buildFamily(role, spec)
 	end
 	return object
 end
-
-
-
-
 
 
 function A.font(role)
@@ -924,9 +729,6 @@ function A.font(role)
 end
 
 
-
-
-
 function A.fontFamily(role)
 	local held = familyBuilds[role]
 	if held == nil then
@@ -943,12 +745,9 @@ function A.fontFamily(role)
 end
 
 
-
 function A.fontsLoaded()
 	return shipped
 end
-
-
 
 
 function A.fontsGated()
@@ -961,12 +760,9 @@ function A.fontsGated()
 end
 
 
-
 function A.trackBase()
 	return A.metric("rowBar") - A.metric("rowDamageValue")
 end
-
-
 
 
 
@@ -976,10 +772,6 @@ function A.labelRoom(text)
 	end
 	return math.ceil(#text * A.metric("labelAdvance"))
 end
-
-
-
-
 
 
 function A.askCardHeight(captioned)
@@ -992,17 +784,12 @@ function A.askCardHeight(captioned)
 end
 
 
-
 function A.askCardOverRoom(room)
 	if type(room) ~= "number" then
 		return 0
 	end
 	return math.max(0, math.floor(room))
 end
-
-
-
-
 
 
 
@@ -1040,19 +827,12 @@ function A.askCardRow(parts, room)
 end
 
 
-
-
-
-
 function A.textRoom(fontString, text)
 	if type(text) ~= "string" or text == "" then
 		return 0
 	end
 	return A.clientTextWidth(fontString, text) or A.labelRoom(text)
 end
-
-
-
 
 
 
@@ -1068,8 +848,6 @@ function A.clientTextWidth(fontString, text)
 	end
 	return nil
 end
-
-
 
 
 
@@ -1091,8 +869,6 @@ function A.fittedForm(fontString, room, forms)
 end
 
 
-
-
 function A.headerFloor(text)
 	local room = A.labelRoom(text)
 	if room <= 0 then
@@ -1102,10 +878,7 @@ function A.headerFloor(text)
 end
 
 
-
 local repaintMode = "lean"
-
-
 
 
 local LEAN_CUTS = { "style", "windows", "choices", "summary", "tally" }
@@ -1134,9 +907,7 @@ function A.setRepaintMode(mode)
 end
 
 
-
 local styleCounts
-
 
 
 function A.countStyles(on)
@@ -1151,9 +922,6 @@ function A.countStyles(on)
 	end
 	return held.skipped, held.applied
 end
-
-
-
 
 
 
@@ -1190,27 +958,13 @@ end
 
 
 
-
-
-
-
-
-
-
 local METRICS = {
 
-
-
-
-
 	frameWidth   = 1069,
-
 
 	listWidth    = 462,
 	margin       = 14,
 	paneGap      = 8,
-
-
 
 	paneSplitGap = 22,
 	paneRightPad = 12,
@@ -1218,20 +972,11 @@ local METRICS = {
 
 	tabRowDrop   = 18,
 
-
-
 	windowMinRows = 12,
-
-
-
 
 	windowRows   = 18,
 
-
-
 	dropdownWidth   = 150,
-
-
 
 
 	dropdownWidthMax = 320,
@@ -1240,39 +985,25 @@ local METRICS = {
 	dropdownPad     = 3,
 	dropdownCaret   = 6,
 
-
-
 	gripSize     = 16,
 	gripInset    = 3,
 	gripStroke   = 2,
 	gripStrokeGap = 4,
 
-
 	headerHeight = 30,
-
-
 
 	filterHeight = 22,
 
-
 	summaryGap   = 6,
 
-
-
-
 	editHeight   = 24,
-
-
 
 
 	paneEditGap  = 4,
 
 
 
-
-
 	titleInset   = 56,
-
 
 	titleTop         = 6,
 	headerActionDrop = 4,
@@ -1280,95 +1011,55 @@ local METRICS = {
 	rowHeight    = 16,
 
 
-
-
-
-
 	rowMatchRow  = 34,
 
-
-
 	rowListRow   = 32,
-
-
 
 	rowChip      = 20,
 	rowChipGap   = 3,
 
-
-
 	rowPip       = 6,
 	rowPipGap    = 2,
 
-
-
 	rowChangeHalf = 18,
 	rowChangeBar  = 6,
-
-
 	rowChangeScaleCap = 60,
-
-
-
-
 
 	rowColChip     = 24,
 	rowColLobby    = 112,
 	rowColRounds   = 92,
 	rowColChange   = 80,
 
-
-
 	rowSubLine   = 14,
-
-
 
 	rowMarkSize  = 9,
 	rowMarkGap   = 4,
 
-
-
 	participantRow = 22,
-
-
 
 
 	headPad        = 4,
 	headGap        = 8,
-
-
 	headCrestGap   = 6,
-
 	headPipWidth   = 7,
 	headPipHeight  = 14,
 	headPipGap     = 3,
-
 	headChipPad    = 6,
-
 	bannerPad      = 10,
-
-
 	ladderPad      = 6,
 	ladderBar      = 6,
 	ladderGap      = 2,
 	ladderMark     = 12,
-
 	roundCellMark  = 10,
-
-
 	roundCardPad   = 6,
 	roundCardGap   = 6,
 	roundCardLine  = 2,
 	roundCardEdge  = 2,
 
 
-
-
 	classEdge      = 3,
 
-
 	barHeight      = 5,
-
 
 
 	rowKb          = 26,
@@ -1376,56 +1067,32 @@ local METRICS = {
 	rowRole        = 34,
 
 
-
 	rowDispels     = 33,
-
-
-
-
 
 
 
 	rowDamageValue = 52,
 
 
-
-
-
 	rowSpec        = 98,
-
-
 
 
 	rowName        = 162,
 
 
-
-
 	labelAdvance   = 7,
-
-
 
 	rowShareAlpha  = 0.22,
 
 
-
 	rowHeal        = 58,
-
-
 
 	rowNamePad     = 8,
 	rowCellGap     = 6,
 
-
-
-
 	rowMapMin      = 10,
 
-
-
-
 	plotPanelGap   = 10,
-
 
 
 
@@ -1433,19 +1100,9 @@ local METRICS = {
 	rowColLength   = 56,
 
 
-
-
-
 	rowColRating   = 56,
 
-
-
-
 	rowColCrest    = 16,
-
-
-
-
 
 
 	rowColWhere    = 130,
@@ -1453,65 +1110,32 @@ local METRICS = {
 	rowColPair     = 184,
 	rowColKind     = 54,
 
-
-
-
-
 	rowColWhen     = 70,
-
-
 	rowColStamp    = 112,
 	rowColResult   = 60,
-
-
-
 
 	rowColRecord   = 44,
 
 
 
-
-
-
 	rowColFormat   = 136,
-
-
 
 	rowColSize     = 40,
 
-
-
 	lobbyRoundGap  = 2,
 	lobbyRunGap    = 12,
-
 	lobbyRoundPad  = 2,
-
-
-
-
 
 	lobbyRound     = 31,
 	lobbyFigure    = 25,
 	lobbySwing     = 42,
 
-
-
-
 	rowResultMark  = 2,
-
-
 
 	rowHeadRow     = 18,
 	rowExpandPad   = 6,
 
-
-
 	rowDayRow      = 26,
-
-
-
-
-
 
 
 
@@ -1529,12 +1153,7 @@ local METRICS = {
 	gridTickGap      = 2,
 	gridDot          = 3,
 
-
-
 	standingStrip  = 84,
-
-
-
 
 	standingPad       = 18,
 	standingLineGap   = 4,
@@ -1542,22 +1161,14 @@ local METRICS = {
 	standingStat      = 150,
 	standingCellFloor = 120,
 
-
-
 	standingBar    = 12,
 	standingBarGap = 2,
 	standingTrendInset = 10,
-
-
 	standingFigure = 108,
 	standingGap    = 18,
-
 	standingSquare = 12,
-
-
 	duelPanel      = 260,
 	duelPanelRow   = 38,
-
 
 
 
@@ -1565,55 +1176,31 @@ local METRICS = {
 
 
 
-
-
 	rowObjectiveMax = 2,
-
-
 
 	rosterHeadRow  = 16,
 	rosterHeadGap  = 3,
 
 
 
-
-
-
 	detailTextInset = 8,
 	detailBarInset  = 12,
 
-
-
-
-
-
 	detailRows     = 10,
-
-
 	detailCascade  = 26,
 	detailGap      = 8,
-
-
 
 	objectivesPad  = 8,
 	objectivesGap  = 5,
 
 	objectivesSide = 68,
 
-
-
 	objectivesCell = 88,
-
-
-
 
 	paceRow        = 12,
 	paceGap        = 3,
 	paceLabel      = 24,
 	paceValue      = 52,
-
-
-
 
 	compRow        = 26,
 
@@ -1622,28 +1209,17 @@ local METRICS = {
 	compRecord     = 48,
 
 
-
-
 	compGames      = 44,
-
-
 
 
 
 	compHeadRoom   = 0.85,
 
 
-
-
-
 	compPct        = 62,
-
-
 
 	compSwatch     = 8,
 	compChipGap    = 10,
-
-
 
 
 
@@ -1651,26 +1227,16 @@ local METRICS = {
 	cardLabelGap   = 4,
 	cardGap        = 8,
 
-
 	cardCaptionGap = 3,
 
-
 	cardHeadGap    = 8,
-
-
-
 
 	playerRow      = 34,
 	playerSection  = 22,
 	playerLane     = 3,
 	playerLaneGap  = 10,
-
 	playerColMet   = 40,
 	playerColSide  = 92,
-
-
-
-
 
 	standPad       = 8,
 	repBarHeight   = 10,
@@ -1679,19 +1245,12 @@ local METRICS = {
 	standTile      = 84,
 	repSwatch      = 8,
 
-
 	playerSearch   = 200,
-
 
 	repStepGap     = 3,
 
-
 	sideCardPad    = 6,
 	sideCardGap    = 8,
-
-
-
-
 
 	encRow         = 30,
 	encColMatch    = 44,
@@ -1700,71 +1259,44 @@ local METRICS = {
 	encColSide     = 78,
 	encColResult   = 52,
 	encColChange   = 50,
-
 	encColWhereWide = 180,
 	roundMark      = 10,
 	roundMarkHeight = 12,
 	roundMarkGap   = 3,
 
-
 	roundBox       = 40,
 	roundBoxHeight = 18,
 	roundBoxGap    = 4,
-
-
-
 
 	headingPad     = 4,
 	commentPad     = 4,
 
 
 
-
-
-
-
 	announceStripWidth     = 900,
-
-
 	announcePillEdge       = 4,
 	announcePillPadLeft    = 12,
 	announcePillPadRight   = 10,
 	announcePillPadY       = 5,
 	announcePillLine       = 20,
-
 	announcePillPartGap    = 7,
 	announcePillRowGap     = 4,
-
 	announceNoteMark       = 14,
 	announceTagHeight      = 16,
 	announceTagPad         = 5,
 	announceTagGap         = 4,
-
-
 	announcePillGap        = 6,
 	announceLabelGap       = 6,
 	announceStripLineGap   = 6,
 	announceSideGap        = 14,
-
-
 	announceSideRule       = 1,
 	announceSideRuleHeight = 26,
-
-
-
 
 	compShareBar   = 66,
 	compShareAlpha = 0.22,
 
 
-
-
-
-
 	compListGames  = 2,
-
-
-
 
 
 
@@ -1773,32 +1305,19 @@ local METRICS = {
 
 
 
-
-
 	lineHeight   = 13,
-
-
 
 	plotHeight   = 74,
 	stripGap     = 10,
-
-
-
 
 	readingRow      = 13,
 	readingPad      = 3,
 	readingKeyWidth = 92,
 	readingKeyGap   = 10,
 
-
-
 	readingGap      = 4,
 
-
-
 	plotNotePad  = 4,
-
-
 
 
 
@@ -1807,24 +1326,12 @@ local METRICS = {
 	titleActionDrop     = 6,
 
 
-
-
-
 	plotLabelDrop = 16,
-
-
 
 	plotCurveMin = 20,
 
 
-
-
-
 	plotPointMin = 3,
-
-
-
-
 
 
 
@@ -1832,23 +1339,13 @@ local METRICS = {
 	plotLabelPad = 5,
 	plotDotSize  = 5,
 
-
-
 	plotTickMax  = 4,
-
-
-
 
 
 
 	plotMmrAlpha = 0.3,
 
-
-
-
 	plotMmrThickness = 1.2,
-
-
 
 
 
@@ -1856,12 +1353,7 @@ local METRICS = {
 
 
 
-
-
-
 	tilePad      = 6,
-
-
 
 
 
@@ -1869,62 +1361,31 @@ local METRICS = {
 
 
 
-
 	headlineJoin = 6,
 	tileGap      = 20,
 
-
-
 	tileMinWidth = 44,
 
-
-
 	tileAsideGap   = 8,
-
-
-
-
 	tileTrendWidth = 108,
 	tileTrendFloor = 44,
-
-
-
-
 	tileAsideFloor = 36,
-
-
-
 	tileTrendBar   = 6,
-
 	tileTrendLine  = 1,
-
-
 	tileDoorMark   = 5,
-
 	tileEdgeLane   = 2,
 
 	opponentRow  = 14,
 
-
-
 	headlineGap  = 4,
 	stripPad     = 2,
-
-
 
 	tileLabelGap = 2,
 	tileValueGap = 1,
 
-
-
-
 	notesListWidth  = 400,
 
-
 	searchHeight    = 20,
-
-
-
 
 	tagBoxMin       = 90,
 
@@ -1932,52 +1393,28 @@ local METRICS = {
 	tagButton       = 18,
 	tagFooterHeight = 30,
 
-
-
 	controlHeight       = 20,
 
-
-
-
 	checkMarkInset      = 5,
-
-
 
 
 	entryInsetX         = 6,
 	entryInsetY         = 2,
 
-
-
-
 	optionsReadingKey   = 72,
-
-
 
 	storeWidth          = 560,
 
 	storeHeight         = 30 + 24 + 4 * 32 + 14 * 2,
-
-
 	storeRow            = 32,
 	storeDot            = 8,
-
-
 	storeNameInset      = 18,
 	storeReadingInset   = 90,
-
-
 
 	storeOffsetX        = 120,
 	storeOffsetY        = 80,
 
-
-
 	optionsRow          = 24,
-
-
-
-
 
 	cardHead            = 30,
 	cardRow             = 36,
@@ -1985,24 +1422,17 @@ local METRICS = {
 	cardIndent          = 16,
 	setCardGap          = 14,
 
-
 	toggleWidth         = 32,
 	toggleHeight        = 18,
 	toggleKnob          = 14,
 
-
 	findWidth           = 240,
 	paneHeader          = 34,
-
 
 	meterBar            = 10,
 	slotCard            = 62,
 
-
-
 	aboutIcon           = 64,
-
-
 	aboutLeft           = 340,
 	aboutPad            = 22,
 	aboutGap            = 14,
@@ -2011,56 +1441,37 @@ local METRICS = {
 	aboutBestRow        = 40,
 	aboutTile           = 72,
 	aboutTileGap        = 10,
-
-
 	aboutWeekChart      = 140,
 	aboutWeekGap        = 8,
 	aboutWeekMin        = 36,
-
-
 	aboutCharRow        = 28,
 	aboutCharName       = 150,
 	aboutCharCount      = 44,
 	aboutCharBar        = 6,
 	aboutFormatBar      = 12,
 
-
-
 	optionsNote         = 16,
-
 
 
 
 	optionsDot          = 8,
 	optionsDotGap       = 6,
 
-
-
 	transferWidth       = 560,
 	transferHeight      = 140,
 	sheetWidth          = 700,
 	sheetHeight         = 420,
 
-
-
 	transferButton      = 160,
 	sheetButton         = 200,
-
-
 
 	sectionGap          = 14,
 	sectionIndent       = 10,
 
-
-
 	pillPad             = 20,
 	pillMin             = 48,
 
-
-
-
 	actionMin           = 80,
-
 
 
 
@@ -2068,18 +1479,11 @@ local METRICS = {
 
 
 
-
-
-
 	stepMin             = 26,
 	stepFigure          = 44,
 
 
-
 	tabUnderline        = 2,
-
-
-
 
 
 
@@ -2089,10 +1493,7 @@ local METRICS = {
 	holdStandInMargin   = 100,
 
 
-
 	tabMin              = 56,
-
-
 
 
 
@@ -2106,11 +1507,7 @@ local METRICS = {
 
 	tabRowGap           = 2,
 
-
-
 	resultMin           = 56,
-
-
 
 	tagMin              = 36,
 	tagPad              = 16,
@@ -2121,20 +1518,12 @@ local METRICS = {
 
 
 
-
-
 	segmentHeight       = 16,
 	segmentTrackPad     = 2,
 	segmentGap          = 2,
 
-
-
 	segmentPad          = 18,
 	segmentMin          = 36,
-
-
-
-
 
 
 	nameCardWidth           = 300,
@@ -2144,7 +1533,6 @@ local METRICS = {
 	nameCardGap             = 8,
 	nameCardChipHeight      = 18,
 	nameCardChipPad         = 7,
-
 	nameCardChipInset       = 10,
 	nameCardTagPad          = 6,
 	nameCardTagGap          = 5,
@@ -2153,27 +1541,16 @@ local METRICS = {
 	nameCardTagHeight       = 16,
 	nameCardChipEdge        = 1,
 	nameCardEdge            = { blizzard = 2, flat = 1 },
-
 	nameCardDash            = 3,
 	nameCardDashGap         = 2,
 
-
-
 	finderPadX              = 12,
 	finderPadY              = 10,
-
 	finderGap               = 6,
-
 	finderColGap            = 12,
 
-
 	finderRowHeight         = 16,
-
-
 	finderGroupGap          = 4,
-
-
-
 	finderFormatWidth       = 96,
 	finderRatingWidth       = 36,
 	finderRecordWidth       = 40,
@@ -2183,17 +1560,9 @@ local METRICS = {
 
 
 
-
-
-
 METRICS.rowLeadInset = METRICS.rowResultMark + METRICS.rowCellGap - METRICS.rowLabelPad
 METRICS.rowColChip = METRICS.rowColChip + METRICS.rowLeadInset
 METRICS.rowColCrest = METRICS.rowColCrest + METRICS.rowLeadInset
-
-
-
-
-
 
 
 
@@ -2203,18 +1572,12 @@ local heldWidth = nil
 local widthPinned = false
 
 
-
-
-
 function A.windowWidth()
 	if heldWidth ~= nil then
 		return heldWidth
 	end
 	return METRICS.frameWidth
 end
-
-
-
 
 
 
@@ -2241,10 +1604,6 @@ function A.withWindowWidth(frame, fn, ...)
 end
 
 
-
-
-
-
 function A.bodyWidth(width)
 	if type(width) ~= "number" or width <= 0 then
 		width = A.windowWidth()
@@ -2254,17 +1613,9 @@ end
 
 
 
-
-
-
-
-
 function A.listSplitWidth()
 	return METRICS.listWidth
 end
-
-
-
 
 
 function A.paneWidth()
@@ -2272,17 +1623,9 @@ function A.paneWidth()
 end
 
 
-
-
-
-
-
 function A.rosterRowWidth()
 	local gap = METRICS.rowCellGap
-
 	local left = METRICS.classEdge + METRICS.rowNamePad + METRICS.rowName
-
-
 	local right = gap + METRICS.rowDispels
 		+ gap + METRICS.rowKb + gap + METRICS.rowHeal + gap + METRICS.rowBar
 		+ gap + METRICS.rowRole + gap + METRICS.rowSpec
@@ -2290,17 +1633,9 @@ function A.rosterRowWidth()
 end
 
 
-
-
-
-
 function A.askSplitWidth(width)
 	return math.floor((A.bodyWidth(width) - METRICS.paneSplitGap) / 2)
 end
-
-
-
-
 
 
 
@@ -2314,14 +1649,9 @@ function A.askPaneWidth(width)
 end
 
 
-
-
-
 function A.askTableWidth(width)
 	return A.askPaneWidth(width) - METRICS.rowLabelPad
 end
-
-
 
 
 
@@ -2334,14 +1664,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
 function A.askColumnShares(room)
 	if type(room) ~= "number" or room <= 0 then
 		room = A.askTableWidth()
@@ -2350,9 +1672,6 @@ function A.askColumnShares(room)
 	local met = math.floor(room / 10)
 	local record = math.floor(room * 2 / 5)
 	local rate = math.floor(room / 9)
-
-
-
 
 	local metFloor, recordFloor, rateFloor = 0, 0, 0
 	if type(A.askColumnFloors) == "function" then
@@ -2367,18 +1686,7 @@ end
 
 
 
-
-
-
-
-
-
 local ASK_SHARES = { askName = 1, askMet = 2, askRecord = 3, askRate = 4 }
-
-
-
-
-
 
 
 
@@ -2394,21 +1702,13 @@ function A.barSplit(bar, share)
 end
 
 
-
-
-
 function A.metric(name)
-
 	local share = ASK_SHARES[name]
 	if share ~= nil then
 		return (select(share, A.askColumnShares()))
 	end
 	return A.themeMetric(name, A.theme())
 end
-
-
-
-
 
 
 
@@ -2434,8 +1734,6 @@ end
 
 
 
-
-
 function A.fontSize(role)
 	local spec = ROLES[role]
 	local scale = spec and SIZES[spec.scale]
@@ -2446,10 +1744,6 @@ function A.fontSize(role)
 end
 
 
-
-
-
-
 function A.tileHeight()
 	return A.metric("tilePad") * 2
 		+ A.fontSize("label") + A.metric("tileLabelGap")
@@ -2457,15 +1751,9 @@ function A.tileHeight()
 end
 
 
-
 function A.noteRowHeight()
 	return A.fontSize("note") + A.metric("plotNotePad")
 end
-
-
-
-
-
 
 
 function A.readingHeight(lines, collapsed)
@@ -2481,20 +1769,9 @@ end
 
 
 
-
-
-
-
-
 function A.readingReserve()
 	return A.readingHeight(4)
 end
-
-
-
-
-
-
 
 
 
@@ -2508,14 +1785,9 @@ function A.readingRoom(headline)
 end
 
 
-
 function A.plotFoot()
 	return A.fontSize("note") + 4
 end
-
-
-
-
 
 
 function A.plotFoldHeight()
@@ -2527,22 +1799,9 @@ function A.plotFoldHeight()
 end
 
 
-
-
-
-
-
-
 function A.plotCeiling()
 	return A.metric("plotHeight") + A.readingReserve()
 end
-
-
-
-
-
-
-
 
 
 function A.plotFloor()
@@ -2554,11 +1813,6 @@ function A.plotFloor()
 	end
 	return A.metric("plotLabelDrop") + curve + A.plotFoot()
 end
-
-
-
-
-
 
 
 
@@ -2577,18 +1831,7 @@ function A.plotTicks(height)
 end
 
 
-
-
-
-
-
 local COMP_NOTE_LINES = 2
-
-
-
-
-
-
 
 
 
@@ -2597,8 +1840,6 @@ function A.compPaneStack(opts)
 	local drawsTable = opts.table ~= false
 
 	local out = {}
-
-
 	out.heading = 2 + A.fontSize("label")
 	out.compHead = 4 + A.fontSize("label") + 6
 	out.note = 6 + (opts.note == false and 0 or COMP_NOTE_LINES * A.fontSize("note"))
@@ -2606,22 +1847,13 @@ function A.compPaneStack(opts)
 	out.group = (drawsTable and opts.group == true) and (4 + A.fontSize("label") + 4) or 0
 
 
-
 	out.paneHead = drawsTable and (A.metric("rowHeadRow") + (opts.group == true and 0 or 4)) or 0
-
-
 	out.row = drawsTable and A.metric("rowHeight") or 0
 
 	out.above = out.heading + out.compHead + 2
 	out.below = out.note + out.group + out.paneHead + out.row
 	return out
 end
-
-
-
-
-
-
 
 
 
@@ -2633,15 +1865,12 @@ function A.compBandRoom(host, opts)
 		return floor, stack
 	end
 
-
-
 	local wanted = (type(opts.wanted) == "number" and opts.wanted > 0) and opts.wanted or nil
 	local below = stack.below
 	if wanted ~= nil and opts.table ~= false then
 		below = below - stack.row + wanted
 	end
 	local room = host - stack.above - below
-
 
 	if opts.table ~= false and wanted == nil then
 		local share = math.floor(host * 0.5)
@@ -2654,15 +1883,6 @@ function A.compBandRoom(host, opts)
 	end
 	return room, stack
 end
-
-
-
-
-
-
-
-
-
 
 
 
@@ -2692,31 +1912,14 @@ function A.compColumnTop(parts)
 end
 
 
-
-
-
-
-
-
-
 function A.specViewStack(parts)
 	parts = type(parts) == "table" and parts or {}
 	local function held(value)
 		return (type(value) == "number" and value > 0) and value or 0
 	end
 	local foot = held(parts.foot)
-
 	return 2 + held(parts.heading), foot > 0 and (foot + A.metric("paneGap")) or 0
 end
-
-
-
-
-
-
-
-
-
 
 
 
@@ -2738,13 +1941,6 @@ end
 
 
 
-
-
-
-
-
-
-
 function A.askBandRoom(host, parts)
 	parts = type(parts) == "table" and parts or {}
 	local function held(value)
@@ -2754,8 +1950,6 @@ function A.askBandRoom(host, parts)
 	if type(host) ~= "number" or host <= 0 or wanted <= 0 then
 		return 0
 	end
-
-
 
 	local spare = host - 2 - held(parts.heading) - 4 - held(parts.head)
 		- METRICS.paneGap - held(parts.note) - METRICS.paneGap - METRICS.rowHeight
@@ -2767,7 +1961,6 @@ function A.askBandRoom(host, parts)
 	if spare < room then
 		room = spare
 	end
-
 
 	if type(parts.beside) == "number" and parts.beside > 0 then
 		local under = host - parts.beside - METRICS.paneGap - held(parts.note) - METRICS.paneGap
@@ -2782,17 +1975,9 @@ function A.askBandRoom(host, parts)
 end
 
 
-
-
-
-
-
 function A.windowFootBand()
 	return METRICS.paneGap + A.fontSize("rowNote")
 end
-
-
-
 
 
 function A.windowFootRuleY()
@@ -2800,15 +1985,9 @@ function A.windowFootRuleY()
 end
 
 
-
 function A.bodyFloor()
 	return METRICS.margin + A.windowFootBand()
 end
-
-
-
-
-
 
 
 
@@ -2822,11 +2001,6 @@ function A.viewportRows(room, extent)
 	end
 	return rows, rows * extent
 end
-
-
-
-
-
 
 
 function A.linesOver(lines, room)
@@ -2855,7 +2029,6 @@ end
 local EDGE_SLACK = 0.5
 
 
-
 local function rowTops(rows, base)
 	local tops, held = {}, 0
 	for i = 1, (type(rows) == "table" and #rows or 0) do
@@ -2868,7 +2041,6 @@ local function rowTops(rows, base)
 	end
 	return tops, held
 end
-
 
 
 
@@ -2892,14 +2064,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
 function A.rowEdges(rows, offset, visible, base, pin, cut)
 	base = (type(base) == "number" and base > 0) and base or 1
 	pin = (type(pin) == "number" and pin > 0) and pin or 0
@@ -2918,8 +2082,6 @@ function A.rowEdges(rows, offset, visible, base, pin, cut)
 	if offset < 0 then
 		offset = 0
 	end
-
-
 
 	local function target(i)
 		if pin > 0 and days[i] ~= nil and days[i] ~= i then
@@ -2954,9 +2116,6 @@ function A.rowEdges(rows, offset, visible, base, pin, cut)
 			out.snap = best
 		end
 	end
-
-
-
 
 
 
@@ -3012,7 +2171,6 @@ function A.rowEdges(rows, offset, visible, base, pin, cut)
 	end
 
 
-
 	while out.last ~= nil and out.first ~= nil and out.last >= out.first
 		and type(rows[out.last]) == "table" and rows[out.last].separator do
 		out.last = out.last - 1
@@ -3022,12 +2180,6 @@ function A.rowEdges(rows, offset, visible, base, pin, cut)
 	end
 	return out
 end
-
-
-
-
-
-
 
 
 
@@ -3052,10 +2204,6 @@ end
 
 
 
-
-
-
-
 function A.rowStep(rows, offset, visible, base, steps, pin)
 	base = (type(base) == "number" and base > 0) and base or 1
 	pin = (type(pin) == "number" and pin > 0) and pin or 0
@@ -3071,15 +2219,9 @@ function A.rowStep(rows, offset, visible, base, steps, pin)
 
 
 
-
-
-
-
-
 	local edges = A.rowEdges(rows, offset, visible, base, pin)
 	local from = edges.first
 	if from == nil then
-
 		from = A.rowEdges(rows, offset, visible, base, pin, true).first or 1
 		if steps < 0 then
 			from = from + 1
@@ -3088,8 +2230,6 @@ function A.rowStep(rows, offset, visible, base, steps, pin)
 	if offset < 0 then
 		offset = 0
 	end
-
-
 
 	local function landing(i)
 		local row = type(rows[i]) == "table" and rows[i] or {}
@@ -3102,7 +2242,6 @@ function A.rowStep(rows, offset, visible, base, steps, pin)
 		end
 		return tops[i]
 	end
-
 
 
 
@@ -3128,25 +2267,14 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
 function A.unitFigure(value)
 	if type(value) ~= "number" then
 		return nil
 	end
 
-
 	if value ~= value or value == math.huge or value == -math.huge then
 		return nil
 	end
-
 
 	local scaled = value * 100
 	if scaled < 0 then
@@ -3154,9 +2282,6 @@ function A.unitFigure(value)
 	end
 	return math.floor(scaled + 0.5) / 100
 end
-
-
-
 
 
 
@@ -3171,15 +2296,11 @@ function A.stripHeight(headline)
 end
 
 
-
 function A.objectivesHeight()
 	return A.metric("objectivesPad") * 2
 		+ A.fontSize("label") + A.metric("objectivesGap")
 		+ (A.fontSize("numberSmall") + A.metric("objectivesGap")) * 2
 end
-
-
-
 
 
 function A.paceHeight(rounds)
@@ -3190,9 +2311,6 @@ function A.paceHeight(rounds)
 		+ A.fontSize("label") + A.metric("objectivesGap")
 		+ rounds * A.metric("paceRow") + (rounds - 1) * A.metric("paceGap")
 end
-
-
-
 
 
 
@@ -3212,12 +2330,7 @@ end
 
 
 
-
-
-
 function A.headHeight()
-
-
 	local tallest = A.fontSize("heading")
 	for _, role in ipairs({ "headingLarge", "number" }) do
 		if A.fontSize(role) > tallest then
@@ -3228,17 +2341,9 @@ function A.headHeight()
 end
 
 
-
 function A.headSubHeight()
 	return A.fontSize("heading") + A.metric("headPad") * 2
 end
-
-
-
-
-
-
-
 
 
 
@@ -3258,11 +2363,6 @@ local TITLE_SUBLEVEL = 7
 
 
 
-
-
-
-
-
 function A.windowTitle(frame)
 	local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
 	title:SetDrawLayer("OVERLAY", TITLE_SUBLEVEL)
@@ -3270,10 +2370,7 @@ function A.windowTitle(frame)
 end
 
 
-
-
 local chromed = {}
-
 
 
 local function ensureTextures(frame)
@@ -3311,8 +2408,6 @@ end
 
 
 
-
-
 function A.registerChrome(frame)
 	if type(frame) ~= "table" then
 		return false
@@ -3332,11 +2427,7 @@ end
 
 
 
-
-
-
 function A.applyChrome()
-
 
 	if #chromed == 0 then
 		return false

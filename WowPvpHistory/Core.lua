@@ -11,26 +11,9 @@
 
 
 
-
-
-
-
-
-
-
-
-
-
-
 local ADDON, A = ...
 
 A.name = ADDON
-
-
-
-
-
-
 
 
 
@@ -49,20 +32,14 @@ end
 A.version = readField("Version")
 
 
-
-
 A.license = readField("X-License")
 A.website = readField("X-Website")
-
-
 
 
 A.debugDefault = readField("X-Debug-Default") == "on"
 
 
-
 A.description = readField("Notes")
-
 
 
 A.ICON_TEXTURE = "Interface\\AddOns\\WowPvpHistory\\textures\\minimap"
@@ -72,40 +49,14 @@ A.ICON_TEXTURE = "Interface\\AddOns\\WowPvpHistory\\textures\\minimap"
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 A.schema = 3
-
-
 
 
 A.ROUND_MATES = 2
 
 
 
-
-
-
-
-
-
-
 A.FIXTURE_KEY = "fixture"
-
-
-
-
 
 
 
@@ -119,20 +70,12 @@ local issecret = issecretvalue
 A.guard = (canaccess and "canaccessvalue") or (issecret and "issecretvalue") or "none"
 
 
-
 function A.index(tbl, key)
 	return tbl[key]
 end
 
 
-
-
-
-
-
-
 function A.canRead(value)
-
 
 	if type(value) == "nil" then
 		return false
@@ -160,12 +103,7 @@ end
 
 
 
-
-
-
-
 local db
-
 
 
 local sandbox
@@ -180,15 +118,6 @@ function A.sandboxed()
 end
 
 
-
-
-
-
-
-
-
-
-
 local function deepCopy(value)
 	if type(value) ~= "table" then
 		return value
@@ -199,22 +128,6 @@ local function deepCopy(value)
 	end
 	return copy
 end
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -243,6 +156,9 @@ function A.storeReplaced()
 	end
 end
 
+
+
+
 function A.startSandbox()
 	local ui = deepCopy(type(db) == "table" and type(db.ui) == "table" and db.ui or {})
 	sandbox = {
@@ -257,9 +173,6 @@ end
 
 
 
-
-
-
 function A.endSandbox()
 	local was = sandbox ~= nil
 	sandbox = nil
@@ -270,26 +183,9 @@ function A.endSandbox()
 end
 
 
-
 function A.savedDB()
 	return db
 end
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -330,8 +226,6 @@ end
 
 
 
-
-
 function A.matchIdRank(id)
 	if type(id) == "number" then
 		return 1, id
@@ -346,23 +240,7 @@ function A.matchIdRank(id)
 end
 
 
-
-
-
-
 local onDiskAtLoad = setmetatable({}, { __mode = "k" })
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -380,14 +258,7 @@ function A.pendingMatches()
 end
 
 
-
 local MAX_DROP_EVENTS = 50
-
-
-
-
-
-
 
 
 
@@ -404,10 +275,6 @@ function A.dropContext(record, extra)
 			context.format = record.surface.format
 		end
 
-
-
-
-
 		if record.fallback and record.fallback.kept then
 			context.fallbackRows = record.fallback.kept
 		end
@@ -419,23 +286,10 @@ function A.dropContext(record, extra)
 end
 
 
-
-
-
-
-
-
-
-
-
-
-
 function A.drop(reason, context)
 	if not db then
 		return
 	end
-
-
 
 	local counters = db.dropped
 	if type(counters) == "table" then
@@ -446,7 +300,6 @@ function A.drop(reason, context)
 	end
 
 	local event = { reason = reason }
-
 
 
 
@@ -461,30 +314,16 @@ function A.drop(reason, context)
 
 
 
-
-
-
-
 	local events = db.dropEvents
 	local evicted
 	if type(events) == "table" then
 		events[#events + 1] = event
-
 
 		if #events > MAX_DROP_EVENTS then
 			table.remove(events, 1)
 			evicted = true
 		end
 	end
-
-
-
-
-
-
-
-
-
 
 
 
@@ -504,45 +343,21 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 local MAX_INCOMPLETE = 200
-
-
-
-
 
 
 function A.noteIncomplete(reason, record)
 	if not db then
 
-
-
 		return nil
 	end
 	if type(record) ~= "table" then
-
-
-
 
 		A.trace("incomplete", { source = reason, reason = "no-record" })
 		return nil
 	end
 
 	local entry = { reason = reason }
-
 
 
 	if type(db.nextIncompleteId) == "number" then
@@ -560,20 +375,10 @@ function A.noteIncomplete(reason, record)
 	entry.rounds = record.rounds and #record.rounds or 0
 
 
-
-
-
-
-
-
-
-
-
 	local guid = A.ownGuid()
 	if guid ~= nil then
 		entry.character = guid
 	end
-
 
 
 	if record.openRated ~= nil then
@@ -584,12 +389,9 @@ function A.noteIncomplete(reason, record)
 	end
 
 
-
 	if type(record.liveFormat) == "string" then
 		entry.surfaceFormat = record.liveFormat
 	end
-
-
 
 
 	if reason == "left" and type(record.openedEpoch) == "number" then
@@ -598,27 +400,17 @@ function A.noteIncomplete(reason, record)
 
 	local list = db.incomplete
 
-
 	if type(list) ~= "table" then
 		A.trace("incomplete", { source = reason, reason = "no-list" })
 		return nil
 	end
 	list[#list + 1] = entry
 
-
-
 	local evicted
 	if #list > MAX_INCOMPLETE then
 		table.remove(list, 1)
 		evicted = true
 	end
-
-
-
-
-
-
-
 
 
 	A.trace("incomplete", {
@@ -633,13 +425,6 @@ function A.noteIncomplete(reason, record)
 
 	return entry
 end
-
-
-
-
-
-
-
 
 
 
@@ -665,10 +450,6 @@ local function initDB()
 
 
 
-
-
-
-
 	if type(db.schema) ~= "number" or db.schema < A.schema then
 		db.schema = A.schema
 	end
@@ -683,49 +464,21 @@ local function initDB()
 	db.nextMatchId = db.nextMatchId or 1
 
 
-
 	db.nextFixtureId = db.nextFixtureId or 1
 	db.dropped = db.dropped or {}
 	db.dropEvents = db.dropEvents or {}
-
-
-
 	db.incomplete = db.incomplete or {}
-
 
 	if db.nextIncompleteId == nil then
 		db.nextIncompleteId = A.assignIncompleteIds(db.incomplete)
 	end
 
 
-
-
-
-
-
 	db.players = db.players or {}
-
-
-
-
-
-
-
-
-
-
 
 
 	db.ui = db.ui or {}
 end
-
-
-
-
-
-
-
-
 
 
 
@@ -748,16 +501,6 @@ function A.joinSentences(parts)
 	end
 	return table.concat(kept, " ")
 end
-
-
-
-
-
-
-
-
-
-
 
 
 function A.joinAnd(parts)
@@ -783,40 +526,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 function A.say(msg, register)
 	local prefix = A.chatPrefix and A.chatPrefix() or "|cff00ff00PvPHistory:|r "
 	local text = tostring(msg)
@@ -837,12 +546,6 @@ function A.stamp()
 end
 
 
-
-
-
-
-
-
 function A.stampAt(epoch)
 	if type(epoch) ~= "number" then
 		return nil
@@ -853,11 +556,6 @@ function A.stampAt(epoch)
 	end
 	return nil
 end
-
-
-
-
-
 
 
 
@@ -880,14 +578,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
 function A.recordEpoch(record)
 	if type(record) ~= "table" then
 		return nil
@@ -903,10 +593,6 @@ end
 
 
 
-
-
-
-
 function A.recordSince(record, bound)
 	if bound == nil then
 		return true
@@ -914,19 +600,6 @@ function A.recordSince(record, bound)
 	local at = A.recordEpoch(record)
 	return at ~= nil and at >= bound
 end
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -943,7 +616,6 @@ function A.lastErrorState(store)
 	local held = type(store) == "table" and store.lastError or nil
 	if held ~= nil then
 		local state = { text = tostring(held), when = store.lastErrorAt, fromRing = false }
-
 
 
 		if ring and ring.rep > 1 and state.when ~= nil and ring.closedAt == state.when then
@@ -966,8 +638,6 @@ function A.lastErrorState(store)
 end
 
 
-
-
 function A.lastErrorWhen(state)
 	if type(state) ~= "table" then
 		return nil
@@ -981,16 +651,11 @@ function A.lastErrorWhen(state)
 end
 
 
-
-
-
-
 function A.lastErrorLines(store)
 	local state = A.lastErrorState(store)
 	if not state then
 		return nil
 	end
-
 
 	local forget = state.fromRing
 		and "/pvph debug clear error forgets it"
@@ -1004,29 +669,7 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 function A.noteError(err, where, handed)
-
-
-
-
-
-
-
 
 
 	pcall(A.trace, "error", { err = err, source = where, handed = handed }, "error")
@@ -1042,24 +685,15 @@ function A.noteError(err, where, handed)
 end
 
 
-
-
-
 function A.clearError()
 	if not db then
 		return nil
 	end
-
-
 	local held, at = db.lastError, db.lastErrorAt
 	db.lastError = nil
 	db.lastErrorAt = nil
 	return held, at
 end
-
-
-
-
 
 
 
@@ -1085,16 +719,8 @@ frame:SetScript("OnEvent", function(_, event, ...)
 	end
 	for i = 1, #list do
 
-
 		local ok, err = pcall(list[i], event, ...)
 		if not ok then
-
-
-
-
-
-
-
 
 
 			local read, context = pcall(A.dropContext, db and db.active)
@@ -1103,17 +729,11 @@ frame:SetScript("OnEvent", function(_, event, ...)
 			end
 			A.drop("handler-error", context)
 
-
-
-
-
 			A.noteError(err, tostring(event))
 			A.say("handler error on " .. tostring(event) .. ": " .. tostring(err))
 		end
 	end
 end)
-
-
 
 
 
@@ -1163,8 +783,6 @@ end
 
 
 
-
-
 function A.selfFaction()
 	if type(GetBattlefieldArenaFaction) ~= "function" then
 		return nil
@@ -1180,16 +798,9 @@ end
 local FACTION_INDEX = { Horde = 0, Alliance = 1 }
 
 
-
-
-
-
-
-
 function A.playerFaction()
 	return A.unitFaction("player")
 end
-
 
 
 
@@ -1203,10 +814,6 @@ function A.unitFaction(token)
 	end
 	return FACTION_INDEX[group]
 end
-
-
-
-
 
 
 function A.ownGuid()
@@ -1225,19 +832,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 function A.isOwnCharacter(guid)
 	if type(guid) ~= "string" or not A.canRead(guid) or guid == "" then
 		return false
@@ -1247,34 +841,12 @@ function A.isOwnCharacter(guid)
 	end
 
 
-
 	local store = A.db()
 	if not store or type(store.characters) ~= "table" then
 		return false
 	end
 	return store.characters[guid] ~= nil
 end
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -1289,14 +861,6 @@ function A.isBotGuid(guid)
 	end
 	return fields > 3
 end
-
-
-
-
-
-
-
-
 
 
 
@@ -1315,12 +879,6 @@ function A.botCount(entries)
 end
 
 
-
-
-
-
-
-
 function A.ownRealm()
 	if type(GetNormalizedRealmName) ~= "function" then
 		return nil
@@ -1331,9 +889,6 @@ function A.ownRealm()
 	end
 	return nil
 end
-
-
-
 
 
 
@@ -1352,18 +907,6 @@ function A.pvpRestriction()
 	end
 	return nil
 end
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -1388,11 +931,8 @@ function A.pvpRestricted()
 end
 
 
-
 A.on("ADDON_LOADED", function(_, name)
 	if name == ADDON then
-
-
 		initDB()
 	end
 end)

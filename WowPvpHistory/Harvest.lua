@@ -4,26 +4,7 @@
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 local ADDON, A = ...
-
-
 
 
 
@@ -32,9 +13,6 @@ local GetNumBattlefieldScores = GetNumBattlefieldScores
 local SetBattlefieldScoreFaction = SetBattlefieldScoreFaction
 local RequestBattlefieldScoreData = RequestBattlefieldScoreData
 local GetTimePreciseSec = GetTimePreciseSec
-
-
-
 
 
 
@@ -47,34 +25,10 @@ local MAX_ATTEMPTS = 4
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 local STASH_READ = 1
 
 
-
-
-
-
 local STASH_ATTEMPT = 0
-
-
-
-
 
 
 
@@ -85,7 +39,6 @@ local ROW_FIELDS = {
 	{ "className", "class" },
 	{ "classToken", "classToken" },
 	{ "talentSpec", "spec" },
-
 
 
 	{ "roleAssigned", "role" },
@@ -109,14 +62,6 @@ local COLUMN_FIELDS = {
 	{ "name", "name" },
 	{ "orderIndex", "order" },
 }
-
-
-
-
-
-
-
-
 
 
 
@@ -162,18 +107,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
 local function readRow(index)
 	local ok, row = pcall(C_PvP.GetScoreInfo, index)
 	if not ok or type(row) ~= "table" then
@@ -204,10 +137,6 @@ local function readRow(index)
 
 	return guid, participant
 end
-
-
-
-
 
 
 local function readColumns()
@@ -258,9 +187,6 @@ end
 
 
 
-
-
-
 local function readMap()
 	local map = {}
 	local located = pcall(function()
@@ -274,10 +200,6 @@ local function readMap()
 	end
 	return nil
 end
-
-
-
-
 
 
 
@@ -298,17 +220,12 @@ end
 
 
 
-
-
 local RATED_LADDER = {
 	{ "IsRatedSoloShuffle", "shuffle" },
 	{ "IsRatedSoloRBG", "blitz" },
 	{ "IsRatedBattleground", "rbg" },
 	{ "IsRatedArena", ratedArenaFormat },
 }
-
-
-
 
 
 local UNRATED_LADDER = {
@@ -321,10 +238,6 @@ local UNRATED_LADDER = {
 
 
 
-
-
-
-
 local function arenaOnBattlegroundMap(name, instanceType)
 	return name == "IsArena" and instanceType == "pvp"
 end
@@ -332,14 +245,8 @@ A.arenaOnBattlegroundMap = arenaOnBattlegroundMap
 
 
 
-
-
-
-
-
 local function walk(ladder, instanceType)
 	for i = 1, #ladder do
-
 
 		local name, answer = ladder[i][1], ladder[i][2]
 		if not arenaOnBattlegroundMap(name, instanceType) and A.pvpCall(name) == true then
@@ -356,21 +263,8 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
-
 local function classify(rated, instanceType)
 	if rated == true then
-
-
 
 		return walk(RATED_LADDER, instanceType) or "unknown"
 	end
@@ -382,13 +276,6 @@ end
 
 
 
-
-
-
-
-
-
-
 local function ratedFlag()
 	local value = A.pvpCall("DoesMatchOutcomeAffectRating")
 	if not A.canRead(value) then
@@ -396,20 +283,6 @@ local function ratedFlag()
 	end
 	return value
 end
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -428,7 +301,6 @@ local function surfaceSample()
 	end
 	local rated = ratedFlag()
 
-
 	local map = readMap()
 	return { bracket = bracket, rated = rated, format = classify(rated, map and map.instanceType) },
 		nil, bracket
@@ -437,14 +309,6 @@ end
 function A.readMatchSurface()
 	return (surfaceSample())
 end
-
-
-
-
-
-
-
-
 
 
 
@@ -466,19 +330,7 @@ end
 
 
 
-
-
 local NO_WINNER = 4294967295
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -493,24 +345,11 @@ end
 
 
 
-
-
-
 function A.requestScores()
 	if type(RequestBattlefieldScoreData) == "function" then
 		pcall(RequestBattlefieldScoreData)
 	end
 end
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -527,12 +366,7 @@ local function precise()
 end
 
 
-
 A.precise = precise
-
-
-
-
 
 
 local function sinceComplete(record)
@@ -545,25 +379,12 @@ end
 
 
 
-
-
-
-
-
-
-
-
 A.readMap = readMap
 A.ratedFlag = ratedFlag
 
 
 
-
-
-
-
 local function sweep()
-
 
 	if type(SetBattlefieldScoreFaction) == "function" then
 		pcall(SetBattlefieldScoreFaction, -1)
@@ -572,13 +393,10 @@ local function sweep()
 	local ok, rows = pcall(GetNumBattlefieldScores)
 	if not ok or type(rows) ~= "number" then
 
-
 		return nil, 0, nil, {}
 	end
 
 	local participants, kept = {}, 0
-
-
 	local refused = {}
 	for i = 1, rows do
 		local guid, participant, why = readRow(i)
@@ -592,36 +410,6 @@ local function sweep()
 
 	return participants, kept, rows, refused
 end
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -673,26 +461,9 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 function A.readRoundBoundary(final)
 	local guids, own = A.groupGuids()
 	local size = (type(guids) == "table") and #guids or 0
-
-
 
 
 	local mates, reason
@@ -711,7 +482,6 @@ function A.readRoundBoundary(final)
 			mates, reason = nil, "group-size"
 		else
 
-
 			table.sort(mates)
 		end
 	end
@@ -725,25 +495,11 @@ end
 
 
 
-
-
 local ROUND_WINS_WIDGET = 4457
 
 
 
 local ROUND_WINS_STATE_CEILING = 3
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -796,16 +552,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
 local function assignSeats(participants)
 	local guids = {}
 	for guid in pairs(participants) do
@@ -818,14 +564,6 @@ local function assignSeats(participants)
 	end
 	return guids
 end
-
-
-
-
-
-
-
-
 
 
 
@@ -879,27 +617,17 @@ local function resolveRounds(record, participants)
 
 
 
-
-
-
-
-
-
 	local last = rounds[#rounds]
 	if type(last) == "table" and last.ratingPost == nil and type(own) == "table"
 		and not A.ladderSilent(own) and type(own.rating) == "number"
 		and type(own.ratingChange) == "number" then
 
-
 		last.ratingPost = own.rating + own.ratingChange
 	end
 
 
-
 	return #rounds, filled, lost
 end
-
-
 
 
 
@@ -914,27 +642,11 @@ end
 
 
 
-
-
-
-
-
-
-
 local function store(record, participants, kept, rows, attempt, readSeconds, readAt, stash, superseded)
 	local db = A.db()
 
 	record.participants = participants
 	record.participantCount = kept
-
-
-
-
-
-
-
-
-
 
 
 
@@ -964,12 +676,8 @@ local function store(record, participants, kept, rows, attempt, readSeconds, rea
 		A.put(record, "rated", surface.rated)
 	else
 
-
-
 		record.format = "unknown"
 	end
-
-
 
 
 	A.trace("classify", {
@@ -978,7 +686,6 @@ local function store(record, participants, kept, rows, attempt, readSeconds, rea
 		rated = record.rated,
 		bracket = record.bracket,
 	})
-
 
 
 	if type(UnitGUID) == "function" then
@@ -990,17 +697,11 @@ local function store(record, participants, kept, rows, attempt, readSeconds, rea
 
 
 
-
-
-
-
 	local okRounds, roundCount, roundsKept, roundsLost = pcall(resolveRounds, record, participants)
 	if not okRounds then
 		A.noteError(roundCount, "harvest.rounds")
 		roundCount = nil
 	end
-
-
 
 
 	if A.meterResolveRounds then
@@ -1022,27 +723,12 @@ local function store(record, participants, kept, rows, attempt, readSeconds, rea
 
 
 
-
-
-
-
-
-
-
-
-
-
 	if live and A.put(record, "winnerFaction", A.readMatchWinner()) then
 		record.winnerReadAt = sinceComplete(record)
 	end
 	if record.selfFaction == nil and not superseded then
 		A.put(record, "selfFaction", A.selfFaction())
 	end
-
-
-
-
-
 
 
 
@@ -1065,13 +751,6 @@ local function store(record, participants, kept, rows, attempt, readSeconds, rea
 
 
 
-
-
-
-
-
-
-
 	local result = record.result
 	local own = record.character ~= nil and type(record.participants) == "table"
 		and record.participants[record.character] or nil
@@ -1087,8 +766,6 @@ local function store(record, participants, kept, rows, attempt, readSeconds, rea
 
 
 
-
-
 	local columns = stash and stash.columns
 	if columns == nil and not superseded then
 		columns = readColumns()
@@ -1096,10 +773,6 @@ local function store(record, participants, kept, rows, attempt, readSeconds, rea
 	if columns then
 		record.columns = columns
 	end
-
-
-
-
 
 
 
@@ -1115,13 +788,8 @@ local function store(record, participants, kept, rows, attempt, readSeconds, rea
 
 	if record.openedEpoch and record.completedEpoch then
 
-
-
 		record.duration = record.completedEpoch - record.openedEpoch
 	end
-
-
-
 
 
 	local version, build = GetBuildInfo()
@@ -1134,36 +802,13 @@ local function store(record, participants, kept, rows, attempt, readSeconds, rea
 		attempts = attempt,
 		rows = rows,
 
-
-
-
 		readSeconds = readSeconds,
-
-
-
-
-
-
-
 
 
 
 		readAt = readAt,
 
-
-
-
-
-
-
-
-
-
-
-
 		winnerAt = record.winnerReadAt,
-
-
 
 
 		matchSurface = source,
@@ -1176,28 +821,18 @@ local function store(record, participants, kept, rows, attempt, readSeconds, rea
 	record.harvesting = nil
 	record.state = nil
 
-
-
 	local scheduler = record.harvestSource
 	record.harvestSource = nil
 
 	record.surface = nil
-
-
 	record.openRated = nil
 	record.openMap = nil
-
-
 	record.liveFormat = nil
 	record.liveFormatState = nil
 
-
-
 	local completedPrecise = record.completedPrecise
 	record.completedPrecise = nil
-
 	record.winnerReadAt = nil
-
 
 	record.fallback = nil
 
@@ -1206,34 +841,7 @@ local function store(record, participants, kept, rows, attempt, readSeconds, rea
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 	if source == "absent" then
-
 
 		local bots, roster = 0, 0
 		for guid in pairs(record.participants or {}) do
@@ -1244,9 +852,6 @@ local function store(record, participants, kept, rows, attempt, readSeconds, rea
 		end
 
 		if bots > 0 then
-
-
-
 			A.drop("bot-roster", A.dropContext(record, {
 				map = record.map and record.map.name,
 				instanceType = record.map and record.map.instanceType,
@@ -1281,11 +886,8 @@ local function store(record, participants, kept, rows, attempt, readSeconds, rea
 		attempt = attempt,
 		format = record.format,
 
-
-
 		source = scheduler,
 	})
-
 
 
 	if A.perfStored then
@@ -1296,15 +898,12 @@ local function store(record, participants, kept, rows, attempt, readSeconds, rea
 	end
 
 
-
-
 	if A.meterAttach then
 		local armed, err = pcall(A.meterAttach, record, completedPrecise, superseded)
 		if not armed then
 			A.noteError(err, "harvest.meter-attach")
 		end
 	end
-
 
 
 	if A.finderRecordStored then
@@ -1315,7 +914,6 @@ local function store(record, participants, kept, rows, attempt, readSeconds, rea
 	end
 
 
-
 	if A.overlayRecordStored then
 		local repainted, err = pcall(A.overlayRecordStored)
 		if not repainted then
@@ -1324,14 +922,10 @@ local function store(record, participants, kept, rows, attempt, readSeconds, rea
 	end
 
 
-
-
 	local knownOk, knownClause = pcall(A.matchKnownClause, record)
 	if not knownOk then
 		knownClause = nil
 	end
-
-
 
 
 
@@ -1343,11 +937,7 @@ local function store(record, participants, kept, rows, attempt, readSeconds, rea
 	end
 
 
-
-
 	A.trace("index", { n = indexed and folded or nil, id = record.id })
-
-
 
 
 
@@ -1357,28 +947,7 @@ local function store(record, participants, kept, rows, attempt, readSeconds, rea
 	end
 
 
-
-
-
-
-
 	pcall(A.noteCanary)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -1410,8 +979,6 @@ local function store(record, participants, kept, rows, attempt, readSeconds, rea
 	end
 
 
-
-
 	local heldOk, heldErr = pcall(A.holdAfterMatch, record.id)
 	if not heldOk then
 		A.noteError(heldErr, "after-match")
@@ -1421,23 +988,8 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 function A.storeFallback(record, attempt, superseded)
 	local fallback = record.fallback
-
-
 
 	if not (fallback and type(fallback.kept) == "number" and fallback.kept > 0) then
 		return false
@@ -1456,11 +1008,6 @@ function A.storeFallback(record, attempt, superseded)
 		STASH_ATTEMPT, fallback.readSeconds, fallback.readAt, fallback, superseded)
 	return true
 end
-
-
-
-
-
 
 
 
@@ -1502,8 +1049,6 @@ local function runHarvest(record, attempt)
 	end
 
 
-
-
 	local startedAt = precise()
 	local participants, kept, rows, refused = sweep()
 	local finishedAt = precise()
@@ -1514,26 +1059,13 @@ local function runHarvest(record, attempt)
 	end
 
 
-
-
 	local readAt
 	if startedAt and type(record.completedPrecise) == "number" then
 		readAt = startedAt - record.completedPrecise
 	end
 
 
-
-
-
 	A.trace("harvest", { attempt = attempt, rows = rows, kept = kept, off = readAt })
-
-
-
-
-
-
-
-
 
 
 	if type(rows) == "number" and kept < rows and next(refused) ~= nil then
@@ -1555,13 +1087,9 @@ local function runHarvest(record, attempt)
 		end
 
 
-
 		if A.storeFallback(record, attempt) then
 			return
 		end
-
-
-
 
 
 		local reason = "no-readable-guid"
@@ -1570,9 +1098,6 @@ local function runHarvest(record, attempt)
 		elseif rows == 0 then
 			reason = "window-closed"
 		end
-
-
-
 
 		A.drop(reason, A.dropContext(record, { rows = rows, readAt = readAt, attempts = attempt }))
 		release(record)
@@ -1583,21 +1108,6 @@ local function runHarvest(record, attempt)
 
 	store(record, participants, kept, rows, attempt, readSeconds, readAt)
 end
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -1621,25 +1131,6 @@ function A.stashRoster(record)
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 	local winner
 	if A.readMatchSurface() then
 		winner = A.readMatchWinner()
@@ -1651,25 +1142,11 @@ function A.stashRoster(record)
 
 
 
-
-
-
-
-
 	A.trace("sweep", { rows = rows, kept = kept, off = readAt, winner = winner })
 
 	if kept == 0 then
 		return
 	end
-
-
-
-
-
-
-
-
-
 
 
 
@@ -1691,13 +1168,7 @@ end
 
 
 
-
-
-
 function A.stashAtTransition(record)
-
-
-
 
 	local swept, err = pcall(A.stashRoster, record)
 	if not swept then
@@ -1706,8 +1177,6 @@ function A.stashAtTransition(record)
 
 	if C_Timer and C_Timer.After then
 		C_Timer.After(STASH_READ, function()
-
-
 
 			local db = A.db()
 			if db and db.active == record and record.harvesting then
@@ -1726,7 +1195,6 @@ function A.scheduleHarvest(record, attempt)
 
 	if not (C_Timer and C_Timer.After) then
 
-
 		if A.storeFallback(record, nil) then
 			return
 		end
@@ -1740,7 +1208,6 @@ function A.scheduleHarvest(record, attempt)
 	C_Timer.After(delay, function()
 		local ok, err = pcall(runHarvest, record, attempt)
 		if not ok then
-
 
 			local db = A.db()
 			A.drop("harvest-threw", A.dropContext(record, { attempts = attempt }))
@@ -1759,21 +1226,10 @@ end
 
 
 
-
 function A.arenaMapBattleground(record)
 	return type(record) == "table" and record.format == "arena-unrated" and type(record.map) == "table"
 		and record.map.instanceType == "pvp"
 end
-
-
-
-
-
-
-
-
-
-
 
 
 

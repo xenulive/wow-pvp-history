@@ -11,10 +11,6 @@
 
 
 
-
-
-
-
 local ADDON, A = ...
 
 
@@ -67,6 +63,7 @@ local function metric(api, name)
 	end
 	return value
 end
+
 
 
 
@@ -247,6 +244,7 @@ local lastCalls
 local function timeLoop(api, fresh)
 	local function loop()
 		for i = 1, LOOP do
+
 
 			A.trace("perf-sample", {
 				source = "results",

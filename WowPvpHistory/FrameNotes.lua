@@ -8,19 +8,9 @@
 
 
 
-
-
-
-
-
-
-
-
-
 local _, A = ...
 
 local FRAME_NAME = "WowPvpHistoryNotesFrame"
-
 
 
 local window
@@ -31,9 +21,6 @@ local selectedGuid
 
 
 
-
-
-
 local searchText
 local sortWord = "recent"
 local repFilter
@@ -41,28 +28,14 @@ local formatFilter
 local sideFilter
 
 
-
 local stagedFault = false
-
-
 
 
 local scopeMatchId
 
 
 
-
-
-
-
 local pendingReveal
-
-
-
-
-
-
-
 
 
 
@@ -79,8 +52,6 @@ local function setSelected(guid)
 end
 
 
-
-
 local lastRows = 0
 
 
@@ -94,18 +65,9 @@ local ROSTER_SLOTS = 8
 
 
 
-
-
-
 function A.notesWindowTitle()
 	return ("PvP History: players and notes (%s)"):format(tostring(A.version or "unknown"))
 end
-
-
-
-
-
-
 
 
 
@@ -167,11 +129,6 @@ end
 
 
 
-
-
-
-
-
 function A.fitNameHead(fontString, bare, realm, realmTone, after)
 	if fontString == nil then
 		return nil
@@ -218,9 +175,6 @@ end
 
 
 
-
-
-
 local function initRow(row, data)
 	if not row.built then
 		row.built = true
@@ -258,7 +212,6 @@ local function initRow(row, data)
 		local left = A.metric("playerLane") + A.metric("playerLaneGap")
 
 
-
 		row.label = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
 		row.label:SetPoint("TOPLEFT", row, "TOPLEFT", left, -4)
 		row.label:SetPoint("RIGHT", row, "RIGHT", -used, 0)
@@ -289,15 +242,12 @@ local function initRow(row, data)
 		row.headCount:SetWordWrap(false)
 
 
-
-
 		row:SetScript("OnClick", function(self)
 			if self.playerGuid ~= nil then
 				A.clickPlayersRow(self.playerGuid)
 			end
 		end)
 	end
-
 
 
 	row.hover:SetColorTexture(A.color("hover"))
@@ -380,9 +330,6 @@ end
 
 
 
-
-
-
 local function rowExtent(_, data)
 	if type(data) == "table" and data.section ~= nil then
 		return A.metric("playerSection")
@@ -395,7 +342,6 @@ local function initMet(line, data)
 	if not line.built then
 		line.built = true
 		A.buildEncounterLine(line)
-
 
 		line.tail = line:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
 		line.tail:SetPoint("LEFT", line, "LEFT", A.metric("rowLabelPad"), 0)
@@ -432,10 +378,6 @@ end
 
 
 
-
-
-
-
 local function commitNote()
 	if not (window and selectedGuid) then
 		return
@@ -451,8 +393,6 @@ local function commitNote()
 	if not stored then
 		if why == "too-long" then
 
-
-
 			A.say(("that note is %d bytes and the bound is %d bytes. Nothing written")
 				:format(tonumber(length) or 0, tonumber(bound) or A.PLAYER_NOTE_MAX))
 		else
@@ -463,15 +403,6 @@ local function commitNote()
 
 	pcall(window.noteRow.box.ClearFocus, window.noteRow.box)
 end
-
-
-
-
-
-
-
-
-
 
 
 
@@ -495,9 +426,6 @@ function A.discardTypedNote(box, owner)
 end
 
 
-
-
-
 local function repPicked(wanted)
 	if not selectedGuid then
 		return
@@ -518,7 +446,6 @@ local function tagRefusal(why, offender, bound)
 		A.say(("%q is longer than %d bytes, so nothing was added")
 			:format(tostring(offender), tonumber(bound) or A.PLAYER_TAG_MAX))
 	elseif why == "too-many" then
-
 
 		A.say(("that is past %d tags, so %q and the rest were not added. Nothing written")
 			:format(tonumber(bound) or A.PLAYER_MAX_TAGS, tostring(offender)))
@@ -569,9 +496,6 @@ end
 
 
 
-
-
-
 local function suggestClicked(button)
 	if not (selectedGuid and button.tagValue) then
 		return
@@ -596,8 +520,6 @@ local function standTagRow(note, pane)
 end
 
 
-
-
 local function paintTagSuggestions()
 	if not (window and window.tagRow and selectedGuid) then
 		return false
@@ -612,16 +534,12 @@ end
 
 
 
-
-
 local function scopedRecord()
 	if scopeMatchId == nil then
 		return nil
 	end
 	return A.match(scopeMatchId)
 end
-
-
 
 
 local function commitRosterTags()
@@ -657,7 +575,6 @@ local function commitRosterTags()
 	end
 
 
-
 	A.say(A.rosterWriteLine(summary, true))
 	pcall(window.rosterBox.SetText, window.rosterBox, "")
 	pcall(window.rosterBox.ClearFocus, window.rosterBox)
@@ -681,30 +598,13 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
-
 function A.notesRosterBandHeight()
 	return A.metric("paneGap") + A.metric("tagRow")
 end
 
 
 
-
 local ROSTER_BAND_SLIVER = 1
-
-
-
-
-
 
 
 
@@ -718,12 +618,8 @@ end
 
 
 
-
-
-
 local function buildRosterBand(frame)
 	frame.rosterBand = CreateFrame("Frame", nil, frame)
-
 
 	frame.rosterBand:SetPoint("TOPLEFT", frame.toolbar, "BOTTOMLEFT", 0, 0)
 	frame.rosterBand:SetPoint("TOPRIGHT", frame.toolbar, "BOTTOMRIGHT", 0, 0)
@@ -740,7 +636,6 @@ local function buildRosterBand(frame)
 	end
 
 
-
 	frame.rosterMore = frame.rosterBand:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
 	frame.rosterMore:SetJustifyH("LEFT")
 	frame.rosterMore:SetWordWrap(false)
@@ -755,12 +650,6 @@ local function buildRosterBand(frame)
 		pcall(self.ClearFocus, self)
 	end)
 end
-
-
-
-
-
-
 
 
 
@@ -786,7 +675,6 @@ local function paintRosterBand()
 	local available = window.rosterBand:GetWidth()
 	if type(available) ~= "number" or available < 120 then
 
-
 		available = A.notesFrameWidth() - A.metric("margin") * 2
 	end
 
@@ -798,7 +686,6 @@ local function paintRosterBand()
 			button:Hide()
 		else
 			button.tagValue = held.tag
-
 
 			button:SetText(("%s %d  x"):format(held.tag, held.count))
 			local width = A.fitControl(button, A.metric("tagMin"), A.metric("tagPad"))
@@ -972,7 +859,6 @@ local function paintStrip(view)
 	lead.figure:SetText(A.groupedCount(strip.players))
 
 
-
 	local function fitted(region, room, forms)
 		local text, at, measured = A.fittedForm(region, room, forms)
 		if text == nil then
@@ -993,15 +879,12 @@ local function paintStrip(view)
 		})
 	else
 
-
 		local encounterWord = strip.encounters == 1 and "encounter" or "encounters"
 		local forms = {
 			("%s %s in %s %s"):format(encounters, encounterWord, matches, matchWord),
 			("%s %s, %s %s"):format(encounters, encounterWord, matches, matchWord),
 			("%s %s"):format(encounters, encounterWord),
 		}
-
-
 
 		local unmet = strip.unmet or 0
 		if unmet > 0 then
@@ -1036,8 +919,6 @@ local function paintStrip(view)
 	})
 
 
-
-
 	local gap = A.metric("repBarGap")
 	local floor = 6
 	local total, held = 0, 0
@@ -1069,8 +950,6 @@ local function paintStrip(view)
 			x = x + width + gap
 		end
 	end
-
-
 
 
 	local keyTop = barTop - A.metric("repBarHeight") - 6
@@ -1112,7 +991,6 @@ local function paintStrip(view)
 		key:SetWidth(wide)
 		x = x + wide + keyGap
 	end
-
 
 
 	local tiles = window.stripTiles
@@ -1160,7 +1038,6 @@ end
 
 
 
-
 local function buildToolbar(frame)
 	frame.toolbar = CreateFrame("Frame", nil, frame)
 	frame.toolbar:SetPoint("TOPLEFT", frame.strip, "BOTTOMLEFT", 0, -A.metric("paneGap"))
@@ -1171,7 +1048,6 @@ local function buildToolbar(frame)
 	frame.searchBox:SetHeight(A.metric("controlHeight"))
 	frame.searchBox:SetPoint("LEFT", frame.toolbar, "LEFT", 0, 0)
 	frame.searchBox:SetWidth(A.metric("playerSearch"))
-
 
 
 	frame.searchBox:SetScript("OnTextChanged", function(self, userInput)
@@ -1246,12 +1122,6 @@ end
 
 
 
-
-
-
-
-
-
 local function buildFaultPanel(frame)
 	frame.fault = CreateFrame("Frame", nil, frame)
 	frame.fault:SetPoint("TOPLEFT", frame.listHost, "TOPLEFT", 0, 0)
@@ -1259,9 +1129,7 @@ local function buildFaultPanel(frame)
 	frame.fault:Hide()
 
 
-
 	frame.fault:SetFrameLevel(frame:GetFrameLevel() + 10)
-
 
 
 	frame.faultTitle = frame.fault:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
@@ -1277,19 +1145,14 @@ local function buildFaultPanel(frame)
 	frame.faultLine:SetWordWrap(true)
 
 
-
-
-
 	frame.faultCopy = A.pill(frame.fault, "Copy a report", nil, A.metric("actionMin"))
 	frame.faultCopy:SetPoint("TOPLEFT", frame.faultLine, "BOTTOMLEFT", 0, -A.metric("paneGap"))
-
 
 
 	frame.faultCopyNote = frame.fault:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
 	frame.faultCopyNote:SetPoint("LEFT", frame.faultCopy, "RIGHT", A.metric("paneGap"), 0)
 	frame.faultCopyNote:SetJustifyH("LEFT")
 	frame.faultCopyNote:SetWordWrap(false)
-
 
 
 	frame.faultCount = frame.fault:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
@@ -1332,9 +1195,6 @@ local function buildListHeader(frame)
 		frame.listHeader.names[#frame.listHeader.names + 1] = column.name
 	end
 end
-
-
-
 
 
 
@@ -1394,7 +1254,6 @@ local function buildDossier(frame)
 	frame.noteRow:SetPoint("RIGHT", frame.dossier, "RIGHT", 0, 0)
 	local box = frame.noteRow.box
 
-
 	box:SetMaxLetters(A.PLAYER_NOTE_MAX)
 	A.entryPlaceholder(box, "a line you will see when you meet them again")
 	box:SetScript("OnEnterPressed", commitNote)
@@ -1415,7 +1274,6 @@ local function buildDossier(frame)
 	frame.tagRow:SetPoint("RIGHT", frame.dossier, "RIGHT", 0, 0)
 
 
-
 	frame.tagRow.box:HookScript("OnTextChanged", function(_, userInput)
 		if userInput then
 			pcall(paintTagSuggestions)
@@ -1426,7 +1284,6 @@ local function buildDossier(frame)
 	frame.metHeader:SetPoint("TOPLEFT", frame.tagRow, "BOTTOMLEFT", 0, -A.metric("paneGap"))
 	frame.metHeader:SetPoint("RIGHT", frame.dossier, "RIGHT", 0, 0)
 end
-
 
 
 function A.notesListSplit()
@@ -1461,8 +1318,6 @@ end
 
 
 
-
-
 function A.notesPaneFloor()
 	local widest = A.encounterFloor()
 	local function take(value)
@@ -1477,8 +1332,6 @@ function A.notesPaneFloor()
 	take(A.metric("tagMin") + A.metric("pillGap") + A.metric("tagBoxMin"))
 	return widest
 end
-
-
 
 
 
@@ -1519,16 +1372,11 @@ end
 
 
 
-
-
-
 function A.notesWindowFloor()
-
 
 
 	local above = A.metric("headerHeight") + A.playersStripHeight() + A.metric("paneGap")
 		+ A.metric("controlHeight") + A.notesRosterBandHeight() + A.metric("paneGap")
-
 
 
 	local rows = listHeaderHeight() + A.metric("playerSection") + A.metric("playerRow") * 4
@@ -1547,11 +1395,8 @@ end
 
 
 
-
 local function buildWindow()
 	local frame = CreateFrame("Frame", FRAME_NAME, UIParent, "BasicFrameTemplateWithInset")
-
-
 
 	local width, height, point, x, y
 	if type(A.authoredGeometry) == "function" then
@@ -1564,11 +1409,7 @@ local function buildWindow()
 	frame:SetSize(width, height)
 	frame:SetPoint(point, UIParent, point, x, y)
 
-
-
-
 	frame:SetFrameStrata("MEDIUM")
-
 
 	frame:SetToplevel(true)
 	frame:SetClampedToScreen(true)
@@ -1580,14 +1421,12 @@ local function buildWindow()
 	frame:SetScript("OnDragStop", function(self)
 		pcall(self.StopMovingOrSizing, self)
 
-
 		pcall(self.SetUserPlaced, self, false)
 		if type(A.rememberWindow) == "function" then
 			pcall(A.rememberWindow, "players")
 		end
 	end)
 	frame:Hide()
-
 
 
 	A.registerChrome(frame)
@@ -1606,11 +1445,6 @@ local function buildWindow()
 	buildRosterBand(frame)
 
 	frame.listHost = CreateFrame("Frame", nil, frame)
-
-
-
-
-
 
 
 	frame.listHost:SetPoint("TOPLEFT", frame.rosterBand, "BOTTOMLEFT", 0, -A.metric("paneGap"))
@@ -1638,7 +1472,6 @@ local function buildWindow()
 
 
 
-
 	frame.met = A.buildScroller(FRAME_NAME .. "Detail", frame.detailHost, "Button", initMet,
 		function(_, data)
 			if type(data) == "table" and data.tail == nil then
@@ -1657,7 +1490,6 @@ local function buildWindow()
 	buildFaultPanel(frame)
 
 
-
 	frame.footName = frame:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
 	frame.footName:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", A.metric("margin"), A.metric("margin"))
 	frame.footName:SetJustifyH("LEFT")
@@ -1666,7 +1498,6 @@ local function buildWindow()
 	frame.footState:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -A.metric("margin"), A.metric("margin"))
 	frame.footState:SetJustifyH("RIGHT")
 	frame.footState:SetWordWrap(false)
-
 
 
 	if type(UISpecialFrames) == "table" then
@@ -1683,9 +1514,7 @@ local function buildWindow()
 	end
 
 
-
 	frame.halfTabs = A.halfTabs(frame, "players")
-
 
 
 	if type(A.attachResize) == "function" then
@@ -1696,10 +1525,6 @@ local function buildWindow()
 
 	return frame
 end
-
-
-
-
 
 
 
@@ -1723,14 +1548,12 @@ local function windowOrNil()
 	local built = A.buildWindowOnce("players", buildWindow)
 	if not built then
 
-
 		window = nil
 		return nil
 	end
 	window = built
 	return window
 end
-
 
 
 
@@ -1750,9 +1573,6 @@ end
 
 
 
-
-
-
 local function listRows(index)
 	local view = A.playersView(viewState(index))
 	local rows, selected = {}, nil
@@ -1768,8 +1588,6 @@ local function listRows(index)
 			end
 		end
 	end
-
-
 
 
 
@@ -1812,14 +1630,6 @@ local drawnEmpty = nil
 
 
 
-
-
-
-
-
-
-
-
 local function emptyText()
 	if scopeMatchId and not A.match(scopeMatchId) then
 		return ("Match #%s is not in your history."):format(tostring(scopeMatchId))
@@ -1835,7 +1645,6 @@ local function emptyText()
 		filters[#filters + 1] = sideFilter == "with" and "met on your side" or "met against you"
 	end
 	if searchText then
-
 
 		filters[#filters + 1] = ("matches %q"):format(searchText)
 	end
@@ -1879,28 +1688,10 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 function A.paneFaultText(refused, shown, unreached, noRoom)
 	local named = A.joinAnd(refused)
 
-
-
 	local silent = A.joinAnd(unreached)
-
 
 
 	local cramped = {}
@@ -1916,13 +1707,11 @@ function A.paneFaultText(refused, shown, unreached, noRoom)
 		return nil
 	end
 
-
 	local count = nil
 	if type(shown) == "number" then
 		count = shown == 1 and "1 player was being shown"
 			or ("%d players were being shown"):format(shown)
 	end
-
 
 	local parts, subjects = {}, {}
 	local function say(subject, branch, sentence)
@@ -1937,22 +1726,16 @@ function A.paneFaultText(refused, shown, unreached, noRoom)
 			("Something failed before %s was handed anything."):format(silent))
 	end
 
-
 	for i = 1, #cramped do
 		say(cramped[i], "no room",
 			("%s has no room to draw in."):format((cramped[i]:gsub("^%l", string.upper))))
 	end
 
-
-
 	parts[#parts + 1] = "/pvph error"
 	return {
 		title = "PLAYERS DID NOT DRAW",
-
-
 		lines = parts,
 		line = table.concat(parts, "\n"),
-
 
 		subjects = subjects,
 		count = count,
@@ -1960,18 +1743,7 @@ function A.paneFaultText(refused, shown, unreached, noRoom)
 end
 
 
-
 local heldFault = nil
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -1982,10 +1754,8 @@ local function standFaultPanel(said)
 	end
 
 
-
 	A.style(window.faultTitle, "label", "fault")
 	window.faultTitle:SetText(said.title)
-
 
 
 	A.style(window.faultLine, "bodyText")
@@ -1997,7 +1767,6 @@ local function standFaultPanel(said)
 	window.faultLine:SetText(table.concat(sentences, "\n"))
 
 
-
 	A.style(window.faultCopyNote, "note", "dim")
 	window.faultCopyNote:SetText("/pvph error says the same in chat")
 	window.faultCopy:SetScript("OnClick", function()
@@ -2006,7 +1775,6 @@ local function standFaultPanel(said)
 			A.say("the report did not compose, so there is nothing to copy")
 			return
 		end
-
 
 		if type(A.showCsvSheet) ~= "function"
 			or not A.showCsvSheet(("Report: %s"):format(tostring(said.title):lower()),
@@ -2021,7 +1789,6 @@ local function standFaultPanel(said)
 		window.faultCount:SetText(said.count)
 		window.faultCount:Show()
 	else
-
 
 		window.faultCount:Hide()
 	end
@@ -2038,9 +1805,6 @@ local function standFaultPanel(said)
 	heldFault = said
 	return true
 end
-
-
-
 
 
 
@@ -2065,17 +1829,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
-
 local function grabbedError()
 	if type(BugGrabber) ~= "table" or type(BugGrabber.GetDB) ~= "function" then
 		return nil
@@ -2088,7 +1841,6 @@ local function grabbedError()
 		local held = db[i]
 		local message = type(held) == "table" and type(held.message) == "string" and held.message
 
-
 		if message and message:find("WowPvpHistoryProbe", 1, true) then
 			return message, "probe"
 		elseif message and message:find("WowPvpHistory", 1, true) then
@@ -2097,18 +1849,6 @@ local function grabbedError()
 	end
 	return nil
 end
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -2122,7 +1862,6 @@ function A.faultReport()
 	end
 
 
-
 	local version, build
 	local okBuild, one, two = pcall(GetBuildInfo)
 	if okBuild then
@@ -2132,7 +1871,6 @@ function A.faultReport()
 		tostring(A.version),
 		(version and build) and (version .. "." .. build) or tostring(build),
 		tostring(select(2, pcall(A.stamp)))))
-
 
 
 	line("")
@@ -2163,11 +1901,6 @@ function A.faultReport()
 	if heldFault.count then
 		line("  " .. tostring(heldFault.count))
 	end
-
-
-
-
-
 
 
 	line("")
@@ -2208,17 +1941,12 @@ end
 
 
 
-
-
-
 local function paintFaultPanel(listTook, metTook, shown, noRoom)
 	if not window or not window.fault then
 		return false
 	end
 
 	local refused, unreached = {}, {}
-
-
 
 	local listName = (window.list and window.list.subject) or "the player list"
 	local metName = (window.met and window.met.subject) or "the player detail pane"
@@ -2239,24 +1967,12 @@ local function paintFaultPanel(listTook, metTook, shown, noRoom)
 		window.listHost:Show()
 		window.detailHost:Show()
 
-
 		heldFault = nil
 		return false
 	end
 
 	return standFaultPanel(said)
 end
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -2295,9 +2011,6 @@ end
 
 
 
-
-
-
 local function hostRead(host, method)
 	if not (host and type(host[method]) == "function") then
 		return nil
@@ -2332,8 +2045,6 @@ end
 
 
 
-
-
 local function paintDossier(selected, index)
 	drawnEmpty = nil
 	if not selected then
@@ -2363,7 +2074,6 @@ local function paintDossier(selected, index)
 	local pane = A.notesPaneSplit()
 
 
-
 	window.copyText, window.murlokText = A.playerCopyTexts(selected.guid, dossier.entry)
 	local edge = window.openWindow
 	for _, pair in ipairs({ { window.murlok, window.murlokText }, { window.copyName, window.copyText } }) do
@@ -2386,7 +2096,6 @@ local function paintDossier(selected, index)
 	A.fitNameHead(window.dossierName, identity.bare or A.UNKNOWN_PLAYER, identity.realm, "dim")
 	A.style(window.dossierSub, "bodyText", "dim")
 	local sub = dossier.specLine or "no spec recorded"
-
 
 	if type(A.debugTextEnabled) == "function" and A.debugTextEnabled() == true then
 		sub = sub .. "  " .. A.colorEscape("faint") .. tostring(selected.guid) .. "|r"
@@ -2411,11 +2120,7 @@ end
 
 
 
-
-
 function A.refreshNotes()
-
-
 
 
 	local index = nil
@@ -2423,7 +2128,6 @@ function A.refreshNotes()
 		local built, made = pcall(A.encounterIndex)
 		index = built and type(made) == "table" and made or nil
 	end
-
 
 
 	if type(A.refreshPlayerWindows) == "function" then
@@ -2439,7 +2143,6 @@ function A.refreshNotes()
 
 
 	pcall(paintRosterBand)
-
 
 
 	stagedFault = false
@@ -2464,7 +2167,6 @@ function A.refreshNotes()
 
 
 
-
 	if pendingReveal ~= nil then
 		local at = nil
 		for i = 1, #rows do
@@ -2482,13 +2184,11 @@ function A.refreshNotes()
 	end
 
 
-
 	local dossierOk, dossier = pcall(paintDossier, selected, index)
 	if not dossierOk then
 		A.noteError(("the player dossier did not paint: %s"):format(tostring(dossier)), "notes/dossier")
 		dossier = nil
 	end
-
 
 
 	local metTook = nil
@@ -2499,7 +2199,6 @@ function A.refreshNotes()
 		A.noteError(("the player detail pane was never handed its rows: %s"):format(tostring(metErr)),
 			"notes/detail")
 	end
-
 
 
 	local noRoom = {}
@@ -2526,9 +2225,6 @@ function A.refreshNotes()
 	end
 
 
-
-
-
 	local selectedIds = nil
 	if dossier and type(dossier.record) == "table" and type(dossier.record.ids) == "table" then
 		local ids = {}
@@ -2553,15 +2249,12 @@ function A.refreshNotes()
 		unmet = view.strip.unmet,
 		sections = #view.sections,
 
-
 		tileForms = stripDrew.tileForms,
 		lead = stripDrew.lead,
-
 
 		ratedPlayers = view.strip.rated,
 		unratedPlayers = view.strip.notRated,
 		repBars = stripDrew.repBars,
-
 
 		search = searchText ~= nil or nil,
 
@@ -2605,10 +2298,7 @@ function A.showNotes()
 	A.takeHalf("players")
 	local shown = pcall(frame.Show, frame)
 
-
-
 	pcall(frame.Raise, frame)
-
 
 
 	local box = frame.met and frame.met.box or nil
@@ -2702,7 +2392,6 @@ function A.setNotesSide(side)
 end
 
 
-
 function A.setNotesSearch(text)
 	if text ~= nil and type(text) ~= "string" then
 		return false
@@ -2722,19 +2411,9 @@ function A.notesState()
 end
 
 
-
-
-
 function A.notesScope()
 	return scopeMatchId
 end
-
-
-
-
-
-
-
 
 
 
@@ -2750,20 +2429,12 @@ function A.showNotesForMatch(id)
 end
 
 
-
-
-
 function A.clearNotesScope()
 	local held = scopeMatchId
 	scopeMatchId = nil
 	A.refreshNotes()
 	return held ~= nil
 end
-
-
-
-
-
 
 
 
@@ -2781,10 +2452,6 @@ function A.resetNotesPane()
 	end
 	return A.refreshNotes()
 end
-
-
-
-
 
 
 function A.clickPlayersRow(guid)
@@ -2812,14 +2479,11 @@ end
 
 
 
-
-
 function A.selectPlayer(guid, forWriting)
 	if guid == nil then
 		return false
 	end
 	setSelected(guid)
-
 
 	pendingReveal = guid
 	if not windowOrNil() then
@@ -2830,12 +2494,10 @@ function A.selectPlayer(guid, forWriting)
 	pcall(window.Raise, window)
 
 
-
 	if forWriting and shown then
 		pcall(function()
 			local box = window.noteRow.box
 			box:SetFocus()
-
 
 			box:SetCursorPosition(box:GetNumLetters() or 0)
 		end)

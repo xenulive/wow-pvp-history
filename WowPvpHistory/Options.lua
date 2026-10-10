@@ -11,26 +11,10 @@
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
 local _, A = ...
 
 
 local CATEGORY_NAME = "PvP History"
-
-
-
-
 
 
 
@@ -65,7 +49,6 @@ local SIGHT_VARIABLE = declare("WOWPVPHISTORY_SIGHT")
 
 
 
-
 local ALERTS_DEFAULT = true
 local POST_GAME_DEFAULT = true
 local OPEN_AFTER_MATCH_DEFAULT = true
@@ -86,23 +69,13 @@ local SIGHT_DEFAULT = true
 
 
 
-
-
-
-
-
-
-
 local THEME_DEFAULT = "blizzard"
-
 
 
 
 local category
 local attempted = false
 local registered = false
-
-
 
 
 
@@ -127,9 +100,6 @@ local function surface()
 
 
 
-
-
-
 	if type(s.CreateControlTextContainer) ~= "function"
 		or (type(s.CreateDropdown) ~= "function" and type(s.CreateDropDown) ~= "function") then
 		return nil
@@ -137,12 +107,6 @@ local function surface()
 
 	return s
 end
-
-
-
-
-
-
 
 
 
@@ -157,14 +121,7 @@ end
 
 
 
-
-
-
 local function notify(variable)
-
-
-
-
 
 
 
@@ -178,8 +135,6 @@ local function notify(variable)
 	end
 	return (pcall(fn, variable))
 end
-
-
 
 
 
@@ -225,9 +180,6 @@ function A.notifyAnnounceSetting()
 end
 
 
-
-
-
 function A.notifyAnnounceTimeSetting()
 	traceSetting("announce-time", A.announceTime)
 	return notify(ANNOUNCE_TIME_VARIABLE)
@@ -247,8 +199,6 @@ end
 
 
 
-
-
 function A.notifyAnnounceShapeSetting()
 	traceSetting("announce-shape", A.announceShape)
 	if A.refreshOptionsWindow then
@@ -258,14 +208,10 @@ function A.notifyAnnounceShapeSetting()
 end
 
 
-
-
 function A.notifyOverlaySetting()
 	traceSetting("overlay", A.overlayEnabled)
 	return notify(OVERLAY_VARIABLE)
 end
-
-
 
 
 
@@ -333,10 +279,6 @@ end
 
 
 
-
-
-
-
 function A.notifyEverySetting()
 	local fn = type(Settings) == "table" and Settings.NotifyUpdate or nil
 	local named = 0
@@ -361,14 +303,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
 local function addResetButton(layout)
 	if type(layout) ~= "table" or type(layout.AddInitializer) ~= "function" then
 		return false
@@ -376,9 +310,6 @@ local function addResetButton(layout)
 	if type(CreateSettingsButtonInitializer) ~= "function" then
 		return false
 	end
-
-
-
 
 
 	if type(CreateSettingsListSectionHeaderInitializer) == "function" then
@@ -389,12 +320,10 @@ local function addResetButton(layout)
 
 
 
-
 	local ok = pcall(function()
 		layout:AddInitializer(CreateSettingsButtonInitializer(
 			"Erase everything stored",
 			"Erase the history",
-
 
 			function()
 				A.openResetConfirm()
@@ -415,17 +344,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
-
 local function addAnnounceSliders(s, made)
 	local function slider(variable, label, getter, setter, tooltip, range)
 		local min, max, step, default = range()
@@ -434,7 +352,6 @@ local function addAnnounceSliders(s, made)
 				label, default, getter, setter)
 			local options = s.CreateSliderOptions(min, max, step)
 			options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(value)
-
 
 				return ("%d%%"):format(math.floor((tonumber(value) or default) + 0.5))
 			end)
@@ -468,11 +385,6 @@ end
 
 
 
-
-
-
-
-
 local function register()
 	local s = surface()
 	if not s then
@@ -498,15 +410,11 @@ local function register()
 		.. "reporting a fault prints either way.")
 
 
-
-
 	local openAfterMatch = s.RegisterProxySetting(made, OPEN_AFTER_MATCH_VARIABLE, s.VarType.Boolean,
 		"Open the match after it ends", OPEN_AFTER_MATCH_DEFAULT,
 		A.openAfterMatchEnabled, A.setOpenAfterMatch)
 	s.CreateCheckbox(made, openAfterMatch,
 		"When you leave a match, open its window. It waits until you are out of combat.")
-
-
 
 
 
@@ -518,14 +426,12 @@ local function register()
 		.. "who carries one.")
 
 
-
 	local sight = s.RegisterProxySetting(made, SIGHT_VARIABLE, s.VarType.Boolean,
 		"Mark people you have written about when they appear", SIGHT_DEFAULT,
 		A.sightEnabled, A.setSight)
 	s.CreateCheckbox(made, sight,
 		"Outside a battleground or an arena, put a mark on the nameplate of a player you rated, "
 		.. "tagged or wrote about, and name them once in chat when they appear.")
-
 
 
 	local announce = s.RegisterProxySetting(made, ANNOUNCE_VARIABLE, s.VarType.Boolean,
@@ -537,15 +443,8 @@ local function register()
 
 
 
-
-
-
-
 	if type(CreateSettingsButtonInitializer) == "function"
 		and type(layout) == "table" and type(layout.AddInitializer) == "function" then
-
-
-
 
 
 		layout:AddInitializer(CreateSettingsButtonInitializer(
@@ -569,8 +468,6 @@ local function register()
 
 
 
-
-
 		if type(s.CreateSlider) == "function"
 			and type(s.CreateSliderOptions) == "function"
 			and type(s.VarType.Number) == "string"
@@ -582,14 +479,11 @@ local function register()
 	end
 
 
-
-
 	local overlay = s.RegisterProxySetting(made, OVERLAY_VARIABLE, s.VarType.Boolean,
 		"Show the newest results on screen", OVERLAY_DEFAULT, A.overlayEnabled, A.setOverlay)
 	s.CreateCheckbox(made, overlay,
 		"Draw a small bar of the newest results of the format last played, one cell per match. "
 		.. "Drag it where it should sit, and click a cell to open its match.")
-
 
 
 	local tooltip = s.RegisterProxySetting(made, TOOLTIP_VARIABLE, s.VarType.Boolean,
@@ -649,8 +543,6 @@ local function register()
 
 
 
-
-
 	local theme = s.RegisterProxySetting(made, THEME_VARIABLE, s.VarType.String,
 		"Window appearance", THEME_DEFAULT, A.theme, A.setTheme)
 
@@ -662,8 +554,6 @@ local function register()
 		end
 		return container:GetData()
 	end, "Whether the history window keeps the client's frame or draws its own dark panel.")
-
-
 
 
 
@@ -679,7 +569,6 @@ local function register()
 			"Put the minimap button back at its default angle and show it.",
 			true))
 	end
-
 
 
 
@@ -699,7 +588,6 @@ function A.registerOptions()
 	attempted = true
 
 
-
 	local ok, built = pcall(register)
 	registered = (ok and built) == true
 	return registered
@@ -711,8 +599,6 @@ function A.optionsAvailable()
 end
 
 
-
-
 local function lockedDown()
 	if type(InCombatLockdown) ~= "function" then
 		return false
@@ -720,17 +606,6 @@ local function lockedDown()
 	local ok, locked = pcall(InCombatLockdown)
 	return ok and locked == true
 end
-
-
-
-
-
-
-
-
-
-
-
 
 
 

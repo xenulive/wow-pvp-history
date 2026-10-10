@@ -10,39 +10,13 @@
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 local ADDON, A = ...
-
-
 
 
 local NO_SEASON = 0
 
 
 A.SEASON_LABEL_MAX = 40
-
-
-
-
-
-
 
 
 
@@ -71,12 +45,6 @@ end
 
 
 
-
-
-
-
-
-
 local function seasonPair()
 	local game = A.arenaSeasonNow()
 	if game == nil or game == NO_SEASON then
@@ -93,23 +61,16 @@ end
 
 
 
-
 function A.seasonNow()
 	local _, display = seasonPair()
 	return display
 end
 
 
-
-
-
 function A.gameSeasonNow()
 	local game = seasonPair()
 	return game
 end
-
-
-
 
 
 
@@ -131,9 +92,6 @@ end
 
 
 
-
-
-
 local function stampOf(text)
 	if type(text) ~= "string" then
 		return nil
@@ -151,14 +109,9 @@ end
 A.seasonStamp = stampOf
 
 
-
-
 local function byStart(a, b)
 	return tostring(a.startedAt) < tostring(b.startedAt)
 end
-
-
-
 
 
 function A.seasonBoundaries()
@@ -174,7 +127,6 @@ function A.seasonEntry(number)
 	if not list then
 		return nil
 	end
-
 
 	for i = #list, 1, -1 do
 		if list[i].season == number then
@@ -195,8 +147,6 @@ local function openEntry(list)
 end
 
 
-
-
 function A.seasonNewest()
 	local list = store(false)
 	if not (list and #list > 0) then
@@ -204,8 +154,6 @@ function A.seasonNewest()
 	end
 	return list[#list].season
 end
-
-
 
 
 
@@ -226,19 +174,11 @@ function A.seasonAt(stamp)
 			end
 
 
-
-
-
-
 			return nil
 		end
 	end
 	return nil
 end
-
-
-
-
 
 
 
@@ -251,7 +191,6 @@ function A.recordSeason(record)
 	end
 
 
-
 	local stamp = record.completedAt
 	if type(stamp) ~= "string" then
 		stamp = record.openedAt
@@ -262,8 +201,6 @@ function A.recordSeason(record)
 	end
 	return resolved, "boundary"
 end
-
-
 
 
 
@@ -285,13 +222,7 @@ end
 
 
 
-
-
-
-
-
 function A.seasonOpen(number, when, source, game)
-
 
 	if type(number) ~= "number" or number ~= math.floor(number) or number <= 0
 		or number == math.huge then
@@ -332,10 +263,6 @@ function A.seasonOpen(number, when, source, game)
 
 
 
-
-
-
-
 	local index
 	for i = 1, #list do
 		if list[i] == entry then
@@ -347,12 +274,10 @@ function A.seasonOpen(number, when, source, game)
 	local closed
 	local before = list[index - 1]
 
-
 	if type(before) == "table" and before.endedAt == nil then
 		before.endedAt = at
 		closed = before.season
 	end
-
 
 	local after = list[index + 1]
 	if type(after) == "table" then
@@ -407,24 +332,16 @@ end
 
 
 
-
-
-
 local function removeAt(list, index)
 	local entry = list[index]
 	local prev = list[index - 1]
 	if type(entry) == "table" and type(prev) == "table" and prev.endedAt == entry.startedAt then
 
 
-
 		prev.endedAt = entry.endedAt
 	end
 	table.remove(list, index)
 end
-
-
-
-
 
 
 function A.seasonForget(number)
@@ -455,19 +372,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 local function remember(db, season)
 	local seen = db.seasonSeen
 	db.seasonSeen = season
@@ -480,8 +384,6 @@ end
 A.on("ARENA_SEASON_WORLD_STATE", function()
 	local season = A.seasonNow()
 	if season == nil then
-
-
 		A.trace("season", { source = "client", reason = "no-answer" }, "data")
 		return
 	end
@@ -490,7 +392,6 @@ A.on("ARENA_SEASON_WORLD_STATE", function()
 		A.trace("season", { source = "client", n = season, reason = "no-database" }, "data")
 		return
 	end
-
 
 	local game = A.gameSeasonNow()
 	local seenGame = type(db.gameSeasonSeen) == "number" and db.gameSeasonSeen or nil
@@ -503,8 +404,6 @@ A.on("ARENA_SEASON_WORLD_STATE", function()
 		changed = seen ~= nil and seen ~= season
 	end
 	if seen == nil and seenGame == nil then
-
-
 		A.trace("season", { source = "client", n = season, game = game, reason = "first-sighting" }, "data")
 		return
 	end
@@ -513,10 +412,8 @@ A.on("ARENA_SEASON_WORLD_STATE", function()
 		return
 	end
 
-
 	local entry, closed = A.seasonOpen(season, nil, "client", game)
 	if not entry then
-
 
 		A.trace("season", { source = "client", n = season, game = game, reason = "open-refused" }, "data")
 		return
@@ -528,17 +425,6 @@ A.on("ARENA_SEASON_WORLD_STATE", function()
 		reason = closed and "closed-previous" or "opened",
 	}, "data")
 end)
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -576,27 +462,10 @@ local function forgetFabricated()
 		db.seasons = nil
 	end
 	A.trace("season", { source = "client", n = dropped, reason = "dropped-fabricated" }, "data")
-
 	A.say(("dropped %d season %s the previous version recorded at a login rather than at a "):format(
 			dropped, dropped == 1 and "boundary" or "boundaries")
 		.. "season change. /pvph season start <n> <date> declares the real one")
 end
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -608,7 +477,6 @@ local function backfillGameSeason()
 	if not db or db.gameSeasonFilled then
 		return
 	end
-
 
 
 	local game, display = A.gameSeasonNow(), A.seasonNow()
@@ -639,7 +507,6 @@ local function backfillGameSeason()
 
 
 
-
 	A.trace("season", {
 		reason = "backfill-game-season",
 		n = filled,
@@ -660,9 +527,6 @@ A.on("ADDON_LOADED", function(_, name)
 		backfillGameSeason()
 	end
 end)
-
-
-
 
 
 
@@ -708,12 +572,6 @@ end
 
 
 
-
-
-
-
-
-
 function A.ratedCountersNow(format)
 	local index = RATED_INDEX[format]
 	if index == nil or type(GetPersonalRatedInfo) ~= "function" then
@@ -744,10 +602,6 @@ end
 
 
 
-
-
-
-
 function A.weekStartEpoch()
 	local api = C_DateAndTime
 	local reader = type(api) == "table" and api.GetSecondsUntilWeeklyReset or nil
@@ -769,11 +623,6 @@ end
 
 
 
-
-
-
-
-
 local TIER_QUALITY = { [0] = 0, [1] = 1, [6] = 1, [2] = 2, [7] = 2, [3] = 3, [8] = 3, [4] = 4, [5] = 5 }
 
 
@@ -785,7 +634,6 @@ local LADDER_STEPS = 32
 
 
 local heardRated = false
-
 
 
 local ratedAsked, ratedWaiting = false, false
@@ -829,9 +677,6 @@ local function tierInfo(lookup, tierID)
 end
 
 
-
-
-
 local function linkOf(info, key)
 	local id = info[key]
 	if type(id) == "nil" or not A.canRead(id) or type(id) ~= "number" or id <= 0 then
@@ -852,13 +697,11 @@ local function walk(lookup, seed, key, seen)
 		if nextID == nil then
 			return out
 		end
-
 		if seen[nextID] then
 			return nil, "loop"
 		end
 		local nextInfo, reason = tierInfo(lookup, nextID)
 		if nextInfo == nil then
-
 
 			if reason == "no-info" then
 				return out
@@ -871,11 +714,6 @@ local function walk(lookup, seed, key, seen)
 	end
 	return nil, "loop"
 end
-
-
-
-
-
 
 
 
@@ -961,9 +799,6 @@ end
 
 
 
-
-
-
 function A.ratingLadder(format)
 	if not heardRated then
 		return nil, "unheard"
@@ -977,9 +812,6 @@ function A.ratingLadder(format)
 			ladderTraced[format] = true
 			A.trace("tiers", {
 				format = format,
-
-
-
 				ladder = ladder and ladderText(ladder) or nil,
 				reason = reason,
 			}, "data")
@@ -998,10 +830,6 @@ local function component(value)
 	end
 	return value
 end
-
-
-
-
 
 
 
@@ -1046,10 +874,6 @@ end
 
 
 
-
-
-
-
 function A.ratingTierName(format, rating)
 	if type(rating) ~= "number" then
 		return nil, "no-rating"
@@ -1065,7 +889,6 @@ function A.ratingTierName(format, rating)
 	end
 	return nil, "out-of-range"
 end
-
 
 
 
@@ -1088,10 +911,6 @@ end
 
 
 
-
-
-
-
 function A.tierWord(enum, raw)
 	if type(enum) == "number" then
 		local ok, word = pcall(rawget, _G, ("PVP_RANK_%d_NAME"):format(enum))
@@ -1104,8 +923,6 @@ function A.tierWord(enum, raw)
 	end
 	return raw:match(".* %- (.+)$") or raw
 end
-
-
 
 
 
@@ -1127,9 +944,6 @@ end
 function A.ratedHeard()
 	return heardRated
 end
-
-
-
 
 
 

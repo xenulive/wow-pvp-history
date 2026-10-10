@@ -3,13 +3,7 @@
 
 
 
-
-
-
 local _, A = ...
-
-
-
 
 
 
@@ -20,10 +14,8 @@ local scheduled = setmetatable({}, { __mode = "k" })
 
 
 
-
 local generation = 0
 local openedUnder = setmetatable({}, { __mode = "k" })
-
 
 
 function A.harvestGeneration(record)
@@ -38,7 +30,6 @@ local function claimHarvest(record, source)
 		return false
 	end
 	scheduled[record] = true
-
 	record.harvestSource = source
 	return true
 end
@@ -46,7 +37,6 @@ end
 
 
 local function openMatch(stateName)
-
 
 	if A.sandboxed() and A.endSandbox() then
 		A.trace("sandbox", { state = "ended", reason = "match" }, "data")
@@ -58,11 +48,9 @@ local function openMatch(stateName)
 	local record = {
 		openedAt = A.stamp(),
 		openedEpoch = time(),
-
 		openedState = stateName,
 		rounds = {},
 	}
-
 
 
 
@@ -81,7 +69,6 @@ local function openMatch(stateName)
 	generation = generation + 1
 	openedUnder[record] = generation
 	db.active = record
-
 
 
 	if A.perfOpen then
@@ -121,10 +108,6 @@ end
 
 
 
-
-
-
-
 local function addRound(record)
 	local rounds = record.rounds
 	local round = { endedEpoch = time() }
@@ -156,20 +139,15 @@ local function addRound(record)
 
 
 
-
 	local winnerSeen
 	local gotWinner, winner = pcall(A.readMatchWinner)
 	if gotWinner and A.canRead(winner) then
 		winnerSeen = winner
 	end
 
-
-
 	A.trace("round", {
 		n = #rounds,
 		state = record.state,
-
-
 		rows = size,
 		kept = round.pending ~= nil and type(round.pending.guids) == "table"
 			and #round.pending.guids or 0,
@@ -178,8 +156,6 @@ local function addRound(record)
 		reason = reason,
 	})
 end
-
-
 
 
 
@@ -200,8 +176,6 @@ end
 
 
 local function onComplete(record)
-
-
 
 
 	if not claimHarvest(record, "complete") then
@@ -229,13 +203,11 @@ local function onComplete(record)
 	record.harvesting = true
 
 
-
 	record.completedPrecise = A.precise()
 
 	if A.meterComplete then
 		pcall(A.meterComplete, record)
 	end
-
 
 
 
@@ -249,9 +221,7 @@ local function onComplete(record)
 
 
 
-
 	record.surface = A.readMatchSurface()
-
 
 
 	A.stashAtTransition(record)
@@ -261,16 +231,11 @@ local function onComplete(record)
 
 	A.requestScores()
 
-
-
 	if A.postGameEnabled() then
 		A.say("match complete, reading the scoreboard in a few seconds")
 	end
 	A.scheduleHarvest(record)
 end
-
-
-
 
 
 
@@ -287,19 +252,15 @@ local function onState(event)
 	local record = db.active
 
 	if name == nil or name == "Inactive" then
-
-
 		if A.perfHalt then
 			A.perfHalt()
 		end
-
 
 
 		if record and not record.harvesting then
 			A.drop("left-before-complete", A.dropContext(record))
 			local ok, noted = pcall(A.noteIncomplete, "left", record)
 			if ok and type(noted) == "table" then
-
 
 				A.say(A.incompleteLine(noted), "event")
 			elseif not ok then
@@ -310,9 +271,6 @@ local function onState(event)
 				A.perfDiscard()
 			end
 		elseif record then
-
-
-
 
 			A.trace("transition", { state = "Inactive", reason = "harvesting", source = event,
 				rounds = type(record.rounds) == "table" and #record.rounds or nil })
@@ -325,11 +283,7 @@ local function onState(event)
 
 
 
-
-
-
 	if record and record.harvesting and name ~= "Complete" then
-
 		local age
 		if type(record.completedPrecise) == "number" then
 			local now = A.precise()
@@ -348,7 +302,6 @@ local function onState(event)
 	end
 
 	if not record then
-
 
 		if name == "Complete" then
 			A.trace("transition", { state = name, reason = "unopened", source = event })
@@ -370,10 +323,7 @@ local function onState(event)
 	end
 	record.state = name
 
-
-
 	A.trace("transition", { state = name, restriction = A.pvpRestriction(), source = event })
-
 
 
 	if A.meterStateChanged then
@@ -382,7 +332,6 @@ local function onState(event)
 			A.noteError(err, "meter-state")
 		end
 	end
-
 
 
 	if name == "Engaged" or name == "PostRound" then
@@ -399,14 +348,10 @@ local function onState(event)
 	end
 
 
-
 	if A.announceRoster then
 		A.announceRoster(record, name)
 	end
 end
-
-
-
 
 
 
@@ -423,8 +368,6 @@ end
 
 
 
-
-
 local function resume()
 	local db = A.db()
 	if not db then
@@ -434,7 +377,6 @@ local function resume()
 	if not db.active then
 		return
 	end
-
 
 	if openedUnder[db.active] == nil then
 		openedUnder[db.active] = generation
@@ -449,14 +391,12 @@ local function resume()
 
 	if name == "Complete" then
 
-
 		if not claimHarvest(db.active, "resume") then
 			return
 		end
 
 		db.active.completedPrecise = nil
 		db.active.harvesting = true
-
 		A.stashAtTransition(db.active)
 		A.scheduleHarvest(db.active)
 		A.trace("resume", { state = name, rounds = #db.active.rounds })
@@ -465,13 +405,10 @@ local function resume()
 
 
 
-
-
 	if db.active.harvesting and not scheduled[db.active] then
 		abandon(db)
 		return
 	end
-
 
 	db.active.completedPrecise = nil
 	A.trace("resume", { state = name, rounds = #db.active.rounds })
@@ -486,14 +423,9 @@ end
 
 A.on("PLAYER_LOGIN", resume)
 
-
-
 A.on("PVP_MATCH_STATE_CHANGED", onState)
 A.on("PVP_MATCH_COMPLETE", onState)
 A.on("PVP_MATCH_INACTIVE", onState)
-
-
-
 
 
 
@@ -508,7 +440,6 @@ local function onActive(event)
 end
 
 A.on("PVP_MATCH_ACTIVE", onActive)
-
 
 
 A.on("PLAYER_ENTERING_WORLD", onState)

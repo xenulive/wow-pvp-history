@@ -5,62 +5,21 @@
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 local _, A = ...
-
-
-
 
 
 
 local DEFAULT_ARENA = 40
 
 
-
-
-
 local MIN_ARENA, MAX_ARENA = 4, 100
-
-
-
-
-
-
-
-
 
 
 local MAX_STORED = 300
 
 
 
-
-
-
-
 local COMP_SHARES = { 0.35, 0.30, 0.25, 0.10 }
-
-
-
-
-
 
 
 
@@ -85,16 +44,10 @@ end
 
 
 
-
-
-
-
 local FIXTURE_REALM = "4001"
 
 
-
 local REALM = "Testrealm"
-
 
 
 local DUOS = {
@@ -126,11 +79,6 @@ local TRIOS = {
 
 
 
-
-
-
-
-
 local NAMES = {
 	"Fixturea", "Fixtureb", "Fixturec", "Fixtured", "Fixturee", "Fixturef",
 	"Fixtureg", "Fixtureh", "Fixturei", "Fixturej", "Fixturek", "Fixturel",
@@ -138,14 +86,6 @@ local NAMES = {
 	"Fixtures", "Fixturet", "Fixtureu", "Fixturev", "Fixturew", "Fixturex",
 	"Фикстура", "픽스처", "夹具",
 }
-
-
-
-
-
-
-
-
 
 
 
@@ -159,8 +99,6 @@ function A.fixtureNames(n)
 	end
 	return out
 end
-
-
 
 
 
@@ -181,25 +119,6 @@ local BLITZ_ROSTER = {
 	{ spec = "Windwalker", class = "Monk", token = "MONK" },
 	{ spec = "Balance", class = "Druid", token = "DRUID" },
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -236,21 +155,12 @@ local SHUFFLE_LOBBIES = {
 
 
 
-
-
-
-
-
-
 local SHUFFLE_COUNT = 18
 local SHUFFLE_MAPS = {
 	{ name = "Fixture Colosseum", instanceType = "arena", instanceId = 9004 },
 	{ name = "Fixture Ring", instanceType = "arena", instanceId = 9006 },
 	{ name = "Fixture Pit", instanceType = "arena", instanceId = 9007 },
 }
-
-
-
 
 
 
@@ -262,14 +172,6 @@ local DAMAGE_SPLITS = {
 
 
 
-
-
-
-
-
-
-
-
 local SHUFFLE_SPLIT_ORDER = {
 	{ 1, 2, 3 },
 	{ 2, 3, 1 },
@@ -278,24 +180,10 @@ local SHUFFLE_SPLIT_ORDER = {
 
 
 
-
-
-
 local SHUFFLE_LEAD = {
 	{ 1, 2, 1 },
 	{ 2, 1, 2 },
 }
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -313,24 +201,11 @@ local SHUFFLE_MATCHUP_WINS = {
 
 
 
-
-
-
-
-
-
-
-
-
-
-
 local function shuffleOthers(lobby, healerSeat, sameSpec)
 	local function twin(of)
 		return { spec = of.spec, class = of.class, token = of.token, heal = of.heal }
 	end
 	if healerSeat then
-
-
 		local first = lobby.damage[1]
 		return { lobby.healers[1], first,
 			sameSpec and twin(first) or lobby.damage[2], lobby.damage[3], lobby.damage[4] }
@@ -339,18 +214,6 @@ local function shuffleOthers(lobby, healerSeat, sameSpec)
 	return { lead, sameSpec and twin(lead) or lobby.healers[2],
 		lobby.damage[1], lobby.damage[2], lobby.damage[3] }
 end
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -363,18 +226,13 @@ local function dealShuffle(recordIndex, healerSeat)
 		local split = order[block]
 		local first = lead[block]
 		for half = 1, 2 do
-
-
 			local side = (half == 1) and first or (3 - first)
 			local mates
 			if healerSeat then
 
-
 				local pair = DAMAGE_SPLITS[split][side]
 				mates = { 2 + pair[1], 2 + pair[2] }
 			else
-
-
 
 				local partner = DAMAGE_SPLITS[split][1][2]
 				mates = { 2 + partner, 1 + side }
@@ -386,25 +244,15 @@ local function dealShuffle(recordIndex, healerSeat)
 end
 
 
-
 local SELF = {
 	name = "Fixtureself-" .. REALM,
 	class = "Paladin", token = "PALADIN", spec = "Retribution", role = 8,
 }
 
 
-
-
-
-
 local SELF_HEALER = {
 	class = "Paladin", token = "PALADIN", spec = "Holy", role = 4,
 }
-
-
-
-
-
 
 
 
@@ -424,25 +272,12 @@ end
 
 
 
-
-
-
-
-
-
-
-
 local function roleAndHealing(pick, seat, scale)
 	if type(pick) == "table" and pick.heal then
 		return 4, spread(scale, seat)
 	end
 	return 8, nil
 end
-
-
-
-
-
 
 
 
@@ -457,19 +292,13 @@ local ROUND_PACING = {
 }
 
 
-
-
 local CART_COLUMNS = {
 	{ id = 371, order = 1, name = "Carts Controlled" },
 	{ id = 372, order = 2, name = "Cart Assaults" },
 }
 
 
-
 local SHUFFLE_ROUNDS_COLUMN = 1012
-
-
-
 
 
 
@@ -486,18 +315,10 @@ end
 
 
 
-
-
-
-
-
 local function botGuid(instance, n)
 	return ("Player-%04d-%d-%04d-%08X%08X"):format(4900 + instance, 1, 7000 + instance,
 		0xB0700000, 0x0000F000 + n)
 end
-
-
-
 
 
 
@@ -521,8 +342,6 @@ local function participant(fields)
 		damage = fields.damage,
 		healing = fields.healing,
 	}
-
-
 	if fields.rating ~= nil then
 		p.rating = fields.rating
 		p.ratingChange = fields.ratingChange or 0
@@ -535,8 +354,6 @@ local function participant(fields)
 		p.side = fields.side
 	end
 
-
-
 	if fields.seat ~= nil then
 		p.seat = fields.seat
 	end
@@ -545,10 +362,6 @@ local function participant(fields)
 	end
 	return p
 end
-
-
-
-
 
 
 
@@ -567,7 +380,6 @@ local function record(fields)
 		participants = {},
 		rounds = fields.rounds or {},
 	}
-
 
 
 
@@ -599,15 +411,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
 local RECORDERS = 2
 local RECORDER_BASE = 0xE00
 
@@ -617,13 +420,9 @@ local function recorderGuid(index)
 end
 
 
-
 function A.fixtureCharacterName()
 	return (SELF.name:match("^([^-]+)")) or SELF.name
 end
-
-
-
 
 
 
@@ -636,7 +435,6 @@ local function close(r, rows)
 		n = n + 1
 	end
 	r.participantCount = n
-
 	r.character = rows[1] and rows[1].guid or nil
 	return r
 end
@@ -646,17 +444,9 @@ end
 
 
 
-
-
-
-
-
-
-
 local function sandboxExtras(now)
 	local recorder = recorderGuid(0)
 	local out = {}
-
 	local opponents = {
 		{ name = NAMES[1] .. "91-" .. REALM, guid = characterGuid(901), class = "Rogue", token = "ROGUE",
 			spec = "Subtlety" },
@@ -696,7 +486,6 @@ local function sandboxExtras(now)
 		})
 	end
 
-
 	local world = record({ format = "world", rated = false, epoch = now - 3000, duration = 840,
 		map = { name = "Fixture Plains", instanceType = "none" } })
 	world.rounds = nil
@@ -726,9 +515,6 @@ end
 
 
 
-
-
-
 local function compCounts(n)
 	local counts, used = {}, 0
 	for i = 1, #COMP_SHARES do
@@ -738,11 +524,6 @@ local function compCounts(n)
 	counts[1] = counts[1] + (n - used)
 	return counts
 end
-
-
-
-
-
 
 
 
@@ -769,13 +550,6 @@ function A.fixtureRecords(n, now, options)
 
 
 
-
-
-
-
-
-
-
 	local INTERVAL = 3 * 3600
 	local slots = 2 * n + 12 + SHUFFLE_COUNT
 	local base = now - (slots * INTERVAL)
@@ -796,25 +570,17 @@ function A.fixtureRecords(n, now, options)
 
 
 
-
-
-
-
 	local function arenaBracket(format, bracket, pool, size, ladder)
 		local counts = compCounts(n)
 		local written, cleared = 0, 0
 		local floor = A.rankFloor and A.rankFloor("comps") or 10
 
 		for c = 1, #pool do
-
-
 			local enemies = {}
 			for i = 1, #pool[c] do
 				enemies[i] = mint({ spec = pool[c][i].spec, class = pool[c][i].class,
 					token = pool[c][i].token, heal = pool[c][i].heal })
 			end
-
-
 			local mates = {}
 			for i = 1, size - 1 do
 				mates[i] = mint({ spec = "Frost", class = "Mage", token = "MAGE" })
@@ -839,8 +605,6 @@ function A.fixtureRecords(n, now, options)
 					rating = rating, ratingChange = change,
 					mmrPre = ladder.mmr, mmrPost = ladder.mmr,
 				}) }
-
-
 				for i = 1, #mates do
 					local role, healing = roleAndHealing(mates[i], i, 200000)
 					rows[#rows + 1] = { guid = mates[i].guid, p = participant({
@@ -880,14 +644,10 @@ function A.fixtureRecords(n, now, options)
 	end
 
 
-
-
 	local arena2, cleared2 = arenaBracket("arena2", 0, DUOS, 2,
 		{ rating = 1650, mmr = 1700, season = 2 })
 	local arena3, cleared3 = arenaBracket("arena3", 1, TRIOS, 3,
 		{ rating = 1480, mmr = nil, season = 2 })
-
-
 
 
 
@@ -918,7 +678,6 @@ function A.fixtureRecords(n, now, options)
 	end
 
 
-
 	do
 		local rows = { { guid = recorderGuid(#out), p = participant({
 			name = SELF.name, faction = 0, class = SELF.class, token = SELF.token,
@@ -930,7 +689,6 @@ function A.fixtureRecords(n, now, options)
 		local pair = DUOS[1]
 		for i = 1, #pair do
 			local e = mint({ spec = pair[i].spec, class = pair[i].class, token = pair[i].token })
-
 
 			local role, healing = roleAndHealing(pair[i], i, 200000)
 			rows[#rows + 1] = { guid = e.guid, p = participant({
@@ -953,12 +711,6 @@ function A.fixtureRecords(n, now, options)
 
 
 
-
-
-
-
-
-
 	local blitz = 0
 	for i = 1, 5 do
 		local rows = {
@@ -974,8 +726,6 @@ function A.fixtureRecords(n, now, options)
 			local faction = (seat <= 7) and 0 or 1
 			local other = mint({ spec = BLITZ_ROSTER[seat].spec, class = BLITZ_ROSTER[seat].class,
 				token = BLITZ_ROSTER[seat].token })
-
-
 			local role, healing = roleAndHealing(BLITZ_ROSTER[seat], seat, 540000)
 			rows[#rows + 1] = { guid = other.guid, p = participant({
 				name = other.name, faction = faction, class = other.class, token = other.token,
@@ -1001,12 +751,6 @@ function A.fixtureRecords(n, now, options)
 
 
 
-
-
-
-
-
-
 	local shuffle = 0
 	local shuffleLadder, shuffleSeason = nil, nil
 	for i = 1, SHUFFLE_COUNT do
@@ -1017,12 +761,6 @@ function A.fixtureRecords(n, now, options)
 		end
 		local rating = shuffleLadder
 
-
-
-
-
-
-
 		local lobbyIndex = (i % 4 == 2) and 2 or 1
 		local lobby = SHUFFLE_LOBBIES[lobbyIndex]
 		local others = shuffleOthers(lobby, healerSeat, sameSpec)
@@ -1031,9 +769,6 @@ function A.fixtureRecords(n, now, options)
 		local rounds = {}
 		local roundRating = rating
 		for rnd = 1, #deal do
-
-
-
 
 			local pattern = SHUFFLE_MATCHUP_WINS[deal[rnd].matchup]
 			local wonRound = pattern[((i - 1) % #pattern) + 1] and true or false
@@ -1045,13 +780,8 @@ function A.fixtureRecords(n, now, options)
 				mates = { deal[rnd].mates[1], deal[rnd].mates[2] },
 			}
 		end
-
-
 		local change = roundRating - rating
 		shuffleLadder = rating + change
-
-
-
 
 
 		local roundsWon = { 0, 0, 0, 0, 0, 0 }
@@ -1064,15 +794,10 @@ function A.fixtureRecords(n, now, options)
 			end
 		end
 
-
-
-
 		local own = healerSeat and SELF_HEALER or SELF
 		local rows = { { guid = recorderGuid(#out), p = participant({
 			name = SELF.name, faction = 0, class = SELF.class, token = SELF.token,
 			spec = own.spec, role = own.role, seat = 1,
-
-
 			damage = healerSeat and spread(170000, 1) or spread(620000, 1),
 			healing = healerSeat and spread(520000, 1) or 40000,
 			rating = rating, ratingChange = change, mmrPre = rating + 90, mmrPost = rating + 100,
@@ -1091,8 +816,6 @@ function A.fixtureRecords(n, now, options)
 		end
 		local epoch = nextEpoch()
 
-
-
 		local pacing = ROUND_PACING[((i - 1) % #ROUND_PACING) + 1]
 		local at = epoch - 900
 		for rnd = 1, #rounds do
@@ -1102,7 +825,6 @@ function A.fixtureRecords(n, now, options)
 		local r = record({
 			format = "shuffle", rated = true, bracket = 6, epoch = epoch,
 			duration = 900, season = season, rounds = rounds,
-
 			map = (function(held)
 				return { name = held.name, instanceType = held.instanceType, instanceId = held.instanceId }
 			end)(SHUFFLE_MAPS[i <= 8 and 1 or (i <= 16 and 2 or 3)]),
@@ -1117,8 +839,6 @@ function A.fixtureRecords(n, now, options)
 
 	local skirmish = 0
 	for i = 1, 4 do
-
-
 
 		local rows = { { guid = recorderGuid(#out), p = participant({
 			name = SELF.name, faction = 0, class = SELF.class, token = SELF.token,
@@ -1154,9 +874,6 @@ function A.fixtureRecords(n, now, options)
 
 
 
-
-
-
 	local bg = 0
 	do
 		local rows = { { guid = recorderGuid(#out), p = participant({
@@ -1165,10 +882,6 @@ function A.fixtureRecords(n, now, options)
 			damage = spread(680000, 1), healing = 28000, kb = 3, hk = 14, deaths = 2, honor = 240,
 			stats = { [371] = 2, [372] = 1 },
 		}) } }
-
-
-
-
 
 
 		for i = 1, 19 do
@@ -1197,8 +910,6 @@ function A.fixtureRecords(n, now, options)
 	end
 
 
-
-
 	if options.unrated then
 		local kept = {}
 		for i = 1, #out do
@@ -1219,22 +930,10 @@ function A.fixtureRecords(n, now, options)
 		asked = n,
 
 
-
-
 		seat = healerSeat and "healer" or "damage",
 		sameSpec = sameSpec,
 	}
 end
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -1266,8 +965,6 @@ function A.fixtureRefusal(adding)
 	end
 
 
-
-
 	local marked = A.fixtureCount()
 	if marked + (type(adding) == "number" and adding or 1) > MAX_STORED then
 		return "too-many"
@@ -1293,17 +990,12 @@ function A.fixtureRefusalText(reason)
 		return "this is a PvP match. Leave the instance first: generated records in the middle of "
 			.. "a real history are what nobody can untangle afterwards"
 	end
-
-
 	if reason == "too-many" then
-
 		return ("%d generated records already stand in the history, which is the most the fixture "
 			.. "will store. /pvph debug fixture clear removes them"):format(MAX_STORED)
 	end
 	return "the fixture cannot be generated right now"
 end
-
-
 
 
 
@@ -1324,9 +1016,6 @@ function A.fixtureCount(db)
 	end
 	return marked, real
 end
-
-
-
 
 
 
@@ -1364,13 +1053,7 @@ end
 
 
 
-
-
-
-
-
 function A.generateFixture(n, options)
-
 
 
 	local records, report = A.fixtureRecords(n, nil, options)
@@ -1384,14 +1067,10 @@ function A.generateFixture(n, options)
 	local db = A.db()
 
 
-
 	local before = A.fixtureCount()
 
 	local storedBefore = #db.matches
 	local unfolded, foldError = 0, nil
-
-
-
 
 
 
@@ -1402,7 +1081,6 @@ function A.generateFixture(n, options)
 		r.id = ("F%d"):format(db.nextFixtureId)
 		db.nextFixtureId = db.nextFixtureId + 1
 		db.matches[#db.matches + 1] = r
-
 
 
 		local indexed, why = pcall(A.indexMatch, r)
@@ -1417,8 +1095,6 @@ function A.generateFixture(n, options)
 		A.say(("the records are stored and the player index was not updated for %d of them: %s. /pvph rebuild")
 			:format(unfolded, tostring(foldError)))
 	end
-
-
 
 
 
@@ -1442,14 +1118,11 @@ function A.generateFixture(n, options)
 
 
 
-
 		pcall(A.setPlayerRating, characterGuid(1), 2)
 		pcall(A.setPlayerNote, characterGuid(1), "Calls the swap early and peels for the healer")
 		pcall(A.addPlayerTags, characterGuid(1), { "good comms", "calls targets", "plays late", "duo" })
 		pcall(A.setPlayerRating, characterGuid(2), -1)
 	end
-
-
 
 
 
@@ -1465,9 +1138,7 @@ function A.generateFixture(n, options)
 	report.moved = moved
 
 
-
 	pcall(A.notePrune, "fixture", storedBefore)
-
 
 
 	if A.finderRecordStored then
@@ -1492,22 +1163,14 @@ function A.generateFixture(n, options)
 
 
 
-
 	local rounded, breaks = A.fixtureReadings(records)
 	A.trace("fixture", {
 		state = "written",
 		n = #records,
-
-
 		stored = before + written,
 		kept = report.compsCleared,
-
-
-
 		seat = report.seat,
-
 		moved = moved,
-
 
 		rounded = rounded,
 		breaks = breaks,
@@ -1525,7 +1188,6 @@ function A.fixturePreview()
 	local db = A.db()
 
 
-
 	local leaving, authored = 0, 0
 	if db and type(db.players) == "table" then
 		for guid, entry in pairs(db.players) do
@@ -1541,17 +1203,6 @@ function A.fixturePreview()
 
 	return { marked = marked, real = real, leaving = leaving, authored = authored }
 end
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -1575,14 +1226,8 @@ function A.clearFixture()
 
 
 
-
-
 	pcall(A.rebuildIndex)
-
-
 	pcall(A.notePrune, "fixture-clear", storedBefore)
-
-
 
 	A.storeReplaced()
 

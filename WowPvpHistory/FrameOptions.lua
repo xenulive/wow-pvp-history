@@ -11,32 +11,7 @@
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 local _, A = ...
-
 
 
 local FRAME_NAME = "WowPvpHistoryOptionsFrame"
@@ -45,30 +20,15 @@ local FRAME_NAME = "WowPvpHistoryOptionsFrame"
 local window
 
 
-
-
-
 local restoreSlot = "current"
 local restoreArmed = false
-
-
-
-
 
 
 
 local ALL_SECTION = "all"
 
 
-
-
-
-
-
-
-
 local chosenSection = ALL_SECTION
-
 
 
 local function storageShowing()
@@ -76,19 +36,10 @@ local function storageShowing()
 end
 
 
-
-
-
 local lastOutcome
 
 
-
 local lastOutcomeRegister
-
-
-
-
-
 
 
 
@@ -103,10 +54,6 @@ end
 function A.restoreSlotName(slot)
 	return slot == "pinned" and "Pinned" or "Latest"
 end
-
-
-
-
 
 
 
@@ -134,25 +81,9 @@ end
 
 
 
-
-
-
-
-
-
-
-
 local function surface()
 	return type(CreateFrame) == "function"
 end
-
-
-
-
-
-
-
-
 
 
 
@@ -171,12 +102,6 @@ local SECTIONS = {
 }
 
 
-
-
-
-
-
-
 local function sectionRows()
 	local rows = { { value = ALL_SECTION, label = "All settings" } }
 	for i = 1, #SECTIONS do
@@ -184,17 +109,6 @@ local function sectionRows()
 	end
 	return rows
 end
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -217,10 +131,7 @@ local SWITCHES = {
 		get = function() return A.groupNotesEnabled() end,
 		set = function(on) return A.setGroupNotes(on) end,
 
-
-
 		available = function() return A.groupNotesAvailable() end,
-
 
 		needs = "Needs Group and match alerts, above.",
 	},
@@ -233,10 +144,6 @@ local SWITCHES = {
 			.. "who you have met or written about across the top of the screen.",
 		get = function() return A.announceEnabled() end,
 		set = function(on) return A.setAnnounce(on) end,
-
-
-
-
 
 	},
 	{
@@ -251,7 +158,6 @@ local SWITCHES = {
 	},
 	{
 
-
 		key = "openAfterMatch",
 		section = "alerts",
 		label = "Open the match after it ends",
@@ -260,7 +166,6 @@ local SWITCHES = {
 		set = function(on) return A.setOpenAfterMatch(on) end,
 	},
 	{
-
 
 		key = "sight",
 		section = "alerts",
@@ -298,7 +203,6 @@ local SWITCHES = {
 	},
 	{
 
-
 		key = "hold",
 		section = "history",
 		label = "Hold the exit while the scoreboard is read",
@@ -317,7 +221,6 @@ local SWITCHES = {
 		set = function(on) return A.setRememberTab(on) end,
 	},
 	{
-
 		key = "finder",
 		section = "history",
 		label = "Season record beside the group finder",
@@ -327,7 +230,6 @@ local SWITCHES = {
 		set = function(on) return A.setFinder(on) end,
 	},
 	{
-
 		key = "finderDock",
 		section = "history",
 		label = "Dock the season record to the group finder",
@@ -346,7 +248,6 @@ local SWITCHES = {
 	},
 	{
 
-
 		key = "loginLine",
 		section = "minimap",
 		label = "Name the version at login",
@@ -356,7 +257,6 @@ local SWITCHES = {
 		set = function(on) return A.setLoginLine(on) end,
 	},
 	{
-
 
 
 		key = "overlayShown",
@@ -379,27 +279,14 @@ local SWITCHES = {
 
 
 
-
-
-
-
-
-
-
-
-
-
 local function outcome(lines, register, walk)
 	if type(lines) == "table" and #lines > 0 then
-
-
 
 		local said = {}
 		for i = 1, #lines do
 			local line = tostring(lines[i])
 			if line ~= "" then
 				line = line:sub(1, 1):upper() .. line:sub(2)
-
 
 				if not line:match("[%.%?!]$") then
 					line = line .. "."
@@ -409,17 +296,10 @@ local function outcome(lines, register, walk)
 		end
 		lastOutcome = table.concat(said, " ")
 
-
 		lastOutcomeRegister = register
 	end
 	A.refreshOptionsWindow(walk == true)
 end
-
-
-
-
-
-
 
 
 
@@ -435,7 +315,6 @@ local DIAGNOSTIC_SWITCHES = {
 		set = function(on) return A.setDebug(on) end,
 	},
 	{
-
 
 		key = "debugText",
 		section = "diagnostic",
@@ -458,18 +337,14 @@ local CARD_HEADINGS = {
 }
 
 
-
-
 local ALL_COLUMNS = {
 	{ "alerts", "window" },
 	{ "notes", "history", "minimap", "diagnostic" },
 }
 
 
-
 local LEFT_SHARE = 1.25 / 2.25
 local BACKUP_SHARE = 1.2 / 2.2
-
 
 
 local findText = ""
@@ -478,8 +353,6 @@ local findText = ""
 local function findQuery()
 	return (findText:match("^%s*(.-)%s*$") or ""):lower()
 end
-
-
 
 
 local function tipFor(spec)
@@ -492,8 +365,6 @@ local function tipFor(spec)
 	end
 	return tip
 end
-
-
 
 
 function A.optionsSwitchCounts()
@@ -558,12 +429,10 @@ local function hideTip()
 end
 
 
-
 local function paintToggle(toggle)
 	local on = toggle:GetChecked() and true or false
 	local inset = (A.metric("toggleHeight") - A.metric("toggleKnob")) / 2
 	toggle.track:SetColorTexture(A.color(on and "accent" or "faint"))
-
 
 	local r, g, b = A.color("panelDeep")
 	toggle.knob:SetColorTexture(r, g, b, 1)
@@ -577,12 +446,10 @@ local function paintToggle(toggle)
 end
 
 
-
 local function buildToggle(parent)
 	local toggle = CreateFrame("CheckButton", nil, parent)
 	toggle.controlKind = "toggle"
 	toggle:SetSize(A.metric("toggleWidth"), A.metric("toggleHeight"))
-
 	toggle.track = toggle:CreateTexture(nil, "ARTWORK")
 	toggle.track:SetAllPoints(toggle)
 	toggle.knob = toggle:CreateTexture(nil, "OVERLAY")
@@ -598,7 +465,6 @@ local function buildToggle(parent)
 	paintToggle(toggle)
 	return toggle
 end
-
 
 
 local function buildCard(frame, pane, heading)
@@ -637,9 +503,6 @@ local function buildCard(frame, pane, heading)
 	frame.cards[#frame.cards + 1] = card
 	return card
 end
-
-
-
 
 
 
@@ -694,8 +557,6 @@ local function atRight(row, control, beside)
 end
 
 
-
-
 local function rowNeed(row)
 	local need = row.indent + A.labelRoom(row.label:GetText() or "")
 	local controls = row.rightControls or {}
@@ -719,8 +580,6 @@ local function paneNeed(pane)
 	end
 	return widest
 end
-
-
 
 
 
@@ -775,10 +634,8 @@ end
 
 local function buildButton(parent, text, onClick)
 
-
 	return A.pill(parent, text, onClick, A.metric("actionMin"))
 end
-
 
 
 local function switchRow(card, spec, opts)
@@ -793,12 +650,10 @@ local function switchRow(card, spec, opts)
 
 	toggle:SetScript("OnClick", function(self)
 
-
 		local wanted = self:GetChecked() and true or false
 		if not self.spec.set(wanted) then
 			A.say("no database, so the setting could not be stored")
 		end
-
 
 		A.refreshOptionsWindow()
 	end)
@@ -813,14 +668,6 @@ local function switchRow(card, spec, opts)
 	row:SetScript("OnLeave", hideTip)
 	return row, toggle
 end
-
-
-
-
-
-
-
-
 
 
 
@@ -863,7 +710,6 @@ local function paintStepper(stepper)
 	local at = stepper.getter()
 	stepper.figure:SetText(("%d%s"):format(at, stepper.suffix or "%"))
 
-
 	pcall(at <= min and stepper.minus.Disable or stepper.minus.Enable, stepper.minus)
 	pcall(at >= max and stepper.plus.Disable or stepper.plus.Enable, stepper.plus)
 end
@@ -889,7 +735,6 @@ local function buttonRow(card, label, text, onClick, opts)
 end
 
 
-
 local function buildAnnounceRows(frame, card)
 	local choices = {}
 	for _, choice in ipairs(A.announceShapeChoices()) do
@@ -911,17 +756,12 @@ local function buildAnnounceRows(frame, card)
 	frame.announceShapeSegment = shape
 
 
-
-
-
 	frame.announceTime = buildStepper(frame, cardRow(card, "Time", { sub = true }),
 		A.announceTime, A.setAnnounceTime, A.announceTimeRange)
 	frame.announceSize = buildStepper(frame, cardRow(card, "Size", { sub = true }),
 		A.announceSize, A.setAnnounceSize, A.announceSizeRange)
 	frame.announceOpacity = buildStepper(frame, cardRow(card, "Opacity", { sub = true }),
 		A.announceOpacity, A.setAnnounceOpacity, A.announceOpacityRange)
-
-
 
 
 	local position = cardRow(card, "Position", { sub = true, find = "position lock preview reset" })
@@ -936,7 +776,6 @@ local function buildAnnounceRows(frame, card)
 		end
 	end)
 	atRight(position, frame.announceReset)
-
 
 
 
@@ -993,8 +832,6 @@ end
 
 
 
-
-
 local function buildSwitchCard(frame, pane, section)
 	local card = buildCard(frame, pane, CARD_HEADINGS[section])
 	for i = 1, #SWITCHES do
@@ -1017,7 +854,6 @@ end
 
 local function buildWindowCard(frame, pane)
 	local card = buildCard(frame, pane, CARD_HEADINGS.window)
-
 
 
 	local labels = {}
@@ -1053,8 +889,6 @@ local function buildWindowCard(frame, pane)
 	end
 
 
-
-
 	local _, reset = buttonRow(card, "Window size and place", "Reset", function()
 		if type(A.resetGeometryLines) ~= "function" then
 			outcome({ "the window geometry did not load, so nothing could be forgotten" }, "fault")
@@ -1067,7 +901,6 @@ local function buildWindowCard(frame, pane)
 		outcome(lines)
 	end)
 	frame.resetGeometry = reset
-
 
 
 	local history = cardRow(card, "", { find = "the match history open client settings panel" })
@@ -1085,7 +918,6 @@ local function buildWindowCard(frame, pane)
 			return
 		end
 
-
 		if why == "combat" then
 			outcome({ "the client's settings panel cannot be opened in combat. The same switches "
 				.. "are under the sections at the left" }, "fault")
@@ -1099,7 +931,6 @@ local function buildWindowCard(frame, pane)
 	pane.cards = { card }
 	return card
 end
-
 
 
 local function buildDiagnosticCard(frame, pane)
@@ -1132,19 +963,6 @@ local function buildDiagnosticCard(frame, pane)
 	pane.cards = { card }
 	return card
 end
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -1214,7 +1032,6 @@ local function counted(n, one, many)
 end
 
 
-
 local function writtenText(at)
 	local day, clock = A.shortDayText(at), A.clockKey(at)
 	if day and clock then
@@ -1233,8 +1050,6 @@ local function buildStorageSection(frame, pane)
 	frame.storageOutcomeDot = pane:CreateTexture(nil, "ARTWORK")
 	frame.storageOutcomeDot:SetSize(A.metric("optionsDot"), A.metric("optionsDot"))
 	frame.storageOutcomeDot:Hide()
-
-
 
 
 	local meter = buildCard(frame, pane, "STORED HISTORY")
@@ -1269,7 +1084,6 @@ local function buildStorageSection(frame, pane)
 	end
 
 
-
 	local backup = buildCard(frame, pane, "BACK UP AND RESTORE")
 	frame.backupCard = backup
 	frame.lastCopy = backup:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
@@ -1287,7 +1101,6 @@ local function buildStorageSection(frame, pane)
 			outcome({ line }, nil, true)
 			return
 		end
-
 
 		local line
 		if result.reason == "smaller" then
@@ -1321,7 +1134,6 @@ local function buildStorageSection(frame, pane)
 		restoreArmed = false
 		local restored, lines = A.openRestore(restoreSlot, true)
 
-
 		outcome(lines, not restored and "fault" or nil)
 	end)
 
@@ -1354,7 +1166,6 @@ local function buildStorageSection(frame, pane)
 	for _, row in ipairs(transfer.rows) do
 		A.style(row.label, "cardLabel", "dim")
 	end
-
 
 
 	frame.eraseBox = CreateFrame("Frame", nil, pane)
@@ -1400,9 +1211,6 @@ end
 
 
 
-
-
-
 local function layoutStorage(frame, query)
 	local pane = frame.panes.storage
 	local width = frame.paneWidth or 0
@@ -1422,7 +1230,6 @@ local function layoutStorage(frame, query)
 	y = y + A.metric("optionsRow")
 
 
-
 	local meter = frame.meterCard
 	local inner = A.metric("cardHead") + pad
 	local figureH = A.fontSize("numberHuge")
@@ -1430,7 +1237,6 @@ local function layoutStorage(frame, query)
 	frame.meterFigure:SetPoint("TOPLEFT", meter, "TOPLEFT", pad, -inner)
 	frame.meterWord:ClearAllPoints()
 	frame.meterWord:SetPoint("BOTTOMLEFT", frame.meterFigure, "BOTTOMRIGHT", pad, 0)
-
 
 
 	local roomText = frame.meterRoom:GetText() or ""
@@ -1492,7 +1298,6 @@ local function layoutStorage(frame, query)
 
 
 
-
 	local backupW = math.floor((width - gap) * BACKUP_SHARE)
 	local widest = 0
 	for _, row in ipairs(frame.transferCard.rows) do
@@ -1551,13 +1356,6 @@ end
 
 
 
-
-
-
-
-
-
-
 local function layoutSections(frame)
 	local query = findQuery()
 	local gap = A.metric("setCardGap")
@@ -1569,7 +1367,6 @@ local function layoutSections(frame)
 		local leftW = math.floor((width - gap) * LEFT_SHARE)
 		local widths = { leftW, width - gap - leftW }
 		local columns = ALL_COLUMNS
-
 
 		local fits = true
 		for c = 1, #ALL_COLUMNS do
@@ -1651,12 +1448,10 @@ local function layoutSections(frame)
 
 	frame.rowsLeft = rows
 
-
 	frame.columnRoom = math.max(hostHeight, 1)
 	frame.paneHost:SetHeight(frame.columnRoom)
 	A.setSegmentChosen(frame.sections, chosenSection)
 end
-
 
 
 local function paneWidthFor(frame, width)
@@ -1664,11 +1459,6 @@ local function paneWidthFor(frame, width)
 	local body = (type(width) == "number" and width or 0) - A.metric("margin") * 2
 	return math.max(body - listWidth - A.metric("sectionGap"), 0)
 end
-
-
-
-
-
 
 
 
@@ -1692,11 +1482,9 @@ local function layoutOutcome(frame)
 end
 
 
-
 local function firstLine(value)
 	return (tostring(value):match("^[^\n]*"))
 end
-
 
 
 
@@ -1719,11 +1507,8 @@ end
 
 local function scrollEntry(state, section, target, range, scroll, reason, err)
 	A.trace("scroll", {
-
 		section = section,
 		state = state,
-
-
 		target = target,
 
 		range = range,
@@ -1731,7 +1516,6 @@ local function scrollEntry(state, section, target, range, scroll, reason, err)
 		scroll = scroll,
 
 		reason = reason,
-
 		err = err,
 	}, "ui")
 end
@@ -1747,10 +1531,6 @@ local function dropHeldScroll(frame, reason)
 	local range, scroll = scrollReading(frame.paneScroll)
 	scrollEntry("dropped", held.section, held.target, range, scroll, reason)
 end
-
-
-
-
 
 
 
@@ -1787,11 +1567,6 @@ end
 
 
 
-
-
-
-
-
 local function buildBody(host)
 	local frame = CreateFrame("Frame", FRAME_NAME, host)
 	frame:SetAllPoints(host)
@@ -1805,11 +1580,7 @@ local function buildBody(host)
 	frame.panes = {}
 
 
-
-
 	window = frame
-
-
 
 
 	local function offScreen()
@@ -1823,13 +1594,10 @@ local function buildBody(host)
 
 
 
-
-
 	local function pickSection(value)
 		return A.timedSwitch("section", chosenSection, function()
 			chosenSection = value
 			dropHeldScroll(frame, "section")
-
 
 
 			if frame.paneScroll then
@@ -1847,8 +1615,6 @@ local function buildBody(host)
 	frame.sections = A.sectionList(frame, sectionRows(), pickSection)
 	frame.sections:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
 
-
-
 	local countRoom = A.labelRoom("00/00") + A.metric("sectionIndent")
 	frame.sections:SetWidth(frame.sections:GetWidth() + countRoom)
 	for _, row in ipairs(frame.sections.children) do
@@ -1863,7 +1629,6 @@ local function buildBody(host)
 	frame.paneWidth = paneWidth
 
 
-
 	frame.header = CreateFrame("Frame", nil, frame)
 	frame.header:SetPoint("TOPLEFT", frame.sections, "TOPRIGHT", A.metric("sectionGap"), 0)
 	frame.header:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0)
@@ -1876,7 +1641,6 @@ local function buildBody(host)
 	frame.paneCount:SetPoint("BOTTOMLEFT", frame.paneTitle, "BOTTOMRIGHT", A.metric("sectionIndent"), 1)
 	frame.paneCount:SetJustifyH("LEFT")
 	frame.paneCount:SetWordWrap(false)
-
 
 
 	frame.find = A.entry(frame.header)
@@ -1899,25 +1663,14 @@ local function buildBody(host)
 
 
 
-
-
-
-
-
-
-
 	frame.paneScroll = CreateFrame("ScrollFrame", nil, frame, "ScrollFrameTemplate")
 	frame.paneScroll:SetPoint("TOPLEFT", frame.header, "BOTTOMLEFT", 0, 0)
 	frame.paneScroll:SetWidth(paneWidth)
 
 
-
-
 	if type(frame.paneScroll.ScrollBar) == "table" then
 		pcall(frame.paneScroll.ScrollBar.SetHideIfUnscrollable, frame.paneScroll.ScrollBar, true)
 	end
-
-
 
 
 
@@ -1927,11 +1680,6 @@ local function buildBody(host)
 	frame.paneScroll:HookScript("OnMouseWheel", function()
 		dropHeldScroll(frame, "wheel")
 	end)
-
-
-
-
-
 
 
 
@@ -1956,12 +1704,10 @@ local function buildBody(host)
 	end
 
 
-
 	frame.paneHost = CreateFrame("Frame", nil, frame.paneScroll)
 	frame.paneHost:SetWidth(paneWidth)
 	frame.paneHost:SetHeight(paneWidth)
 	frame.paneScroll:SetScrollChild(frame.paneHost)
-
 
 
 	for i = 1, #SECTIONS do
@@ -1987,18 +1733,14 @@ local function buildBody(host)
 	frame.paneScroll:SetHeight(frame.paneRoom)
 
 
-
 	frame.outcome = frame:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
-
 
 	frame.outcome:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0)
 	frame.outcome:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
 	frame.outcome:SetJustifyH("LEFT")
 
-
 	frame.outcome:SetWordWrap(false)
 	A.style(frame.outcome, "rowNote", "dimmer")
-
 
 
 	frame.outcomeDot = frame:CreateTexture(nil, "ARTWORK")
@@ -2009,8 +1751,6 @@ local function buildBody(host)
 	frame.outcomeDot:Hide()
 
 	layoutSections(frame)
-
-
 
 
 	local built = 0
@@ -2039,14 +1779,12 @@ local function windowOrNil()
 	local built = A.buildWindowOnce("settings", buildBody, host)
 	if not built then
 
-
 		window = nil
 		return nil
 	end
 	window = built
 	return window
 end
-
 
 
 
@@ -2068,7 +1806,6 @@ local function paintCard(card)
 		end
 	end
 end
-
 
 
 
@@ -2096,7 +1833,6 @@ local function paintMeter(frame, size)
 	A.style(frame.meterStored, "cardLabel", "dim")
 
 
-
 	local filled = 0
 	local drawnAbove = { ROOM = true, USED = true, STORED = true }
 	for i = 1, #readings do
@@ -2118,8 +1854,6 @@ local function paintMeter(frame, size)
 	end
 	frame.byteFilled = filled
 end
-
-
 
 
 local function paintBackup(frame)
@@ -2209,19 +1943,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 function A.refreshOptionsWindow(walk)
 	if not window then
 		return false
@@ -2241,8 +1962,6 @@ function A.refreshOptionsWindow(walk)
 		pcall(function()
 			check:SetChecked(check.spec.get() and true or false)
 
-
-
 			local available = check.spec.available == nil or check.spec.available() == true
 			if available then
 				check:Enable()
@@ -2254,7 +1973,6 @@ function A.refreshOptionsWindow(walk)
 				or "dimmer")
 		end)
 	end
-
 
 
 	for i = 1, #window.diagnostics do
@@ -2269,7 +1987,6 @@ function A.refreshOptionsWindow(walk)
 
 	pcall(function()
 		local state = A.minimapState()
-
 
 		if not state.available then
 			window.angle:SetText("This client has no minimap.")
@@ -2294,7 +2011,6 @@ function A.refreshOptionsWindow(walk)
 
 
 
-
 	pcall(function()
 		if walk or (window.heldSize == nil and window.onScreen and storageShowing()) then
 			window.heldSize = A.storedSize()
@@ -2305,7 +2021,6 @@ function A.refreshOptionsWindow(walk)
 	end)
 	pcall(paintBackup, window)
 	pcall(paintErase, window)
-
 
 
 	pcall(function()
@@ -2340,7 +2055,6 @@ function A.refreshOptionsWindow(walk)
 		A.style(window.storageOutcome, "rowNote", "dimmer")
 		window.storageOutcome:SetText(lastOutcome or "")
 
-
 		window.sections.rule:SetColorTexture(A.color("divider"))
 	end)
 
@@ -2365,7 +2079,6 @@ end
 
 
 
-
 function A.optionsChooseSlot(slot)
 	if slot ~= "current" and slot ~= "pinned" then
 		return false
@@ -2378,7 +2091,6 @@ function A.optionsChooseSlot(slot)
 	A.refreshOptionsWindow()
 	return true
 end
-
 
 
 function A.optionsFind(text)
@@ -2394,10 +2106,6 @@ end
 function A.optionsState()
 	return findText, restoreSlot, restoreArmed
 end
-
-
-
-
 
 
 local function sizeBody(frame, width, height)
@@ -2418,9 +2126,6 @@ end
 
 
 
-
-
-
 function A.paintPageBody(page, width, height)
 	if page == "about" then
 		return type(A.paintAboutBody) == "function" and A.paintAboutBody(width) or false
@@ -2435,10 +2140,6 @@ function A.paintPageBody(page, width, height)
 	window.paintedWidth, window.paintedHeight = width, height
 	return A.refreshOptionsWindow(arriving and storageShowing())
 end
-
-
-
-
 
 
 function A.dropHeldStoredSize()
@@ -2456,9 +2157,6 @@ function A.showOptionsWindow()
 	end
 
 	local shown = type(A.showWindowBody) == "function" and A.showWindowBody("settings") or false
-
-
-
 
 
 
@@ -2490,16 +2188,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
 function A.openSettings()
 	if A.showOptionsWindow() then
 		return "window"
@@ -2517,10 +2205,6 @@ function A.openSettings()
 end
 
 
-
-
-
-
 local function windowShown()
 	if not window then
 		return false
@@ -2535,7 +2219,6 @@ function A.hideOptionsWindow()
 	end
 	return type(A.hideWindow) == "function" and A.hideWindow() or false
 end
-
 
 
 function A.optionsWindowShown()
@@ -2571,8 +2254,6 @@ function A.showOptionsSection(value, scrollTo)
 	end
 	local shown
 
-
-
 	if windowShown() and window.pickSection then
 		window.pickSection(value)
 		shown = true
@@ -2587,10 +2268,6 @@ function A.showOptionsSection(value, scrollTo)
 		end
 		shown = A.showOptionsWindow()
 	end
-
-
-
-
 
 
 
@@ -2638,15 +2315,6 @@ function A.toggleOptionsWindow()
 	end
 	return A.showOptionsWindow()
 end
-
-
-
-
-
-
-
-
-
 
 
 

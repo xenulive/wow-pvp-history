@@ -1,5 +1,5 @@
 # The publish: a push to main publishes the draft release waiting for the version the shipped .toc
-# names, then pushes the wiki/ folder to this repository's wiki.
+# names, pushes the wiki/ folder to this repository's wiki, then removes wiki/ from main.
 #
 # A release arrives here as a pull request from release/v<version>, carrying the stripped addon,
 # LICENSE, wiki/ and this file, beside a draft release for v<version> with the zip attached. Merging
@@ -14,7 +14,8 @@
 # The release is published with GITHUB_TOKEN, which sets its target to the pushed commit and creates
 # the tag there. The wiki push takes PUBLIC_WIKI_TOKEN, a secret on this repository, since
 # GITHUB_TOKEN is not known to push to a wiki repository. A wiki push that fails leaves the release
-# published and fails the run, and rerunning the job pushes the wiki once the token can.
+# published and fails the run, and rerunning the job pushes the wiki once the token can. The commit
+# removing wiki/ is pushed with GITHUB_TOKEN, and a push made with that token starts no workflow.
 #
 # This file is copied here by every release and is edited where the release run keeps it.
 
@@ -188,6 +189,55 @@ jobs:
           Write-Host "wiki: $local pushed, $($pages.Count) pages and $images images"
           'state=pushed', "commit=$local", "pages=$($pages.Count)", "images=$images" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
+      # Runs once the wiki push succeeded, so main keeps the addon, the README, LICENSE and this file,
+      # and the pages live on the wiki alone; the README reads its pictures from the wiki. It works on
+      # main's tip rather than the pushed commit and pushes without force, so a main that moved during
+      # the step refuses the push rather than losing a commit.
+      - name: Remove the wiki folder from main
+        id: prune
+        if: steps.wiki.outcome == 'success'
+        shell: pwsh
+        env:
+          PUSH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $false
+          $finish = "The release v$env:VERSION and its wiki are published, and wiki/ is still on main; rerun this job to remove it."
+          if (-not [string]::IsNullOrWhiteSpace($env:PUSH_TOKEN)) {
+            $basic = [Convert]::ToBase64String([System.Text.Encoding]::ASCII.GetBytes("x-access-token:$env:PUSH_TOKEN"))
+            Write-Host "::add-mask::$basic"
+            $env:GIT_CONFIG_COUNT = '1'
+            $env:GIT_CONFIG_KEY_0 = 'http.https://github.com/.extraheader'
+            $env:GIT_CONFIG_VALUE_0 = "AUTHORIZATION: basic $basic"
+          }
+          $env:GIT_TERMINAL_PROMPT = '0'
+          $env:GIT_AUTHOR_NAME = $env:GIT_COMMITTER_NAME = 'github-actions[bot]'
+          $env:GIT_AUTHOR_EMAIL = $env:GIT_COMMITTER_EMAIL = '41898283+github-actions[bot]@users.noreply.github.com'
+          & git fetch -q origin main
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error title=prune::Fetching main answered $LASTEXITCODE. $finish"; exit 1 }
+          $tip = (& git rev-parse FETCH_HEAD).Trim()
+          if (@(& git ls-tree -d --name-only $tip -- wiki).Count -eq 0) {
+            Write-Host "prune: main at $tip carries no wiki/, so nothing is removed"
+            'state=absent', "commit=$tip" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+            exit 0
+          }
+          & git checkout -q --detach $tip
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error title=prune::Checking out main answered $LASTEXITCODE. $finish"; exit 1 }
+          & git rm -r -q -- wiki
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error title=prune::git rm answered $LASTEXITCODE. $finish"; exit 1 }
+          & git commit -q -m "release: v$env:VERSION keeps its pages on the wiki alone"
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error title=prune::git commit answered $LASTEXITCODE. $finish"; exit 1 }
+          $local = (& git rev-parse HEAD).Trim()
+          & git push -q origin 'HEAD:refs/heads/main'
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error title=prune::git push answered $LASTEXITCODE, which a main that moved during this step also answers. $finish"; exit 1 }
+          $remote = @(& git ls-remote origin refs/heads/main)
+          $read = if ($remote.Count -eq 1) { ($remote[0] -split '\s+')[0] } else { '' }
+          Write-Host "read back: main at $(if ($read) { $read } else { 'nothing' }) against $local pushed"
+          if ($read -cne $local) { Write-Host "::error title=prune::main reads '$read' and the commit pushed is $local. $finish"; exit 1 }
+          Write-Host "prune: wiki/ removed from main at $local"
+          'state=removed', "commit=$local" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
       # Always, because the summary is most worth reading on the run that failed, and printed to the
       # console as well as written to the run page.
       - name: Put the summary on the run
@@ -205,6 +255,9 @@ jobs:
           WIKI_COMMIT: ${{ steps.wiki.outputs.commit }}
           WIKI_PAGES: ${{ steps.wiki.outputs.pages }}
           WIKI_IMAGES: ${{ steps.wiki.outputs.images }}
+          PRUNE_OUTCOME: ${{ steps.prune.outcome }}
+          PRUNE_STATE: ${{ steps.prune.outputs.state }}
+          PRUNE_COMMIT: ${{ steps.prune.outputs.commit }}
         run: |
           $out = @('## Publish', '', '```text')
           $out += "commit   $env:GITHUB_SHA"
@@ -221,6 +274,9 @@ jobs:
             if ($env:WIKI_OUTCOME -eq 'success' -and $env:WIKI_STATE -eq 'unchanged') { $out += "wiki: unchanged, $env:WIKI_PAGES pages and $env:WIKI_IMAGES images already there" }
             elseif ($env:WIKI_OUTCOME -eq 'success') { $out += "wiki: $env:WIKI_COMMIT pushed, $env:WIKI_PAGES pages and $env:WIKI_IMAGES images" }
             else { $out += "wiki: not pushed, the wiki step reads $(if ($env:WIKI_OUTCOME) { $env:WIKI_OUTCOME } else { 'not run' })" }
+            if ($env:PRUNE_OUTCOME -eq 'success' -and $env:PRUNE_STATE -eq 'absent') { $out += "main: carries no wiki/ at $env:PRUNE_COMMIT" }
+            elseif ($env:PRUNE_OUTCOME -eq 'success') { $out += "main: wiki/ removed at $env:PRUNE_COMMIT" }
+            else { $out += "main: wiki/ not removed, the prune step reads $(if ($env:PRUNE_OUTCOME) { $env:PRUNE_OUTCOME } else { 'not run' })" }
           }
           else { $out += 'wiki: not pushed, no release was published' }
           $out += '```'

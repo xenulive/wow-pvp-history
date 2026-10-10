@@ -9,24 +9,7 @@
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 local _, A = ...
-
 
 
 local WORLD_GAP_MINUTES = 15
@@ -35,10 +18,7 @@ local GAP_SECONDS = WORLD_GAP_MINUTES * 60
 
 
 
-
-
 local baseline
-
 
 
 
@@ -46,8 +26,6 @@ local current, currentIndex
 
 
 local reported = false
-
-
 
 
 
@@ -92,7 +70,6 @@ local function readCounter()
 end
 
 
-
 local function inInstance()
 	return readable(IsInInstance) == true
 end
@@ -105,14 +82,9 @@ end
 
 
 
-
-
-
 local function restricted()
 	return (A.pvpRestricted())
 end
-
-
 
 
 
@@ -131,8 +103,6 @@ local function refusal()
 	end
 	return nil
 end
-
-
 
 
 
@@ -163,7 +133,6 @@ end
 
 
 
-
 local function close(record, reason, db)
 	record.worldOpen = nil
 	if type(record.completedEpoch) == "number" and type(record.openedEpoch) == "number" then
@@ -178,7 +147,6 @@ local function close(record, reason, db)
 	if not indexed then
 		A.noteError(folded, "world-index")
 	end
-
 
 	local merged, err = pcall(A.mergeNamedPlayers, record, db)
 	if not merged then
@@ -236,7 +204,6 @@ local function open(db, now)
 	db.matches[#db.matches + 1] = record
 	current, currentIndex = record, #db.matches
 
-
 	if A.finderRecordStored then
 		local repainted, err = pcall(A.finderRecordStored)
 		if not repainted then
@@ -249,7 +216,6 @@ local function open(db, now)
 			A.noteError(err, "world-overlay")
 		end
 	end
-
 	pcall(A.noteCanary)
 	return record
 end
@@ -264,8 +230,6 @@ local function closeIfStale(now)
 	end
 	return false
 end
-
-
 
 
 
@@ -295,10 +259,6 @@ end
 
 
 
-
-
-
-
 local function recordFor(now)
 	if A.sandboxed() and A.endSandbox() then
 		A.trace("sandbox", { state = "ended", reason = "world" }, "data")
@@ -314,7 +274,6 @@ local function recordFor(now)
 	end
 	return open(db, now), true
 end
-
 
 
 local function count(kills, deaths, delta)
@@ -339,7 +298,6 @@ local function count(kills, deaths, delta)
 		d = record.deaths, delta = delta })
 	armGap()
 end
-
 
 
 
@@ -371,8 +329,6 @@ end
 
 
 
-
-
 local function victimToken(guid)
 	for i = 1, #VICTIM_TOKENS do
 		local token = VICTIM_TOKENS[i]
@@ -397,10 +353,6 @@ local function unitString(value)
 	end
 	return nil
 end
-
-
-
-
 
 
 
@@ -434,7 +386,6 @@ local function readTraits(row, guid)
 end
 
 
-
 local function pendingRow(record, guid)
 	if openRecord(A.savedDB()) ~= record or type(record.participants) ~= "table" then
 		return nil
@@ -449,9 +400,6 @@ local function traceKill(record, state, source, tries, row, tok)
 	A.trace("worldkill", { id = record.id, state = state, source = source, tries = tries,
 		n = record.participantCount, cls = row.class ~= nil, tok = tok })
 end
-
-
-
 
 
 
@@ -494,16 +442,12 @@ end
 
 
 
-
-
-
 local function onPartyKill(attackerGuid, targetGuid)
 	local why = refusal()
 	if why then
 		A.trace("worldkill", { state = "refused", reason = why })
 		return
 	end
-
 
 
 	local attacker = readableGuid(attackerGuid)
@@ -521,7 +465,6 @@ local function onPartyKill(attackerGuid, targetGuid)
 		A.trace("worldkill", { state = "refused", reason = "secret-target" })
 		return
 	end
-
 
 	if target:sub(1, 7) ~= "Player-" or guidFields(target) < 3 then
 		A.trace("worldkill", { state = "refused", reason = "not-player" })
@@ -587,7 +530,6 @@ local function onKillsChanged()
 	local reading = readCounter()
 	if reading == nil or baseline == nil then
 
-
 		baseline = reading
 		A.trace("world", { state = "refused", reason = "no-baseline" })
 		return
@@ -597,7 +539,6 @@ local function onKillsChanged()
 	if delta == 0 then
 		return
 	end
-
 
 	baseline = reading
 	if delta < 0 then
@@ -612,7 +553,6 @@ local function onKillsChanged()
 	end
 	count(delta, 0, delta)
 end
-
 
 
 local function onDead()
@@ -636,15 +576,12 @@ local function onEnteringWorld()
 	end
 	baseline = readCounter()
 
-
-
 	if baseline == nil then
 		A.trace("world", { state = "baseline", source = "entering", reason = "unread" })
 	else
 		A.trace("world", { state = "baseline", source = "entering", baseline = baseline })
 	end
 end
-
 
 
 local function onLogin()
@@ -660,9 +597,6 @@ local function onLogin()
 		end
 	end
 end
-
-
-
 
 
 

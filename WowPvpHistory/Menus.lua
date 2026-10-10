@@ -5,35 +5,7 @@
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 local _, A = ...
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -55,16 +27,10 @@ local TAGS = {
 
 
 
-
-
 local TITLE_NOTE_MAX = 60
 
 
-
 local registered = 0
-
-
-
 
 
 
@@ -81,8 +47,6 @@ end
 
 
 
-
-
 function A.setContextMenu(enabled)
 	local db = A.db()
 	if not db then
@@ -94,8 +58,6 @@ function A.setContextMenu(enabled)
 	else
 		db.ui.contextMenu = nil
 	end
-
-
 
 
 	if A.notifyContextMenuSetting then
@@ -118,9 +80,6 @@ end
 
 
 
-
-
-
 local function guarded(fn, ...)
 	if type(fn) ~= "function" then
 		return nil
@@ -131,8 +90,6 @@ local function guarded(fn, ...)
 	end
 	return res
 end
-
-
 
 
 
@@ -148,11 +105,6 @@ local function readable(value)
 	end
 	return value
 end
-
-
-
-
-
 
 
 
@@ -196,20 +148,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 function A.clientPlayerName(guid)
 	local fn = GetPlayerInfoByGUID
 	if type(fn) ~= "function" then
@@ -220,7 +158,6 @@ function A.clientPlayerName(guid)
 	if not ok then
 		return nil
 	end
-
 
 
 
@@ -235,14 +172,6 @@ function A.clientPlayerName(guid)
 	end
 	return ("%s-%s"):format(name, realm)
 end
-
-
-
-
-
-
-
-
 
 
 
@@ -283,17 +212,10 @@ end
 
 
 
-
-
-
-
-
-
 local function writeRating(guid, value)
 	if not A.setPlayerRating(guid, value) then
 		return false
 	end
-
 
 
 	local name = A.clientPlayerName(guid)
@@ -303,15 +225,9 @@ local function writeRating(guid, value)
 	end
 
 
-
 	if named and type(A.refreshNotes) == "function" then
 		pcall(A.refreshNotes)
 	end
-
-
-
-
-
 
 
 
@@ -322,8 +238,6 @@ local function writeRating(guid, value)
 	}, "data")
 	return true
 end
-
-
 
 
 
@@ -338,16 +252,8 @@ end
 
 
 
-
-
-
-
-
-
-
 local function build(root, guid)
 	local name = playerName(guid)
-
 
 
 
@@ -355,14 +261,9 @@ local function build(root, guid)
 		root:CreateDivider()
 	end
 
-
 	if type(root.CreateTitle) == "function" then
 		root:CreateTitle(A.colorEscape("accent") .. A.displayName() .. "|r")
 	end
-
-
-
-
 
 
 
@@ -374,13 +275,7 @@ local function build(root, guid)
 
 
 
-
-
-
-
-
 	local said = record or (A.colorEscape("dimmer") .. "no recorded match")
-
 
 
 	root:CreateButton(said .. "|r", function()
@@ -392,13 +287,9 @@ local function build(root, guid)
 
 
 
-
-
-
 	if not (known(guid) or name) then
 		return
 	end
-
 
 	local sub = root:CreateButton("Rate and note")
 
@@ -414,7 +305,6 @@ local function build(root, guid)
 	local choices = A.ratingChoices()
 	for i = 1, #choices do
 		local choice = choices[i]
-
 
 		local wanted = choice.rating
 		local offered = wanted ~= nil
@@ -438,27 +328,13 @@ local function build(root, guid)
 	sub:CreateDivider()
 
 
-
 	sub:CreateButton("Write a note", function()
 		if type(A.openPlayer) == "function" then
-
 
 			A.openPlayer(guid, true, "menu")
 		end
 	end)
 end
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -485,12 +361,9 @@ local function modify(tag, root, contextData)
 
 	local guid, path = resolve(contextData)
 	if not guid then
-
-
 		traceTag(tag, "unresolved")
 		return
 	end
-
 
 
 	if guid == A.ownGuid() then
@@ -501,12 +374,6 @@ local function modify(tag, root, contextData)
 	build(root, guid)
 	traceTag(tag, path)
 end
-
-
-
-
-
-
 
 
 

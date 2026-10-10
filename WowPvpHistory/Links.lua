@@ -6,48 +6,17 @@
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 local ADDON, A = ...
-
 
 
 local LINK_TYPE = "addon"
 local PREFIX = LINK_TYPE .. ":" .. ADDON .. ":"
 
-
-
 local PLAYER_KIND = "player"
 local MATCH_KIND = "match"
 
 
-
 local registered = false
-
-
-
-
 
 
 
@@ -58,8 +27,6 @@ local function carriable(text)
 end
 
 
-
-
 local function link(kind, payload, text)
 	if not carriable(text) then
 		return text
@@ -67,10 +34,6 @@ local function link(kind, payload, text)
 	if not (registered and carriable(payload)) then
 		return text
 	end
-
-
-
-
 
 
 
@@ -84,9 +47,6 @@ end
 
 
 
-
-
-
 function A.matchLink(id, text)
 	if type(id) ~= "number" then
 		return text
@@ -95,18 +55,9 @@ function A.matchLink(id, text)
 end
 
 
-
-
-
 function A.linksAvailable()
 	return registered
 end
-
-
-
-
-
-
 
 
 
@@ -120,7 +71,6 @@ local function route(raw)
 		return false
 	end
 
-
 	if raw:sub(1, #PREFIX) ~= PREFIX then
 		return false
 	end
@@ -132,7 +82,6 @@ local function route(raw)
 
 	if kind == PLAYER_KIND then
 		A.trace("open", { source = "link", reason = PLAYER_KIND }, "ui")
-
 		if type(A.openPlayer) == "function" then
 			A.openPlayer(payload, false, "link")
 		end
@@ -143,7 +92,6 @@ local function route(raw)
 		local id = tonumber(payload)
 		A.trace("open", { source = "link", reason = MATCH_KIND, id = id }, "ui")
 
-
 		if id and type(A.raiseMatchWindow) == "function" then
 			A.raiseMatchWindow("match", id, "link")
 		end
@@ -152,9 +100,6 @@ local function route(raw)
 
 	return false
 end
-
-
-
 
 
 

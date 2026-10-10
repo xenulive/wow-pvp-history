@@ -8,7 +8,7 @@ The game doesn't keep this for you: the scoreboard disappears when you leave the
 your history in the game's own addon files on your computer, and there's nothing else to install or
 sign up for.
 
-These pages describe version **0.64.2**. Each version, with what it changed and its download, is listed on the [releases page](https://github.com/xenulive/wow-pvp-history/releases), newest first.
+These pages describe version **0.64.7**. Each version, with what it changed and its download, is listed on the [releases page](https://github.com/xenulive/wow-pvp-history/releases), newest first.
 
 ## Getting started
 

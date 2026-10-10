@@ -9,35 +9,7 @@
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
 local _, A = ...
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -52,7 +24,6 @@ local QUESTIONS = {
 	{ key = "worth", title = "Best teammate", columns = "askWorth", opens = "MET IN",
 		group = "THE SPECS BESIDE YOU", unit = { "round alongside you", "rounds alongside you" },
 		floor = "specs", noun = { "spec", "specs" } },
-
 
 	{ key = "comp", title = "Worst comp", table = "comp", opens = "MET IN",
 		group = "THE COMPS YOU MEET", unit = { "round against you", "rounds against you" },
@@ -78,9 +49,6 @@ function A.askQuestions()
 end
 
 
-
-
-
 function A.askQuestion(key)
 	if type(key) ~= "string" then
 		return nil
@@ -95,14 +63,9 @@ end
 
 
 
-
-
 function A.askDefault()
 	return QUESTIONS[1].key
 end
-
-
-
 
 
 
@@ -113,18 +76,10 @@ local ASK_SORT_DEFAULT = {
 	beats = { column = "rate", ascending = true },
 	where = { column = "rate", ascending = true },
 	worth = { column = "rate", ascending = false },
-
 	comp = { column = "rate", ascending = true },
 
 	maps = { column = "rate", ascending = false },
 }
-
-
-
-
-
-
-
 
 
 
@@ -147,24 +102,11 @@ end
 
 
 
-
-
-
-
-
 local NOTHING = "none yet"
 
 
 
-
 local UNREADABLE = "this couldn't be read: try /reload"
-
-
-
-
-
-
-
 
 
 
@@ -181,9 +123,6 @@ local function specReadings(format, season, character, bound, comp)
 	end
 	return type(cards) == "table" and cards or {}, type(rows) == "table" and rows or {}, nil, floor
 end
-
-
-
 
 
 
@@ -210,16 +149,12 @@ local function cardFor(cards, kind)
 end
 
 
-
 local function underOrder(a, b)
 	if (a.met or 0) ~= (b.met or 0) then
 		return (a.met or 0) > (b.met or 0)
 	end
 	return tostring(a.key or a.name) < tostring(b.key or b.name)
 end
-
-
-
 
 
 local function sideRow(row, which)
@@ -238,14 +173,9 @@ local function sideRow(row, which)
 		losses = side.losses,
 		winRate = side.winRate,
 
-
-
-
 		ids = type(row.matches) == "table" and row.matches or nil,
 	}
 end
-
-
 
 
 
@@ -266,9 +196,6 @@ local function specSides(rows, which, sort, ascending)
 	table.sort(under, underOrder)
 	return ranked, under, floor
 end
-
-
-
 
 
 local function answerBeats(format, season, character, bound, comp)
@@ -293,9 +220,6 @@ end
 
 
 
-
-
-
 local function answerWorth(format, season, character, bound, comp)
 	local cards, rows, reason, _, fault = specReadings(format, season, character, bound, comp)
 	if reason then
@@ -314,16 +238,9 @@ local function answerWorth(format, season, character, bound, comp)
 		lead = ranked[1],
 		reason = #ranked == 0 and ("no spec has been beside you %d times yet"):format(floor) or nil,
 		floor = floor,
-
-
 		note = (#ranked > 0 and swing) and ("%s swings %s"):format(swing.name, swing.rate) or nil,
 	}
 end
-
-
-
-
-
 
 
 
@@ -338,7 +255,6 @@ function A.mapEntries(rows)
 		wins, losses = wins or 0, losses or 0
 		local entry = { key = row.map, name = row.map, met = wins + losses, played = row.played,
 			wins = wins, losses = losses, winRate = row.winRate,
-
 			ids = type(row.ids) == "table" and row.ids or nil }
 		if row.winRate ~= nil then
 			rated = true
@@ -365,15 +281,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
 local function answerWhere(format, season, character, bound, comp)
 	if type(A.mapTally) ~= "function" then
 		return { reason = UNREADABLE, fault = "the map grouping did not load",
@@ -389,7 +296,6 @@ local function answerWhere(format, season, character, bound, comp)
 		local reason = comp ~= nil and "no round against this composition here yet" or "no matches here yet"
 		if (unplaced or 0) > 0 then
 
-
 			reason = ("no map was recorded for %d %s here"):format(unplaced,
 				unplaced == 1 and "match" or "matches")
 		end
@@ -404,7 +310,6 @@ local function answerWhere(format, season, character, bound, comp)
 	if lead ~= nil and (#ranked < 2 or lead.winRate >= 0.5) then
 		lead = nil
 	end
-
 
 
 	local reason = nil
@@ -423,8 +328,6 @@ local function answerWhere(format, season, character, bound, comp)
 	return {
 		rows = ranked,
 		under = under,
-
-
 		preview = lead and lead.name or NOTHING,
 		lead = lead,
 		reason = reason,
@@ -446,11 +349,6 @@ local function compName(members)
 	end
 	return table.concat(parts, " + ")
 end
-
-
-
-
-
 
 
 
@@ -488,8 +386,6 @@ local function answerComp(format, season, character, bound)
 		floor = floor,
 	}
 end
-
-
 
 
 
@@ -537,18 +433,6 @@ local ANSWERS = {
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
 function A.askAnswer(key, format, season, character, bound, comp)
 	local question = A.askQuestion(key)
 	if question == nil then
@@ -564,7 +448,6 @@ function A.askAnswer(key, format, season, character, bound, comp)
 	if answer.floor == nil then
 		answer.floor = A.rankFloor(question.floor)
 	end
-
 
 	answer.unit = { "round", "rounds" }
 	answer.floorUnit = "rounds"
@@ -589,10 +472,6 @@ end
 
 
 
-
-
-
-
 function A.askFloorLine(answer)
 	if type(answer) ~= "table" or type(answer.under) ~= "table" or #answer.under == 0 then
 		return nil
@@ -602,7 +481,6 @@ function A.askFloorLine(answer)
 	return ("%d %s under %d %s"):format(count, count == 1 and tostring(noun[1]) or tostring(noun[2]),
 		answer.floor or 0, tostring(answer.floorUnit or "rounds"))
 end
-
 
 
 local askUnderShown = false
@@ -633,8 +511,6 @@ end
 
 
 
-
-
 function A.askAnswers(format, season, character, bound, comp)
 	local out = {}
 	for i = 1, #QUESTIONS do
@@ -642,12 +518,6 @@ function A.askAnswers(format, season, character, bound, comp)
 	end
 	return out
 end
-
-
-
-
-
-
 
 
 
@@ -677,12 +547,9 @@ function A.askLines(format, season, character, bound)
 			lines[#lines + 1] = "  " .. answer.reason
 		end
 
-
-
 		if answer.fault then
 			lines[#lines + 1] = "  " .. answer.fault
 		end
-
 
 
 		local card = A.askCard(answer)
@@ -695,12 +562,9 @@ function A.askLines(format, season, character, bound)
 				card.rate, card.record, card.over and (" " .. card.over) or "", card.faint and ", faint" or "")
 		end
 
-
 		lines[#lines + 1] = ("  floor %s %s, %d ranked, %d under"):format(tostring(answer.floor or "?"),
 			tostring(answer.floorUnit or "?"), type(answer.rows) == "table" and #answer.rows or 0,
 			type(answer.under) == "table" and #answer.under or 0)
-
-
 
 
 		local opens = A.askRowOpensKey(answer)
@@ -721,13 +585,6 @@ end
 
 
 
-
-
-
-
-
-
-
 function A.askSpanLine()
 	local room = select(5, A.askColumnShares())
 	local parts, disagreeing, unread, sets = {}, 0, 0, 0
@@ -736,7 +593,6 @@ function A.askSpanLine()
 		if QUESTIONS[i].columns ~= nil then
 			sets = sets + 1
 		end
-
 		if QUESTIONS[i].columns == nil then
 			span = false
 		elseif type(A.columnSpan) == "function" and type(A.rowColumns) == "function" then
@@ -772,10 +628,6 @@ end
 
 
 
-
-
-
-
 local ASK_CELL = {
 	name = function(row)
 		return tostring(row.name or "?")
@@ -785,7 +637,6 @@ local ASK_CELL = {
 	end,
 	record = function(row)
 
-
 		if row.winRate == nil or type(row.wins) ~= "number" or type(row.losses) ~= "number" then
 			return "-"
 		end
@@ -793,21 +644,12 @@ local ASK_CELL = {
 	end,
 	rate = function(row)
 
-
 		if row.rateHidden then
 			return "-"
 		end
 		return A.percentText(row.winRate) or "-"
 	end,
 }
-
-
-
-
-
-
-
-
 
 
 
@@ -837,7 +679,6 @@ function A.askElements(answer)
 
 		local style = nil
 
-
 		local bar = nil
 		if faint then
 			style = {}
@@ -857,8 +698,6 @@ function A.askElements(answer)
 		return { row = row, cells = cells, cellTint = tint, cellStyle = style,
 			cellBar = bar, askKey = answer.key, faint = faint or nil,
 
-
-
 			askRow = (A.askRowOpens(answer) and type(row.ids) == "table" and #row.ids > 0)
 				and A.askRowKey(row) or nil }
 	end
@@ -876,10 +715,6 @@ function A.askElements(answer)
 
 	return out
 end
-
-
-
-
 
 
 
@@ -918,14 +753,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
 function A.askRowLines(answer, rowKey)
 	local out = {}
 	local opens = A.askRowOpensKey(answer)
@@ -948,10 +775,6 @@ function A.askRowLines(answer, rowKey)
 	end
 	return A.idLines(held.ids, opens)
 end
-
-
-
-
 
 
 
@@ -978,11 +801,6 @@ function A.idLines(ids, key)
 	end
 	return out
 end
-
-
-
-
-
 
 
 
@@ -1029,23 +847,10 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
-
 function A.askCard(answer)
 	if type(answer) ~= "table" then
 		return nil
 	end
-
-
 	local title = tostring(answer.title or ""):upper()
 	local row = type(answer.lead) == "table" and answer.lead or nil
 	local faint = false
@@ -1092,9 +897,6 @@ end
 
 
 
-
-
-
 function A.askCards(answers)
 	local out = {}
 	if type(answers) ~= "table" then
@@ -1105,9 +907,6 @@ function A.askCards(answers)
 	end
 	return out
 end
-
-
-
 
 
 function A.askFillers()
@@ -1121,18 +920,10 @@ end
 
 
 
-
-
-
-
-
-
 local COMP_SORT_COLUMNS = {
 	{ sort = "met", name = "ROUNDS", first = "descending" },
 	{ sort = "rate", name = "WIN RATE", first = "ascending" },
 }
-
-
 
 
 local ASK_SORT_WORDS = {
@@ -1166,7 +957,6 @@ local askSortHeld = {}
 function A.askSortKnown(column)
 	return column == "met" or column == "rate"
 end
-
 
 
 
@@ -1204,9 +994,6 @@ end
 
 
 
-
-
-
 function A.toggleAskSort(key, column)
 	local default = ASK_SORT_DEFAULT[key]
 	if default == nil then
@@ -1235,8 +1022,6 @@ function A.toggleAskSort(key, column)
 end
 
 
-
-
 function A.clickAskSort(key, column)
 	A.toggleAskSort(key, column)
 	if type(A.refreshWindow) == "function" then
@@ -1260,9 +1045,6 @@ end
 
 
 
-
-
-
 function A.askSorted(answer)
 	local out = {}
 	if type(answer) ~= "table" or type(answer.rows) ~= "table" then
@@ -1278,7 +1060,6 @@ function A.askSorted(answer)
 	local column, ascending = A.askSort(answer.key)
 	local field = column == "rate" and "winRate" or "met"
 	table.sort(out, function(a, b)
-
 
 
 		local tierA, tierB = a.ranked ~= false, b.ranked ~= false
@@ -1306,7 +1087,6 @@ function A.askSorted(answer)
 	end)
 	return out
 end
-
 
 
 
@@ -1338,9 +1118,6 @@ end
 
 
 
-
-
-
 local specsViewShown = false
 local specsViewSort = nil
 
@@ -1348,7 +1125,6 @@ local specsViewSort = nil
 function A.specsViewShown()
 	return specsViewShown
 end
-
 
 
 function A.setSpecsView(shown)
@@ -1382,11 +1158,6 @@ end
 
 
 
-
-
-
-
-
 local mapsViewHeld = nil
 
 
@@ -1397,6 +1168,7 @@ function A.mapsViewShown()
 	local db = type(A.db) == "function" and A.db() or nil
 	return type(db) == "table" and type(db.ui) == "table" and db.ui.statsView == "maps" or false
 end
+
 
 
 function A.setMapsView(shown)
@@ -1451,10 +1223,6 @@ local function bestFirst(a, b)
 	end
 	return tostring(a.name) < tostring(b.name)
 end
-
-
-
-
 
 
 
@@ -1555,8 +1323,6 @@ end
 
 
 
-
-
 function A.askTableKind(answer)
 	if type(answer) ~= "table" then
 		return nil
@@ -1574,9 +1340,6 @@ end
 
 
 
-
-
-
 local function sentences(parts)
 	local out = {}
 	for i = 1, #parts do
@@ -1585,12 +1348,6 @@ local function sentences(parts)
 	end
 	return table.concat(out, ". ") .. "."
 end
-
-
-
-
-
-
 
 
 
@@ -1609,7 +1366,6 @@ function A.askNoteText(answer)
 	if type(answer.note) == "string" and answer.note ~= "" then
 		parts[#parts + 1] = answer.note
 	end
-
 
 	local words = A.askSortWords(answer.key)
 	if words ~= nil then

@@ -13,6 +13,7 @@ local _, A = ...
 
 
 
+
 local function wholeArgument(word, first, last)
 	local n = word ~= nil and tonumber(word) or nil
 	if n == nil or n % 1 ~= 0 or n < (first or 1) or (last ~= nil and n > last) then
@@ -73,9 +74,6 @@ local function reportDropped(db)
 			:format(tostring(e.at), tostring(e.reason), tostring(e.rounds), tostring(e.format),
 				tostring(e.rows), tostring(e.readAt), tostring(e.openedState)))
 	end
-
-
-
 
 
 
@@ -220,6 +218,7 @@ local function reportList(format)
 			return
 		end
 
+
 		local formats = A.formats()
 		if #formats > 0 then
 			A.say(("no stored match has format %q. stored: %s")
@@ -307,10 +306,6 @@ end
 
 
 
-
-
-
-
 local NOTES_CONTROLS = {
 	sort = function(value)
 		local word = value and value:lower() or nil
@@ -382,6 +377,8 @@ local NOTES_CONTROLS = {
 	end,
 }
 
+
+
 local function reportNotesWindow(word, rest)
 	local control = word and NOTES_CONTROLS[word:lower()] or nil
 	if control then
@@ -429,6 +426,7 @@ local function reportNotesWindow(word, rest)
 		end
 		record = A.match(id)
 		if not record then
+
 
 			local db = A.db()
 			A.say(("no stored match has id %s. %d recorded, ids run to %d"):format(tostring(id),
@@ -883,6 +881,8 @@ local function reportEditRecord(id, field, value, raw)
 
 
 
+
+
 		local none = not A.carriesResult(record)
 			and ("a %s record carries none"):format(A.formatLabel(record.format)) or nil
 		local held = A.resultCaptured(record) and A.capturedResultText(record) or nil
@@ -1111,8 +1111,6 @@ local function reportCompRow(format, index, scope)
 
 
 
-
-
 		local rounds = A.compRoundRows(format, row.key, scope.season, scope.character, scope.bound)
 		local held = {}
 		for i = 1, #rounds do
@@ -1128,6 +1126,7 @@ local function reportCompRow(format, index, scope)
 		A.say(("%s against %s: %d round%s in %d of %d matches, newest first"):format(
 			A.formatLabel(format), comp, #rounds, #rounds == 1 and "" or "s", #kept, #matches))
 	else
+
 
 
 		local counted = {}
@@ -1344,6 +1343,7 @@ local function reportAskOpen(word)
 		A.say("the Stats half is not on screen. /pvph show <tab> stats opens it")
 		return
 	end
+
 
 
 	local standIn = askStandIn()
@@ -1603,6 +1603,7 @@ local function reportFaults(word)
 	end
 
 
+
 	A.say(("body %s, %d fault%s over %d tab%s, from %d checks:")
 		:format(bodyLabel, #faults, #faults == 1 and "" or "s", tabs, tabs == 1 and "" or "s", #families))
 	for i = 1, #faults do
@@ -1805,6 +1806,7 @@ local function reportWindowTile(words)
 		return
 	end
 	local outcome, detail = A.showTileTooltipFor(label)
+
 
 
 	if word == "rate" and outcome ~= "shown" and detail == "not-drawn" then
@@ -2038,10 +2040,6 @@ end
 
 
 
-
-
-
-
 function A.screenRect(frame)
 	if frame == nil then
 		return nil, "not shown"
@@ -2074,6 +2072,7 @@ function A.screenRect(frame)
 	local y1 = math.ceil(edge(physical - (top - height) * unit))
 	return { left = x0, top = y0, width = x1 - x0, height = y1 - y0 }
 end
+
 
 
 
@@ -2340,6 +2339,7 @@ local function printCounters()
 		A.say(lines[i])
 	end
 end
+
 
 
 
@@ -2683,11 +2683,6 @@ local function reportFixture(words)
 
 
 
-
-
-
-
-
 	if (report.before or 0) > 0 then
 		A.say(("fixture: %d more generated %s, %d in the history now, %s")
 			:format(report.written, report.written == 1 and "record" or "records",
@@ -2843,12 +2838,14 @@ local function reportCsvImport(forced)
 					result.refused == 1 and "row" or "rows"))
 
 
+
 			local dropped = tonumber(result.roundsDropped) or 0
 			if dropped > 0 then
 				A.say(("csv import: %d typed round %s left off, because the match's recorded rounds rule %s out")
 					:format(dropped, dropped == 1 and "result was" or "results were",
 						dropped == 1 and "it" or "them"))
 			end
+
 
 
 			local resultDropped = tonumber(result.resultDropped) or 0
@@ -3108,7 +3105,6 @@ local function reportShow(db, id)
 	A.say("the window could not be opened. /pvph list reads the stored matches in chat")
 
 
-
 	reportStatus(db)
 end
 
@@ -3160,6 +3156,7 @@ local function reportAppearance(word)
 		A.say(("the appearance is %s, as stored"):format(appearanceLabel(A.theme())))
 	end
 end
+
 
 
 
@@ -3358,6 +3355,7 @@ local function reportMinimap(word)
 		A.say("the minimap button could not be built on this client. /pvph show opens the window")
 	end
 end
+
 
 
 
@@ -3753,6 +3751,7 @@ local function reportAnnounce(word, figure)
 				.. "/pvph announce preview puts it away. /pvph announce reset puts it back")
 		else
 
+
 			A.say("the preview could not be drawn on this client")
 		end
 		return
@@ -4044,6 +4043,7 @@ local function reportDuel(word)
 
 
 
+
 	A.say(A.duelPatternLine(state))
 
 
@@ -4053,6 +4053,7 @@ local function reportDuel(word)
 		A.say("a duel request is open, and its time is what a duration would be measured from")
 	end
 end
+
 
 
 
@@ -4151,22 +4152,11 @@ local DEBUG_SHOW = 20
 
 
 
-
-
-
 local function sayDebugTextState()
 	local on = A.debugTextEnabled()
 	A.say(("debug detail on screen is %s. /pvph debug text %s")
 		:format(on and "on" or "off", on and "off" or "on"))
 end
-
-
-
-
-
-
-
-
 
 
 
@@ -4280,6 +4270,9 @@ local function reportSample(word, words)
 		found = known.found, noted = noted, alerts = alerts, groupNotes = groupNotes })
 end
 
+
+
+
 local function reportDebug(word, one, two, words)
 	if word == "show" then
 
@@ -4298,6 +4291,7 @@ local function reportDebug(word, one, two, words)
 		end
 
 		if cat ~= nil and not A.debugCategory(cat) then
+
 
 			A.say(("unknown debug category %q. %s"):format(cat,
 				table.concat(A.debugCategories(), ", ")))
@@ -4376,7 +4370,6 @@ local function reportDebug(word, one, two, words)
 
 
 
-
 	if word == "fault" then
 		if not A.debugEnabled() then
 			A.say("the debug ring is off, and the staged fault panel is an instrument. /pvph debug on first")
@@ -4404,6 +4397,7 @@ local function reportDebug(word, one, two, words)
 		reportFixture(fixtureWords)
 		return
 	end
+
 
 
 
@@ -4676,6 +4670,7 @@ end
 
 
 
+
 function A.nearestCommand(word)
 	if type(word) ~= "string" or word == "" then
 		return nil
@@ -4720,9 +4715,6 @@ end
 
 
 
-
-
-
 local function reportMiss(word)
 	local near = A.nearestCommand(word)
 	if near then
@@ -4755,21 +4747,13 @@ SlashCmdList["WOWPVPHISTORY"] = function(msg)
 
 
 
+
 	local words = {}
 	for word in tostring(msg or ""):gmatch("%S+") do
 		words[#words + 1] = word
 	end
 
 	local first = words[1]
-
-
-
-
-
-
-
-
-
 
 
 
@@ -5053,6 +5037,7 @@ SlashCmdList["WOWPVPHISTORY"] = function(msg)
 	if first == "region" then
 
 
+
 		if words[2] and words[2]:lower() == "list" then
 			if type(A.listEdgeLines) ~= "function" then
 				A.say("the match window did not load, so the list has no edges to state")
@@ -5080,6 +5065,7 @@ SlashCmdList["WOWPVPHISTORY"] = function(msg)
 		reportRegion(words[2] and words[2]:lower() or nil)
 		return
 	end
+
 
 
 
@@ -5130,6 +5116,7 @@ SlashCmdList["WOWPVPHISTORY"] = function(msg)
 			:format(which == "graph" and "graph" or "Details lines", state == "shut" and "folded" or "open"))
 		return
 	end
+
 
 
 
@@ -5434,6 +5421,7 @@ SlashCmdList["WOWPVPHISTORY"] = function(msg)
 		end
 		return
 	end
+
 
 
 	local id = A.matchIdFromWord(first)

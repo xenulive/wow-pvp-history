@@ -1,25 +1,7 @@
 
 
 
-
-
-
-
-
-
-
-
-
-
 local _, A = ...
-
-
-
-
-
-
-
-
 
 
 
@@ -40,8 +22,6 @@ local LABELS = {
 	world = "World PvP",
 	unknown = "Other",
 }
-
-
 
 
 local SHORT_LABELS = {
@@ -86,7 +66,6 @@ function A.formatLabel(format)
 end
 
 
-
 function A.formatLabelList()
 	local out = {}
 	for _, label in pairs(LABELS) do
@@ -98,31 +77,14 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 function A.storesResult(format)
 	return not (format == "shuffle" or format == "shuffle-unrated" or format == "world")
 end
 
 
-
 function A.formatHasOutcome(format)
 	return format ~= "world"
 end
-
-
-
 
 
 
@@ -137,9 +99,6 @@ function A.carriesResult(record)
 end
 
 
-
-
-
 local LADDERLESS = {
 	bg = true,
 	["blitz-unrated"] = true,
@@ -152,14 +111,6 @@ local LADDERLESS = {
 
 
 
-
-
-
-
-
-
-
-
 function A.movesRating(format)
 	if format == nil then
 		return true
@@ -169,28 +120,9 @@ end
 
 
 
-
-
-
-
-
-
-
-
 function A.oneLadder(format)
 	return format ~= nil and format ~= "unknown"
 end
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -209,11 +141,6 @@ end
 
 
 
-
-
-
-
-
 local ORDER = {
 	"arena2", "arena3", "arena", "shuffle", "shuffle-unrated", "arena-unrated",
 	"blitz", "blitz-unrated", "rbg", "bg",
@@ -226,16 +153,8 @@ for i = 1, #ORDER do
 end
 
 
-
-
-
 local UNLISTED_RANK = #ORDER
 local UNKNOWN_RANK = #ORDER + 1
-
-
-
-
-
 
 
 function A.recordedBy(record, character)
@@ -244,8 +163,6 @@ function A.recordedBy(record, character)
 	end
 	return type(record) == "table" and record.character == character
 end
-
-
 
 
 function A.formatCounts(character)
@@ -264,8 +181,6 @@ function A.formatCounts(character)
 	end
 	return counts
 end
-
-
 
 
 
@@ -296,9 +211,6 @@ function A.allCount(character)
 end
 
 
-
-
-
 function A.allCountText(character)
 	local total, held = A.allCount(character)
 	local text = tostring(total)
@@ -307,26 +219,6 @@ function A.allCountText(character)
 	end
 	return text
 end
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -340,7 +232,6 @@ function A.characterList()
 	local function entry(guid)
 		local held = seen[guid]
 		if not held then
-
 
 			held = { guid = guid, matches = 0, left = 0, generated = 0 }
 			seen[guid] = held
@@ -386,8 +277,6 @@ function A.characterList()
 		if type(stored) == "table" and type(stored.name) == "string" and stored.name ~= "" then
 			held.name = stored.name
 			held.realm = type(stored.realm) == "string" and stored.realm or nil
-
-
 			held.label = held.realm and (held.name .. "-" .. held.realm) or held.name
 		else
 			held.label = "unresolved"
@@ -399,22 +288,14 @@ function A.characterList()
 
 	table.sort(out, function(a, b)
 
-
 		if a.total ~= b.total then
 			return a.total > b.total
 		end
-
 
 		return a.guid < b.guid
 	end)
 	return out, unattributed
 end
-
-
-
-
-
-
 
 
 function A.tabList(character)
@@ -433,7 +314,6 @@ function A.tabList(character)
 		if ar ~= br then
 			return ar < br
 		end
-
 		return a < b
 	end)
 
@@ -459,40 +339,7 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 local LADDER_CONTINUITY = 1000
-
-
-
 
 
 
@@ -514,18 +361,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
 function A.recordVerdict(record, roundVerdict)
 	if type(record) ~= "table" then
 		return nil, false, false
@@ -537,12 +372,10 @@ function A.recordVerdict(record, roundVerdict)
 	end
 
 
-
 	local manual = record.manual
 	if type(manual) == "table" and manual.result ~= nil and A.carriesResult(record) then
 		return manual.result, true, false
 	end
-
 
 	local verdict = roundVerdict
 	if verdict == nil then
@@ -557,9 +390,6 @@ end
 
 
 
-
-
-
 function A.recordLevel(record, outcome, derived)
 	if outcome == "draw" then
 		return true
@@ -570,8 +400,6 @@ function A.recordLevel(record, outcome, derived)
 	local ok, face = pcall(A.roundsVerdict, record)
 	return ok and face == "draw"
 end
-
-
 
 
 
@@ -594,26 +422,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 function A.mapTally(format, season, character, bound, comp)
 	local rows, order = {}, {}
 	local considered, decided, unplaced = 0, 0, 0
@@ -622,7 +430,6 @@ function A.mapTally(format, season, character, bound, comp)
 	if not (db and type(db.matches) == "table") then
 		return order, considered, decided, unplaced
 	end
-
 
 	local function rowFor(name)
 		local row = rows[name]
@@ -703,12 +510,10 @@ function A.mapTally(format, season, character, bound, comp)
 		end
 	end
 
-
 	for i = 1, #order do
 		local row = order[i]
 		row.winRate = select(4, A.winRecord(row))
 	end
-
 
 
 	table.sort(order, function(a, b)
@@ -724,20 +529,11 @@ end
 
 
 
-
-
-
-
-
-
-
-
 function A.lastMatch(format, season, character, bound, outcome)
 	local db = A.db()
 	if not (db and type(db.matches) == "table") then
 		return nil
 	end
-
 
 
 	local held, heldAt, heldClass, heldNumber = nil, nil, -1, 0
@@ -760,22 +556,8 @@ end
 
 
 
-
-
 local TREND_WEEKS = 12
 local WEEK = 7 * 86400
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -808,9 +590,6 @@ function A.cardTrend(key, format, season, character, bound)
 	if newest == nil then
 		return nil
 	end
-
-
-
 
 
 
@@ -847,7 +626,6 @@ function A.cardTrend(key, format, season, character, bound)
 		end
 	end
 
-
 	local points, lowest, highest = {}, nil, nil
 	for slot = 1, TREND_WEEKS do
 		local bucket = buckets[slot]
@@ -858,7 +636,6 @@ function A.cardTrend(key, format, season, character, bound)
 				running.decided = running.decided + bucket.decided
 				running.draws = running.draws + bucket.draws
 			end
-
 
 
 			if bucket ~= nil then
@@ -886,9 +663,6 @@ function A.cardTrend(key, format, season, character, bound)
 
 
 
-
-
-
 	local span = (highest or 0) - (lowest or 0)
 	for i = 1, #points do
 		if key == "winRate" then
@@ -903,14 +677,6 @@ function A.cardTrend(key, format, season, character, bound)
 	end
 	return points
 end
-
-
-
-
-
-
-
-
 
 
 
@@ -929,17 +695,12 @@ function A.winRecord(held)
 end
 
 
-
 function A.drawWord(format)
 	if format ~= nil and not A.storesResult(format) then
 		return "at 3-3"
 	end
 	return "drawn"
 end
-
-
-
-
 
 
 function A.winRecordText(held, format)
@@ -957,21 +718,11 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
 function A.summarize(format, season, character, bound)
 	local summary = {
 		format = format,
 		season = season,
 		bound = bound,
-
 
 		character = character,
 		undated = 0,
@@ -980,14 +731,7 @@ function A.summarize(format, season, character, bound)
 		decided = 0,
 		wins = 0,
 
-
-
 		draws = 0,
-
-
-
-
-
 
 
 		manualDecided = 0,
@@ -996,34 +740,20 @@ function A.summarize(format, season, character, bound)
 		derivedWon = 0,
 		skipped = 0,
 
-
-
 		rejected = 0,
-
-
 
 		zeroed = 0,
 
-
 		durationCount = 0,
-
-
-
-
-
 
 
 		roundsWon = 0,
 		roundsPlayed = 0,
 		roundLobbies = 0,
 
-
 		roundShuffles = 0,
 		lobbiesWon = 0,
 		series = {},
-
-
-
 
 		ladder = A.oneLadder(format),
 	}
@@ -1036,16 +766,9 @@ function A.summarize(format, season, character, bound)
 	local durationTotal, durationCount = 0, 0
 
 
-
-
-
 	local sides = { [0] = { decided = 0, wins = 0, draws = 0 }, [1] = { decided = 0, wins = 0, draws = 0 } }
 	local factionDecided, factionNoSide = 0, 0
-
-
 	local factionWins, factionDraws = 0, 0
-
-
 
 	local shortest, longest
 
@@ -1055,23 +778,16 @@ function A.summarize(format, season, character, bound)
 	local chainOut, chainSeason = nil, nil
 
 
-
 	local mmrFrom, mmrDropped = nil, nil
 
-
 	local verdicts, heldFirst, heldLast = {}, nil, nil
-
-
 
 
 	for i = 1, #db.matches do
 		local record = db.matches[i]
 
-
-
 		local held = (season == nil or (A.recordSeason(record) == season))
 			and A.recordedBy(record, character)
-
 
 		if held and bound ~= nil and (format == nil or record.format == format)
 			and A.recordEpoch(record) == nil then
@@ -1080,12 +796,10 @@ function A.summarize(format, season, character, bound)
 		held = held and A.recordSince(record, bound)
 		if held and (format == nil or record.format == format) then
 			summary.matches = summary.matches + 1
-
 			if format == nil and record.format ~= nil then
 				summary.formatMatches = summary.formatMatches or {}
 				summary.formatMatches[record.format] = (summary.formatMatches[record.format] or 0) + 1
 			end
-
 			if format == nil then
 				local at = A.recordEpoch(record)
 				if at ~= nil then
@@ -1106,10 +820,6 @@ function A.summarize(format, season, character, bound)
 			end
 
 
-
-
-
-
 			local roundVerdict, won, played = A.roundsOutcome(record)
 			if record.format == "shuffle" then
 				summary.roundShuffles = summary.roundShuffles + 1
@@ -1118,9 +828,6 @@ function A.summarize(format, season, character, bound)
 				summary.roundsWon = summary.roundsWon + won
 				summary.roundsPlayed = summary.roundsPlayed + played
 				summary.roundLobbies = summary.roundLobbies + 1
-
-
-
 				if roundVerdict == "win" then
 					summary.lobbiesWon = summary.lobbiesWon + 1
 				end
@@ -1129,13 +836,9 @@ function A.summarize(format, season, character, bound)
 					summary.roundThreshold = threshold
 				elseif summary.roundThreshold ~= threshold then
 
-
 					summary.roundThreshold = false
 				end
 			end
-
-
-
 
 			local outcome, byHand, derived = A.recordVerdict(record, roundVerdict)
 			if outcome ~= nil then
@@ -1144,7 +847,6 @@ function A.summarize(format, season, character, bound)
 				if level then
 					summary.draws = summary.draws + 1
 				end
-
 
 
 				if format == nil then
@@ -1164,8 +866,6 @@ function A.summarize(format, season, character, bound)
 						summary.derivedWon = summary.derivedWon + 1
 					end
 				end
-
-
 
 				local side, onBattleground = A.recordFaction(record)
 				if onBattleground then
@@ -1191,22 +891,11 @@ function A.summarize(format, season, character, bound)
 
 
 
-
-
-
-
-
-
 			local onLadder = summary.ladder and A.recordOnLadder(summary.format, record)
 			local row = onLadder and ownRow(record) or nil
 			local rating = row and row.rating
 
-
-
-
 			local change = row and type(row.ratingChange) == "number" and row.ratingChange or nil
-
-
 
 
 
@@ -1217,25 +906,7 @@ function A.summarize(format, season, character, bound)
 				local out = rating + (change or 0)
 
 
-
-
-
 				local mmr = mmrAfter ~= 0 and mmrAfter or nil
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -1247,17 +918,6 @@ function A.summarize(format, season, character, bound)
 				end
 
 				if out == 0 then
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -1278,21 +938,12 @@ function A.summarize(format, season, character, bound)
 
 
 
-
-
 					chainOut, chainSeason = out, pointSeason
 				elseif gap ~= nil and gap > LADDER_CONTINUITY then
 
 
-
 					summary.skipped = summary.skipped + 1
 					summary.rejected = summary.rejected + 1
-
-
-
-
-
-
 
 
 
@@ -1306,21 +957,12 @@ function A.summarize(format, season, character, bound)
 						gap = gap,
 						season = pointSeason,
 
-
-
 						reason = "departure",
 					}, "data")
 				else
 					chainOut, chainSeason = out, pointSeason
 
 					summary.lastFrom = rating
-
-
-
-
-
-
-
 
 
 					local measured = change
@@ -1332,9 +974,6 @@ function A.summarize(format, season, character, bound)
 					summary.rating = out
 					if mmr ~= nil then
 						summary.mmr = mmr
-
-
-
 
 
 
@@ -1357,11 +996,9 @@ function A.summarize(format, season, character, bound)
 						summary.mmr, summary.mmrChange, mmrFrom = nil, nil, nil
 					end
 
-
 					if summary.peak == nil or out > summary.peak then
 						summary.peak = out
 					end
-
 
 
 					summary.series[#summary.series + 1] = {
@@ -1370,20 +1007,12 @@ function A.summarize(format, season, character, bound)
 						mmr = mmr,
 						season = pointSeason,
 
-
-
 						at = record.openedAt or record.completedAt,
-
 
 						from = rating,
 					}
 				end
 			elseif onLadder then
-
-
-
-
-
 
 				summary.skipped = summary.skipped + 1
 			end
@@ -1399,17 +1028,10 @@ function A.summarize(format, season, character, bound)
 
 
 
-
-
-
-
-
-
 	if #summary.series > 0 then
 		summary.ratingFrom = summary.series[1].rating
 		summary.ratingFromReset = summary.series[1].from == 0
 	end
-
 
 
 
@@ -1425,15 +1047,12 @@ function A.summarize(format, season, character, bound)
 	end
 
 
-
-
 	if summary.roundsPlayed > 0 then
 		summary.roundRate = summary.roundsWon / summary.roundsPlayed
 	end
 	if summary.roundLobbies > 0 then
 		summary.lobbyRate = summary.lobbiesWon / summary.roundLobbies
 	end
-
 
 
 	if summary.mmr ~= nil and summary.rating ~= nil then
@@ -1444,8 +1063,6 @@ function A.summarize(format, season, character, bound)
 		A.trace("summary/mmr", { format = summary.format, id = mmrDropped.id, from = mmrDropped.from,
 			reason = "no-mmr" }, "data")
 	end
-
-
 
 
 
@@ -1494,15 +1111,8 @@ end
 
 
 
-
 local DAYS_TO_WEEKS = 91
 local WEEKS_TO_MONTHS = 27
-
-
-
-
-
-
 
 
 
@@ -1515,7 +1125,6 @@ function A.winLossColumns(verdicts, from, to)
 	elseif days > WEEKS_TO_MONTHS * 7 then
 		per = "month"
 	end
-
 
 	local out = { per = per, columns = {}, won = 0, lost = 0, drawn = 0, tallest = 0, undated = 0,
 		firstDay = first, lastDay = last }
@@ -1539,7 +1148,6 @@ function A.winLossColumns(verdicts, from, to)
 			column.won = column.won + 1
 			out.won = out.won + 1
 		elseif verdict.level then
-
 			column.drawn = column.drawn + 1
 			out.drawn = out.drawn + 1
 		else
@@ -1553,9 +1161,6 @@ function A.winLossColumns(verdicts, from, to)
 	end
 	return out
 end
-
-
-
 
 
 function A.winLossEnds(held)
@@ -1574,7 +1179,6 @@ function A.winLossEnds(held)
 end
 
 
-
 function A.winLossDayText(at, withYear)
 	if type(at) ~= "number" then
 		return nil
@@ -1585,7 +1189,6 @@ function A.winLossDayText(at, withYear)
 	end
 	return text
 end
-
 
 
 function A.winLossSpanText(column)
@@ -1600,7 +1203,6 @@ function A.winLossSpanText(column)
 end
 
 
-
 function A.winLossHoverText(column)
 	local span = A.winLossSpanText(column)
 	if span == nil then
@@ -1612,12 +1214,6 @@ function A.winLossHoverText(column)
 	end
 	return text
 end
-
-
-
-
-
-
 
 
 
@@ -1657,9 +1253,6 @@ function A.heatDays()
 	end
 	return out
 end
-
-
-
 
 
 function A.heatCell(at)
@@ -1710,20 +1303,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 function A.allOverview(season, character, bound, now)
 	local ok, summary = pcall(A.summarize, nil, season, character, bound)
 	if not ok or type(summary) ~= "table" then
@@ -1748,7 +1327,6 @@ function A.allOverview(season, character, bound, now)
 		floor = floor,
 	}
 
-
 	local tabs = A.tabList(character)
 	local byFormat = {}
 	for i = 1, #tabs do
@@ -1766,7 +1344,6 @@ function A.allOverview(season, character, bound, now)
 			byFormat[format].played = count
 		end
 	end
-
 
 
 
@@ -1845,7 +1422,6 @@ function A.allOverview(season, character, bound, now)
 		end
 	end
 
-
 	for _, week in ipairs(out.weeks) do
 		week.rate = select(4, A.winRecord({ wins = week.won, decided = week.won + week.lost + week.draws,
 			draws = week.draws }))
@@ -1859,7 +1435,6 @@ function A.allOverview(season, character, bound, now)
 			end
 		end
 	end
-
 
 
 	for _, row in ipairs(out.formats) do
@@ -1877,7 +1452,6 @@ function A.allOverview(season, character, bound, now)
 			row.peak = own.peak
 
 
-
 			if own.ratingFromReset ~= true then
 				row.from = own.ratingFrom
 			end
@@ -1888,7 +1462,6 @@ function A.allOverview(season, character, bound, now)
 	end
 	return out
 end
-
 
 
 function A.overviewSeasonText(row)
@@ -1904,25 +1477,6 @@ function A.overviewSeasonText(row)
 	end
 	return table.concat(parts, ", ")
 end
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -1950,7 +1504,6 @@ function A.opponentTally(format, character, season, bound)
 				local row = byName[name]
 				if not row then
 
-
 					row = { name = name, matches = 0, wins = 0, losses = 0, order = #rows + 1 }
 					row.bare, row.realm = A.nameParts(name)
 					byName[name] = row
@@ -1965,9 +1518,6 @@ function A.opponentTally(format, character, season, bound)
 					row.key = A.duelOpponentKey(record)
 				end
 
-
-
-
 				local outcome = A.recordVerdict(record)
 				if outcome == "win" then
 					row.wins = row.wins + 1
@@ -1975,7 +1525,6 @@ function A.opponentTally(format, character, season, bound)
 					row.losses = row.losses + 1
 				end
 			elseif format ~= nil then
-
 
 				missing = missing + 1
 			end
@@ -1992,9 +1541,6 @@ function A.opponentTally(format, character, season, bound)
 end
 
 
-
-
-
 function A.duelOpponentKey(record)
 	local participants = type(record) == "table" and record.participants or nil
 	if type(participants) ~= "table" then
@@ -2009,8 +1555,6 @@ function A.duelOpponentKey(record)
 	end
 	return nil
 end
-
-
 
 
 function A.duelHow(record)
@@ -2030,9 +1574,6 @@ function A.duelHow(record)
 	end
 	return nil
 end
-
-
-
 
 
 
@@ -2071,38 +1612,13 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
 local COMP_FORMATS = { arena = true, arena2 = true, arena3 = true, shuffle = true }
-
 
 
 local ROUND_FORMATS = { shuffle = true }
 
 
-
-
 local ROUND_ENEMIES = 3
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -2131,9 +1647,6 @@ local function keyMembers(members)
 end
 
 
-
-
-
 local function enemyComp(record)
 	if type(A.rosterSplit) ~= "function" then
 		return nil
@@ -2142,17 +1655,6 @@ local function enemyComp(record)
 	if not (split and #split.enemy > 0) then
 		return nil
 	end
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -2171,23 +1673,12 @@ local function enemyComp(record)
 			return nil
 		end
 
-
-
-
-
 		members[i] = { spec = spec, classToken = p.classToken, class = p.class,
 			damage = type(p.damage) == "number" and p.damage or nil }
 	end
 
-
 	return members
 end
-
-
-
-
-
-
 
 
 
@@ -2198,32 +1689,12 @@ function A.compKey(record)
 	end
 
 
-
-
-
-
-
-
-
-
-
 	local key = keyMembers(members)
 	if key == nil then
 		return nil
 	end
 	return key, members
 end
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -2251,8 +1722,6 @@ function A.roundCompKey(record, round)
 			return nil
 		end
 
-
-
 		members[i] = { spec = spec, classToken = p.classToken, class = p.class }
 	end
 
@@ -2264,20 +1733,10 @@ function A.roundCompKey(record, round)
 end
 
 
-
-
-
-
 local function compWinRate(row)
 	local draws = row.draws or 0
 	return select(4, A.winRecord({ wins = row.wins, decided = row.wins + row.losses + draws, draws = draws }))
 end
-
-
-
-
-
-
 
 
 function A.compShareText(row)
@@ -2288,7 +1747,6 @@ function A.compShareText(row)
 	local parts = {}
 	for i = 1, #row.members do
 		local m = row.members[i]
-
 		if type(m) == "table" and type(m.share) == "number" then
 			parts[#parts + 1] = ("%s %d%%"):format(tostring(m.spec),
 				math.floor(m.share * 100 + 0.5))
@@ -2301,19 +1759,9 @@ function A.compShareText(row)
 end
 
 
-
-
-
-
-
-
-
-
 function A.compFormat(format)
 	return type(format) == "string" and COMP_FORMATS[format] == true
 end
-
-
 
 
 function A.compRounds(format)
@@ -2329,9 +1777,6 @@ end
 function A.compUnit(format)
 	return A.compRounds(format) and "round" or "record"
 end
-
-
-
 
 
 local function tallyRow(byKey, ranked, key, members)
@@ -2360,28 +1805,11 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 local function tallyRounds(record, byKey, ranked)
 	local stored = type(record.rounds) == "table" and record.rounds or nil
 	if not stored or #stored == 0 then
 		return 0, 0, 0
 	end
-
 
 
 	local mine = ownRow(record)
@@ -2391,7 +1819,6 @@ local function tallyRounds(record, byKey, ranked)
 		previousRating = mine.rating
 	end
 	local previousEpoch = type(record.openedEpoch) == "number" and record.openedEpoch or nil
-
 
 
 	local outcomes = nil
@@ -2414,14 +1841,6 @@ local function tallyRounds(record, byKey, ranked)
 
 
 
-
-
-
-
-
-
-
-
 		local won = nil
 		if type(outcomes) == "table" and type(outcomes[i]) == "table" then
 			won = outcomes[i].won
@@ -2434,8 +1853,6 @@ local function tallyRounds(record, byKey, ranked)
 		else
 			local row = tallyRow(byKey, ranked, key, members)
 			row.games = row.games + 1
-
-
 
 			row.rounds = row.rounds or {}
 			row.rounds[#row.rounds + 1] = { id = record.id, round = i, won = won }
@@ -2461,7 +1878,6 @@ local function tallyRounds(record, byKey, ranked)
 		end
 
 
-
 		if type(round) == "table" and type(round.ratingPost) == "number" then
 			previousRating = round.ratingPost
 		else
@@ -2475,21 +1891,6 @@ local function tallyRounds(record, byKey, ranked)
 	end
 	return seen, missed, undecided
 end
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -2515,7 +1916,6 @@ function A.compTally(format, season, character, bound)
 	for i = 1, #db.matches do
 		local record = db.matches[i]
 
-
 		local held = type(record) == "table"
 			and (season == nil or A.recordSeason(record) == season)
 			and A.recordedBy(record, character)
@@ -2528,12 +1928,7 @@ function A.compTally(format, season, character, bound)
 		elseif held and record.format == format then
 			considered = considered + 1
 
-
-
 			local key, members = A.compKey(record)
-
-
-
 
 			local decided = record.result == "win" or record.result == "loss"
 			if key == nil or members == nil then
@@ -2543,18 +1938,12 @@ function A.compTally(format, season, character, bound)
 			else
 
 
-
-
 				local row = tallyRow(byKey, ranked, key, members)
 
 				row.games = row.games + 1
 
-
 				row.ids = row.ids or {}
 				row.ids[#row.ids + 1] = record.id
-
-
-
 
 
 				if record.result == "win" then
@@ -2564,11 +1953,6 @@ function A.compTally(format, season, character, bound)
 				else
 					row.losses = row.losses + 1
 				end
-
-
-
-
-
 
 
 
@@ -2598,16 +1982,7 @@ function A.compTally(format, season, character, bound)
 	for i = 1, #ranked do
 		local row = ranked[i]
 
-
-
-
-
-
-
-
 		local rate = row.games > 0 and compWinRate(row) or nil
-
-
 		if rate ~= nil and row.games < floor then
 			belowFloor = belowFloor + 1
 		end
@@ -2617,11 +1992,6 @@ function A.compTally(format, season, character, bound)
 				rankedCount = rankedCount + 1
 			end
 			row.winRate = rate
-
-
-
-
-
 
 			if row.damageTotal > 0 then
 				for m = 1, #row.members do
@@ -2640,7 +2010,6 @@ function A.compTally(format, season, character, bound)
 
 	table.sort(rows, function(a, b)
 
-
 		if a.ranked ~= b.ranked then
 			return a.ranked == true
 		end
@@ -2652,7 +2021,6 @@ function A.compTally(format, season, character, bound)
 			end
 			return a.order < b.order
 		end
-
 
 
 		local ar, br = a.winRate, b.winRate
@@ -2672,12 +2040,6 @@ function A.compTally(format, season, character, bound)
 	end)
 	return rows, skipped, belowFloor, considered, undecided, rankedCount
 end
-
-
-
-
-
-
 
 
 
@@ -2704,30 +2066,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 function A.specTally(format, season, character, bound, comp)
 	local against, alongside, readable, undecided = {}, {}, 0, 0
 	if not (A.compFormat(format) and A.compRounds(format)) then
@@ -2741,7 +2079,6 @@ function A.specTally(format, season, character, bound, comp)
 
 	local byKey = { against = {}, alongside = {} }
 	local order = { against = against, alongside = alongside }
-
 
 
 	local metIn, unsettled = {}, {}
@@ -2792,7 +2129,6 @@ function A.specTally(format, season, character, bound, comp)
 			and A.recordSince(record, bound)
 		if held and record.format == format and type(record.rounds) == "table" then
 
-
 			local outcomes = nil
 			if type(A.roundOutcomes) == "function" then
 				local answered, got = pcall(A.roundOutcomes, record)
@@ -2812,7 +2148,6 @@ function A.specTally(format, season, character, bound, comp)
 							won = outcomes[r].won
 						end
 
-
 						local inRound = {}
 						specKeys(foes, inRound)
 						specKeys(mates, inRound)
@@ -2823,7 +2158,6 @@ function A.specTally(format, season, character, bound, comp)
 							end
 						else
 							readable = readable + 1
-
 
 							fold("against", foes, won, {})
 							fold("alongside", mates, won, {})
@@ -2846,8 +2180,6 @@ function A.specTally(format, season, character, bound, comp)
 	end
 
 
-
-
 	local function rate(row)
 		local decided = row.wins + row.losses
 		if decided == 0 then
@@ -2861,7 +2193,6 @@ function A.specTally(format, season, character, bound, comp)
 			list[i].winRate = rate(list[i])
 		end
 	end
-
 
 
 	table.sort(against, function(a, b)
@@ -2885,9 +2216,6 @@ function A.specTally(format, season, character, bound, comp)
 
 	return against, alongside, readable, undecided, metIn, unsettled
 end
-
-
-
 
 
 
@@ -2919,29 +2247,10 @@ local ROUND_CELL = {
 }
 
 
-
-
-
-
-
-
-
-
-
-
 local SPEC_ABSENT = {
 	against = "never yet against you",
 	alongside = "never yet alongside you",
 }
-
-
-
-
-
-
-
-
-
 
 
 
@@ -2966,8 +2275,6 @@ local SPEC_CELL = {
 			return ""
 		end
 
-
-
 		return A.percentText(row.against.winRate) or "-"
 	end,
 	alongRounds = function(row)
@@ -2989,21 +2296,6 @@ local SPEC_CELL = {
 		return A.percentText(row.alongside.winRate) or "-"
 	end,
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -3058,8 +2350,6 @@ function A.compRoundRows(format, key, season, character, bound)
 						delta = A.signedText(round.ratingPost - previous)
 					end
 
-
-
 					local subject = {
 						id = record.id,
 						round = r,
@@ -3086,12 +2376,6 @@ function A.compRoundRows(format, key, season, character, bound)
 end
 
 
-
-
-
-
-
-
 function A.paneFillers(which)
 	if which == "round" then
 		return ROUND_CELL
@@ -3101,16 +2385,6 @@ function A.paneFillers(which)
 	end
 	return nil
 end
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -3130,23 +2404,9 @@ function A.rankFloor(kind)
 end
 
 
-
 function A.specCardFloor()
 	return A.rankFloor("specs")
 end
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -3155,8 +2415,6 @@ function A.specMerged(format, season, character, bound, comp)
 	local against, alongside, readable, undecided, metIn, unsettled =
 		A.specTally(format, season, character, bound, comp)
 	local byKey, out = {}, {}
-
-
 
 
 	local function slot(row)
@@ -3184,12 +2442,6 @@ end
 
 
 
-
-
-
-
-
-
 local SPEC_SORTS = {
 	spec = { field = "name",
 		ascending = "by name", descending = "by name, last first" },
@@ -3214,12 +2466,7 @@ function A.specSideRanked(side)
 end
 
 
-
 local SPEC_SORT_DEFAULT = "againstRate"
-
-
-
-
 
 
 function A.specSortKnown(key)
@@ -3232,16 +2479,10 @@ function A.specSortDefault()
 end
 
 
-
-
-
 function A.specSortWords(key, ascending)
 	local sort = SPEC_SORTS[key] or SPEC_SORTS[SPEC_SORT_DEFAULT]
 	return ascending == true and sort.ascending or sort.descending
 end
-
-
-
 
 
 function A.specSortOpens(key)
@@ -3260,14 +2501,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
 function A.specSorted(rows, key, ascending)
 	local sort = SPEC_SORTS[key] or SPEC_SORTS[SPEC_SORT_DEFAULT]
 	local up = ascending == true
@@ -3278,8 +2511,6 @@ function A.specSorted(rows, key, ascending)
 	for i = 1, #rows do
 		out[i] = rows[i]
 	end
-
-
 
 
 	local function valueOf(row)
@@ -3329,8 +2560,6 @@ function A.specSorted(rows, key, ascending)
 end
 
 
-
-
 local CARD_KINDS = { "hardest", "best", "swing" }
 
 
@@ -3343,17 +2572,6 @@ local CARD_TITLES = {
 
 
 
-
-
-
-
-
-
-
-
-
-
-
 local CARD_KEYS = {
 	hardest = { key = "HARDEST",
 		clause = "your lowest against any spec met %d times or more" },
@@ -3362,11 +2580,6 @@ local CARD_KEYS = {
 	swing = { key = "WORTH HAVING",
 		clause = "the largest gap between the two" },
 }
-
-
-
-
-
 
 
 
@@ -3403,17 +2616,12 @@ function A.keptOffLines(entries)
 end
 
 
-
-
-
-
 function A.cardKey(kind, floor)
 	local held = type(kind) == "string" and CARD_KEYS[kind] or nil
 	if held == nil then
 		return nil
 	end
 	local clause = held.clause
-
 
 	if type(floor) == "number" and clause:find("%%d", 1) ~= nil then
 		clause = clause:format(floor)
@@ -3422,21 +2630,11 @@ function A.cardKey(kind, floor)
 end
 
 
-
-
 local CARD_NEEDS = {
 	hardest = "against you",
 	best = "alongside you",
 	swing = "on both sides",
 }
-
-
-
-
-
-
-
-
 
 
 
@@ -3448,11 +2646,7 @@ local MERGED_TITLES = {
 }
 
 
-
-
-
 local CARD_NONE_NAME = "Nothing qualified"
-
 
 
 local function cardEvidence(kind, row)
@@ -3468,14 +2662,12 @@ local function cardEvidence(kind, row)
 end
 
 
-
 local function cardScore(kind, row, floor)
 	if kind == "hardest" then
 		local side = row.against
 		if not (side and side.winRate ~= nil) then
 			return nil
 		end
-
 
 		return -side.winRate, side.rounds >= floor
 	end
@@ -3491,12 +2683,9 @@ local function cardScore(kind, row, floor)
 		return nil
 	end
 
-
-
 	return alongside.winRate - against.winRate,
 		against.rounds >= floor and alongside.rounds >= floor
 end
-
 
 
 local function cardTops(kind, row, score, best, bestScore)
@@ -3512,14 +2701,6 @@ local function cardTops(kind, row, score, best, bestScore)
 	end
 	return tostring(row.key) < tostring(best.key)
 end
-
-
-
-
-
-
-
-
 
 
 
@@ -3544,20 +2725,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 function A.mergedCardTitle(kinds)
 	if type(kinds) ~= "table" or #kinds < 2 then
 		return nil
@@ -3566,34 +2733,12 @@ function A.mergedCardTitle(kinds)
 end
 
 
-
-
-
-
-
-
-
 local function bothSidesEvidence(against, alongside)
 	if against == alongside then
 		return ("%d rounds each way"):format(against)
 	end
 	return ("%d against, %d alongside"):format(against, alongside)
 end
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -3635,32 +2780,13 @@ local function collapseCards(cards)
 				againstRounds = lead.againstRounds,
 				alongRounds = lead.alongRounds,
 
-
 				rounds = math.min(lead.againstRounds or 0, lead.alongRounds or 0),
-
 				evidence = bothSidesEvidence(lead.againstRounds or 0, lead.alongRounds or 0),
-
 
 				figure = nil,
 
-
-
-
 				folded = group,
 			}
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -3683,7 +2809,6 @@ local function collapseCards(cards)
 					against == 1 and "round" or "rounds")
 			else
 
-
 				shared = ("Every figure is your own win rate over the rounds this spec was on that "
 					.. "side, %d against and %d alongside, not the spec's own."):format(
 					against, along)
@@ -3694,7 +2819,6 @@ local function collapseCards(cards)
 				shared,
 				{ gap = true },
 			}
-
 
 			for _, kind in ipairs(CARD_KINDS) do
 				if held[kind] then
@@ -3719,7 +2843,6 @@ local function collapseCards(cards)
 			end
 
 
-
 			local keptOff = {}
 			for _, kind in ipairs(CARD_KINDS) do
 				if held[kind] then
@@ -3733,9 +2856,6 @@ local function collapseCards(cards)
 				end
 			end
 			local said = A.keptOffLines(keptOff)
-
-
-
 
 			local floorLine = ("A spec needs %d rounds on a side."):format(lead.floor)
 			if #said > 0 then
@@ -3752,19 +2872,9 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
 local function noneCard(kind, floor, held)
 	local card = {
 		kind = "none",
-
 
 		kinds = { kind },
 		title = CARD_TITLES[kind],
@@ -3785,10 +2895,6 @@ local function noneCard(kind, floor, held)
 	end
 	return card
 end
-
-
-
-
 
 
 
@@ -3825,18 +2931,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
 function A.specCards(format, season, character, bound, comp)
 	local rows, readable, undecided = A.specMerged(format, season, character, bound, comp)
 	local floor = A.specCardFloor()
@@ -3863,7 +2957,6 @@ function A.specCards(format, season, character, bound, comp)
 			local card = {
 				kind = kind,
 
-
 				kinds = { kind },
 				title = CARD_TITLES[kind],
 				key = best.key,
@@ -3874,15 +2967,12 @@ function A.specCards(format, season, character, bound, comp)
 				floor = floor,
 				rounds = cardEvidence(kind, best),
 
-
-
 				againstRounds = best.against and best.against.rounds or nil,
 				alongRounds = best.alongside and best.alongside.rounds or nil,
 			}
 
 			if kind == "hardest" then
 				local side = best.against
-
 
 				card.rate = A.percentText(side.winRate)
 				card.figure = ("%s  %d-%d"):format(card.rate, side.wins, side.losses)
@@ -3909,7 +2999,6 @@ function A.specCards(format, season, character, bound, comp)
 			else
 				local against, alongside = best.against, best.alongside
 
-
 				local points = A.gapPoints(bestScore)
 				card.rate = A.signedText(points)
 				card.figure = ("%s  %s to %s"):format(card.rate,
@@ -3927,7 +3016,6 @@ function A.specCards(format, season, character, bound, comp)
 			end
 
 
-
 			local sentence = ("A spec needs %d rounds %s to be considered."):format(floor,
 				CARD_NEEDS[kind])
 			if held ~= nil and heldScore >= bestScore then
@@ -3939,7 +3027,6 @@ function A.specCards(format, season, character, bound, comp)
 
 			out[#out + 1] = card
 		else
-
 
 			missing[kind] = noneCard(kind, floor, held)
 		end
@@ -3955,13 +3042,6 @@ local SPEC_ENDS = {
 	{ kind = "best", title = "BEST WITH YOU", side = "alongside", sort = "alongRate", up = false },
 	{ kind = "worst", title = "WORST WITH YOU", side = "alongside", sort = "alongRate", up = true },
 }
-
-
-
-
-
-
-
 
 
 
@@ -3987,11 +3067,6 @@ function A.specEnds(rows)
 	end
 	return out
 end
-
-
-
-
-
 
 
 function A.specPaneDefault(cards)
@@ -4022,11 +3097,6 @@ end
 
 
 
-
-
-
-
-
 function A.specPaneSentence(row)
 	if type(row) ~= "table" then
 		return ""
@@ -4036,7 +3106,6 @@ function A.specPaneSentence(row)
 	local said = ""
 	if against and alongside and against.winRate ~= nil and alongside.winRate ~= nil then
 		if against.rounds >= floor and alongside.rounds >= floor then
-
 
 			local points = A.gapPoints(alongside.winRate - against.winRate)
 			if points > 0 then
@@ -4052,12 +3121,6 @@ function A.specPaneSentence(row)
 	end
 	return said
 end
-
-
-
-
-
-
 
 
 function A.matchLineText(id)
@@ -4086,13 +3149,6 @@ end
 
 
 
-
-
-
-
-
-
-
 function A.specPaneLines(row, picked)
 	local lines = {}
 	if type(row) ~= "table" then
@@ -4104,7 +3160,6 @@ function A.specPaneLines(row, picked)
 		absent = SPEC_ABSENT.against }
 	lines[#lines + 1] = { kind = "specSide", key = "ALONGSIDE YOU", text = specPaneSide(row.alongside),
 		absent = SPEC_ABSENT.alongside }
-
 	local say = A.specPaneSentence(row)
 	if say ~= "" then
 		lines[#lines + 1] = { kind = "specSay", text = say }
@@ -4130,9 +3185,6 @@ end
 local SPEC_STANDING = { hardest = "your hardest opponent", best = "your best teammate" }
 
 
-
-
-
 function A.specStanding(cards, key)
 	if type(cards) ~= "table" or key == nil then
 		return nil
@@ -4149,11 +3201,6 @@ function A.specStanding(cards, key)
 	end
 	return nil
 end
-
-
-
-
-
 
 
 function A.specDetailLines(row, standing)
@@ -4176,22 +3223,11 @@ function A.specDetailLines(row, standing)
 end
 
 
-
-
-
-
-
-
-
-
-
 function A.specRows(format, season, character, sort, ascending, bound)
 	local merged, readable, undecided = A.specMerged(format, season, character, bound)
 	local rows = A.specSorted(merged, sort, ascending)
 	return A.specElements(rows), readable, undecided, rows
 end
-
-
 
 
 
@@ -4205,7 +3241,6 @@ function A.specElements(rows)
 	for i = 1, #rows do
 		local row = rows[i]
 		local cells = A.columnCells(row, columns, SPEC_CELL)
-
 
 
 		local spans, style = nil, nil
@@ -4234,7 +3269,6 @@ function A.specElements(rows)
 				end
 			end
 		end
-
 
 
 
@@ -4267,7 +3301,6 @@ function A.specElements(rows)
 		end
 
 
-
 		local said = {}
 		for c = 1, #cells do
 			if cells[c] ~= nil and cells[c] ~= "" then
@@ -4284,7 +3317,6 @@ function A.specElements(rows)
 			text = table.concat(said, "  "),
 			specKey = row.key,
 
-
 			specIcon = type(A.specIcon) == "function" and A.specIcon(row.classToken, row.spec) or nil,
 			classToken = row.classToken,
 			faint = ranks == 0 or nil,
@@ -4295,9 +3327,6 @@ function A.specElements(rows)
 end
 
 
-
-
-
 local function lobbyRate(side)
 	local decided = side.wins + side.losses
 	if decided == 0 then
@@ -4305,34 +3334,6 @@ local function lobbyRate(side)
 	end
 	return side.wins / decided
 end
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -4368,10 +3369,8 @@ function A.lobbyTally(record)
 				order = #rows + 1,
 
 
-
 				with = { rounds = 0, wins = 0, losses = 0, at = {} },
 				against = { rounds = 0, wins = 0, losses = 0, at = {} },
-
 
 
 				seats = {},
@@ -4385,7 +3384,6 @@ function A.lobbyTally(record)
 	local function fold(side, entries, won, at)
 		for i = 1, #entries do
 			local row = slot(entries[i])
-
 
 			local held = row and row[side] or nil
 			if held then
@@ -4408,11 +3406,6 @@ function A.lobbyTally(record)
 			end
 		end
 	end
-
-
-
-
-
 
 
 	local read, typed = 0, 0
@@ -4456,19 +3449,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 function A.lobbySwing(row)
 	if type(row) ~= "table" or type(row.with) ~= "table" or type(row.against) ~= "table" then
 		return nil
@@ -4483,16 +3463,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
 local LOBBY_SORTS = {
 	withRate = { side = "with", field = "winRate", column = "WITH WON" },
 	againstRate = { side = "against", field = "winRate", column = "AGAINST WON" },
@@ -4500,11 +3470,7 @@ local LOBBY_SORTS = {
 }
 
 
-
 local LOBBY_SORT_DEFAULT = "swing"
-
-
-
 
 
 function A.lobbySortKnown(key)
@@ -4517,14 +3483,10 @@ function A.lobbySortDefault()
 end
 
 
-
 function A.lobbySortWords(key, ascending)
 	local sort = LOBBY_SORTS[key] or LOBBY_SORTS[LOBBY_SORT_DEFAULT]
 	return ("by %s, %s"):format(sort.column, ascending == true and "low to high" or "high to low")
 end
-
-
-
 
 
 function A.lobbySortOpens(key)
@@ -4538,12 +3500,6 @@ function A.lobbySortOpens(key)
 	end
 	return true
 end
-
-
-
-
-
-
 
 
 
@@ -4598,12 +3554,6 @@ end
 
 
 
-
-
-
-
-
-
 local LOBBY_CELL = {
 	spec = function(row)
 		return A.chipText(row)
@@ -4632,8 +3582,6 @@ local LOBBY_CELL = {
 }
 
 
-
-
 local function joinedCell(field)
 	return function(row)
 		local joined = type(row.joined) == "table" and row.joined or nil
@@ -4651,10 +3599,7 @@ LOBBY_CELL.kb = joinedCell("kb")
 LOBBY_CELL.dispels = joinedCell("dispels")
 
 
-
 local LOBBY_ROUND_LANES = 6
-
-
 
 
 local SEAT_WORD = { with = "WITH", against = "VS" }
@@ -4689,17 +3634,9 @@ end
 
 
 
-
-
-
 function A.lobbyColumns(record)
 	return withStoredRounds(A.rowColumns("lobby"), record)
 end
-
-
-
-
-
 
 
 
@@ -4735,9 +3672,6 @@ function A.lobbyPaneColumns(record, count)
 end
 
 
-
-
-
 function A.lobbyPaneDraws(record)
 	if type(record) ~= "table" or A.lobbyPaneColumns(record) == nil then
 		return false
@@ -4745,13 +3679,6 @@ function A.lobbyPaneDraws(record)
 	local rows = A.lobbyTally(record)
 	return type(rows) == "table" and #rows > 0
 end
-
-
-
-
-
-
-
 
 
 
@@ -4774,7 +3701,6 @@ function A.lobbyYou(record, columns)
 			else
 				entry = { round = column.round, word = "-", state = "open" }
 			end
-
 			if type(A.roundMeterLines) == "function" and type(record) == "table"
 				and type(record.character) == "string" then
 				entry.meter = A.roundMeterLines(record, record.character, column.round)
@@ -4790,23 +3716,12 @@ function A.lobbyYou(record, columns)
 end
 
 
-
-
-
 function A.lobbyFillers(which)
 	if which == "lobby" or which == "lobbyPane" then
 		return LOBBY_CELL
 	end
 	return nil
 end
-
-
-
-
-
-
-
-
 
 
 
@@ -4836,7 +3751,6 @@ function A.lobbyRows(record, sort, ascending, columns, joined)
 		end
 
 
-
 		local meter = nil
 		local lanes = type(columns) == "table" and columns or {}
 		if type(A.roundMeterLines) == "function" and type(row.guid) == "string" then
@@ -4864,16 +3778,6 @@ function A.lobbyRows(record, sort, ascending, columns, joined)
 
 	return out, read, total, tally, typed
 end
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -4921,13 +3825,6 @@ end
 
 
 
-
-
-
-
-
-
-
 local LOBBY_ROTATIONS = {
 	{
 		seat = "damage",
@@ -4942,16 +3839,6 @@ local LOBBY_ROTATIONS = {
 			.. "against you in every round, so nothing here waits on a count.",
 	},
 }
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -4999,18 +3886,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
 function A.lobbyOpposites(rows, read)
 	if type(rows) ~= "table" or type(read) ~= "number" or read <= 0 then
 		return nil
@@ -5039,15 +3914,12 @@ function A.lobbyOpposites(rows, read)
 end
 
 
-
 local LOBBY_OWN_RATE = "Both figures are your own win rate, never theirs."
 
 
 function A.lobbyOwnRate()
 	return LOBBY_OWN_RATE
 end
-
-
 
 
 
@@ -5061,34 +3933,8 @@ local REFUSAL_CLAUSE = {
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 function A.lobbyCaption(claim, read, total, opposites, typed, opts)
 	opts = type(opts) == "table" and opts or {}
-
-
 	if opts.pane == true then
 		return {}
 	end
@@ -5109,12 +3955,6 @@ function A.lobbyCaption(claim, read, total, opposites, typed, opts)
 
 
 
-
-
-
-
-
-
 		if read < total then
 			local missing = total - read
 			local entered = hand and (", %d entered by hand"):format(hand) or ""
@@ -5129,13 +3969,11 @@ function A.lobbyCaption(claim, read, total, opposites, typed, opts)
 		else
 
 
-
 			out[#out + 1] = handSentence(
 				"These counts are what was recorded rather than what the format dealt.")
 		end
 	end
 	out[#out + 1] = LOBBY_OWN_RATE
-
 
 
 	if held and opposites then
@@ -5144,23 +3982,6 @@ function A.lobbyCaption(claim, read, total, opposites, typed, opts)
 	end
 	return out
 end
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -5200,8 +4021,6 @@ function A.lobbyClaimFaults(claim, drawn)
 	end
 
 
-
-
 	if #drawn ~= want then
 		out[#out + 1] = {
 			what = "caption-contradicted",
@@ -5215,13 +4034,7 @@ function A.lobbyClaimFaults(claim, drawn)
 end
 
 
-
-
 local lobbyClaims = {}
-
-
-
-
 
 
 
@@ -5236,10 +4049,6 @@ function A.noteLobbyClaim(id, claim, drawn)
 	}
 	return true
 end
-
-
-
-
 
 
 function A.recordedLobbyClaims()
@@ -5265,24 +4074,7 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 function A.compHeading(format, drawn, sort, ascending, count)
-
-
 
 	if drawn == "spec" then
 		if type(count) == "number" and count > 0 then
@@ -5292,16 +4084,6 @@ function A.compHeading(format, drawn, sort, ascending, count)
 		return ("%s: every spec you have met, %s"):format(A.formatLabel(format),
 			A.specSortWords(sort, ascending))
 	end
-
-
-
-
-
-
-
-
-
-
 
 
 	local order = (count == 0) and "" or ", worst first"
@@ -5314,24 +4096,10 @@ function A.compHeading(format, drawn, sort, ascending, count)
 end
 
 
-
-
-
-
-
-
-
-
-
-
 function A.compDivider(format)
 	return ("UNDER %d %s"):format(A.rankFloor("comps"), A.compCountName(format)),
 		"not ranked, most met first"
 end
-
-
-
-
 
 
 function A.compLines(format, season, character, bound)
@@ -5348,8 +4116,6 @@ function A.compLines(format, season, character, bound)
 	for i = 1, #rows do
 		local row = rows[i]
 
-
-
 		if i == rankedCount + 1 then
 			local key, clause = A.compDivider(format)
 			lines[#lines + 1] = ("  %s: %s"):format(key:lower(), clause)
@@ -5357,7 +4123,6 @@ function A.compLines(format, season, character, bound)
 		local rate = row.winRate and ("%d%%"):format(math.floor(row.winRate * 100 + 0.5)) or "no result"
 		local delta = A.signedText(row.ratingDelta) or "0"
 		local length = row.avgDuration and A.clockText(row.avgDuration) or "unknown"
-
 
 		lines[#lines + 1] = ("  %d. %s -- %d %ss, %d-%d, %s, rating %s, avg %s"):format(
 			i, A.compText(row.members) or "unknown comp",
@@ -5367,20 +4132,12 @@ function A.compLines(format, season, character, bound)
 
 
 
-
-
-
-
-
-
-
 	local unlisted = belowFloor - (#rows - rankedCount)
 	local listFloor = A.metric("compListGames")
 	if A.compRounds(format) and #rows == 0 and unlisted > 0 then
 		lines[#lines + 1] = ("  no composition has reached %d rounds yet; %d %s so far"):format(
 			listFloor, unlisted, unlisted == 1 and "is being counted" or "are being counted")
 	elseif unlisted > 0 then
-
 		if A.compRounds(format) then
 			lines[#lines + 1] = ("  %d composition%s met fewer than %d rounds, not listed"):format(
 				unlisted, unlisted == 1 and "" or "s", listFloor)
@@ -5390,8 +4147,6 @@ function A.compLines(format, season, character, bound)
 		end
 	end
 	if skipped > 0 then
-
-
 
 		if A.compRounds(format) and considered > 0 then
 			lines[#lines + 1] = ("  %d of %d rounds recorded who shared the side; "
@@ -5403,21 +4158,11 @@ function A.compLines(format, season, character, bound)
 		end
 	end
 
-
-
-
 	if undecided > 0 then
 		lines[#lines + 1] = A.compUnratedLine(format, undecided)
 	end
 	return lines
 end
-
-
-
-
-
-
-
 
 
 
@@ -5435,12 +4180,6 @@ end
 
 
 
-
-
-
-
-
-
 function A.percentText(rate)
 	local points = A.percentPoints(rate)
 	if points == nil then
@@ -5451,20 +4190,12 @@ end
 
 
 
-
-
-
-
-
 function A.percentPoints(rate)
 	if type(rate) ~= "number" then
 		return nil
 	end
 	return math.floor(rate * 100 + 0.5)
 end
-
-
-
 
 
 
@@ -5485,15 +4216,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
 function A.gapPoints(gap)
 	local points = math.floor(math.abs(gap) * 100 + 0.5)
 	if gap < 0 then
@@ -5504,33 +4226,20 @@ end
 
 
 
-
-
-
 function A.signedText(n)
 	if type(n) ~= "number" then
 		return nil
 	end
 
-
 	if n == 0 then
 		return "0"
 	end
-
 
 	if n ~= math.floor(n) then
 		return ("%+.1f"):format(n)
 	end
 	return ("%+d"):format(n)
 end
-
-
-
-
-
-
-
-
 
 
 
@@ -5546,32 +4255,7 @@ function A.clockText(seconds)
 end
 
 
-
-
-
-
 local PLOT_STEPS = { 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000, 2500, 5000 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -5584,7 +4268,6 @@ function A.plotScale(lo, hi, maxTicks)
 		return nil
 	end
 
-
 	if type(maxTicks) ~= "number" or maxTicks < 0 then
 		maxTicks = 4
 	end
@@ -5592,12 +4275,8 @@ function A.plotScale(lo, hi, maxTicks)
 	for i = 1, #PLOT_STEPS do
 		local step = PLOT_STEPS[i]
 
-
-
 		local first = math.floor(lo / step) * step
 		local last = math.ceil(hi / step) * step
-
-
 
 		local inner = math.floor((last - first) / step) - 1
 		if inner < 0 then
@@ -5618,16 +4297,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
 function A.plotExtent(series, first, last)
 	local lo, hi
 
@@ -5644,17 +4313,12 @@ function A.plotExtent(series, first, last)
 	end
 
 	for i = first or 1, last or #series do
-
-
 		reach(series[i].rating)
 		reach(series[i].mmr)
 	end
 
 	return lo, hi
 end
-
-
-
 
 
 function A.dayText(stamp)
@@ -5664,8 +4328,6 @@ function A.dayText(stamp)
 	local day = stamp:match("^(%d%d%d%d%-%d%d%-%d%d)")
 	return day
 end
-
-
 
 
 
@@ -5688,10 +4350,6 @@ end
 
 
 
-
-
-
-
 function A.plotSpanText(series)
 	if type(series) ~= "table" or #series == 0 then
 		return nil
@@ -5708,16 +4366,6 @@ function A.plotSpanText(series)
 end
 
 
-
-
-
-
-
-
-
-
-
-
 function A.figureText(n)
 	if type(n) ~= "number" or n < 0 then
 		return nil
@@ -5730,15 +4378,6 @@ function A.figureText(n)
 	end
 	return ("%.1fM"):format(n / 1000000)
 end
-
-
-
-
-
-
-
-
-
 
 
 
@@ -5761,16 +4400,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
 function A.mmrCoverage(summary)
 	if type(summary) ~= "table" or type(summary.series) ~= "table" then
 		return nil
@@ -5783,17 +4412,12 @@ function A.mmrCoverage(summary)
 	for i = 1, total do
 
 
-
 		if type(summary.series[i].mmr) == "number" then
 			carried = carried + 1
 		end
 	end
 	return carried, total
 end
-
-
-
-
 
 
 
@@ -5807,21 +4431,8 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
-
 function A.mmrLineOffered(summary)
 	local carried, points = A.mmrCoverage(summary)
-
-
 	if carried == nil or points < A.metric("plotPointMin") then
 		return nil
 	end
@@ -5829,28 +4440,8 @@ function A.mmrLineOffered(summary)
 		return true
 	end
 
-
 	return false
 end
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -5862,18 +4453,13 @@ function A.plotReason(summary)
 
 	if not summary.ladder then
 
-
 		if summary.format == nil then
 			return nil
 		end
 
-
 		return ("%s holds more than one ladder, so there is no rating to draw")
 			:format(summary.label)
 	end
-
-
-
 
 
 
@@ -5898,22 +4484,8 @@ function A.plotReason(summary)
 end
 
 
-
-
 local ROUND_ORDINAL = { "first", "second", "third", "fourth", "fifth", "sixth", "seventh",
 	"eighth", "ninth", "tenth" }
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -5921,7 +4493,6 @@ function A.tileTooltip(summary, key)
 	if type(summary) ~= "table" or type(key) ~= "string" then
 		return nil
 	end
-
 
 
 	local clause, entry = {}, {}
@@ -5943,19 +4514,11 @@ function A.tileTooltip(summary, key)
 	end
 
 
-
 	if key == "ROUNDS WON" then
 		say(clause["ROUNDS"])
 	end
 	if key == "WIN RATE" or key == "MATCHES WON" then
-
-
 		say(clause["WIN RATE"])
-
-
-
-
-
 
 
 		local split = entry["FACTION"]
@@ -5968,11 +4531,8 @@ function A.tileTooltip(summary, key)
 			say(split.denominator)
 		end
 	elseif key == "MATCHES" then
-
-
 		say(clause["MATCHES"])
 	elseif key == "MMR" then
-
 
 		if summary.mmr ~= nil then
 			local head = tostring(summary.mmr)
@@ -5983,11 +4543,9 @@ function A.tileTooltip(summary, key)
 			say(head)
 		end
 
-
 		say(A.mmrGapText(summary.mmrGap, "your rating"))
 	elseif key == "AVG LENGTH" then
 		say(clause["AVG LENGTH"])
-
 
 		local short, long = A.clockText(summary.shortest), A.clockText(summary.longest)
 		if short ~= nil and long ~= nil then
@@ -6001,9 +4559,6 @@ function A.tileTooltip(summary, key)
 	table.insert(body, 1, key)
 	return body
 end
-
-
-
 
 
 function A.wholeAvgDuration(summary)
@@ -6030,28 +4585,6 @@ local FACTION_JOIN = " \194\183 "
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 function A.readingLines(summary, notRated, pane)
 	local out = {}
 	if type(summary) ~= "table" then
@@ -6064,11 +4597,6 @@ function A.readingLines(summary, notRated, pane)
 
 
 
-
-
-
-
-
 	local pair = A.winRecordText(summary, summary.format)
 	if pair ~= nil and select(4, A.winRecord(summary)) ~= nil then
 		local text
@@ -6078,7 +4606,6 @@ function A.readingLines(summary, notRated, pane)
 			text = ("%s over all %d %s"):format(pair, summary.matches,
 				summary.matches == 1 and "match" or "matches")
 		end
-
 		local byHand = summary.manualDecided or 0
 		if byHand > 0 and not pane then
 			text = text .. (", %s %s entered by hand"):format(
@@ -6087,15 +4614,6 @@ function A.readingLines(summary, notRated, pane)
 		end
 		put("WIN RATE", text)
 	end
-
-
-
-
-
-
-
-
-
 
 
 
@@ -6110,16 +4628,13 @@ function A.readingLines(summary, notRated, pane)
 			if sidePair == nil then
 				figure = "none"
 			else
-
 				figure = ("%s, %s"):format(sidePair, A.percentText(select(4, A.winRecord(held))) or "-")
 			end
 			parts[#parts + 1] = word .. " " .. figure
 			sides[#sides + 1] = { side = side, word = word, text = figure }
 		end
-
 		local text = table.concat(parts, FACTION_JOIN)
 		local denominator
-
 
 		local rateWins, rateLosses = A.winRecord(summary)
 		local bgWins, bgLosses = A.winRecord({ wins = summary.factionWins or 0, decided = summary.factionDecided,
@@ -6136,12 +4651,9 @@ function A.readingLines(summary, notRated, pane)
 		out[#out + 1] = { key = "FACTION", text = text, sides = sides, denominator = denominator }
 	end
 
-
 	if summary.roundRate ~= nil then
 		local text = ("%d of %d won, %s"):format(summary.roundsWon, summary.roundsPlayed,
 			A.percentText(summary.roundRate))
-
-
 		local lobbies, shuffles = summary.roundLobbies or 0, summary.roundShuffles or 0
 		if lobbies > 0 and shuffles > lobbies then
 			text = text .. (" over %d of %d matches"):format(lobbies, shuffles)
@@ -6154,7 +4666,6 @@ function A.readingLines(summary, notRated, pane)
 					or ("reached %d rounds"):format(summary.roundThreshold)
 			else
 
-
 				bar = "won most of their rounds"
 			end
 			text = text .. (", and %d of %d matches %s")
@@ -6162,10 +4673,6 @@ function A.readingLines(summary, notRated, pane)
 		end
 		put("ROUNDS", text)
 	end
-
-
-
-
 
 
 
@@ -6178,7 +4685,6 @@ function A.readingLines(summary, notRated, pane)
 		and type(A.summaryScope) == "function" then
 		narrowed = A.scopePhrase(A.summaryScope())
 	end
-
 
 	if narrowed ~= nil and type(A.formatCounts) == "function" then
 		local ok, counts = pcall(A.formatCounts, summary.character)
@@ -6196,8 +4702,6 @@ function A.readingLines(summary, notRated, pane)
 			end
 		end
 	end
-
-
 
 
 	if (summary.format == nil or summary.format == "unknown") and type(A.incompleteList) == "function" then
@@ -6218,7 +4722,6 @@ function A.readingLines(summary, notRated, pane)
 		end
 	end
 
-
 	local gapText = A.mmrGapText(summary.mmrGap)
 	if gapText ~= nil then
 		put("MMR", gapText)
@@ -6231,14 +4734,10 @@ function A.readingLines(summary, notRated, pane)
 			:format(summary.durationCount, summary.matches))
 	end
 
-
-
 	if not pane and type(notRated) == "number" and notRated > 0 then
 		put("NOT RATED", ("%d %s named a composition and settled no winner")
 			:format(notRated, notRated == 1 and "round" or "rounds"))
 	end
-
-
 
 
 
@@ -6248,35 +4747,10 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 function A.specNoteText(opts)
 	opts = type(opts) == "table" and opts or {}
 
-
 	local readable = type(opts.readable) == "number" and opts.readable or 0
-
-
-
-
 
 
 	local counts = "the two ROUNDS columns"
@@ -6301,13 +4775,6 @@ end
 
 
 
-
-
-
-
-
-
-
 function A.readingContext(format, season, character, bound)
 	local notRated, drawn = nil, false
 	local got, against, alongside, _, undecided = pcall(A.specTally, format, season, character, bound)
@@ -6320,14 +4787,8 @@ end
 
 
 
-
-
-
-
-
 function A.figureLines(summary)
 	local lines = {}
-
 
 
 	local scope = summary.label
@@ -6338,11 +4799,9 @@ function A.figureLines(summary)
 		summary.matches == 1 and "match" or "matches")
 
 
-
 	local length = A.clockText(summary.avgDuration)
 	if length then
 		local over = ""
-
 		if summary.durationCount < summary.matches then
 			over = (" over %d of %d"):format(summary.durationCount, summary.matches)
 		end
@@ -6350,15 +4809,11 @@ function A.figureLines(summary)
 	end
 
 
-
-
 	local wins, losses, draws, rate = A.winRecord(summary)
 	local drawText = (draws or 0) > 0 and (", %d %s"):format(draws, A.drawWord(summary.format)) or ""
 	if rate ~= nil then
 		lines[#lines + 1] = ("  won %d of %d decided, %s%s")
 			:format(wins, wins + losses, A.percentText(rate), drawText)
-
-
 		if summary.roundRate ~= nil then
 			local bar = "most"
 			if type(summary.roundThreshold) == "number" then
@@ -6370,16 +4825,13 @@ function A.figureLines(summary)
 					summary.roundLobbies == 1 and "match" or "matches")
 		end
 	elseif (draws or 0) > 0 then
-
 		lines[#lines + 1] = ("  no win rate: every decided match here ended level%s"):format(drawText)
 	elseif summary.roundLobbies == 0 and not A.storesResult(summary.format) then
-
 		lines[#lines + 1] = "  no win rate: no " .. summary.label
 			.. " here recorded a round boundary, and none was entered by hand"
 	else
 		lines[#lines + 1] = "  no win rate: nothing stored here carries a decided result"
 	end
-
 
 
 	if summary.manualDecided > 0 then
@@ -6392,7 +4844,6 @@ function A.figureLines(summary)
 	end
 
 
-
 	local function own(value)
 		return A.tierRatingText(summary.format, math.floor(value))
 	end
@@ -6400,8 +4851,6 @@ function A.figureLines(summary)
 	if summary.rating ~= nil then
 		ladder[#ladder + 1] = "rating " .. own(summary.rating)
 		if summary.ratingChange ~= nil and summary.lastFrom ~= nil then
-
-
 
 			ladder[#ladder + 1] = ("last %s from %s")
 				:format(A.signedText(summary.ratingChange), own(summary.lastFrom))
@@ -6418,8 +4867,6 @@ function A.figureLines(summary)
 		ladder[#ladder + 1] = mmr
 	end
 
-
-
 	local carried, points = A.mmrCoverage(summary)
 	if carried ~= nil then
 		ladder[#ladder + 1] = ("mmr on %d of %d %s")
@@ -6429,23 +4876,16 @@ function A.figureLines(summary)
 		lines[#lines + 1] = "  " .. table.concat(ladder, "  ")
 	end
 
-
 	if not summary.ladder then
-
 
 		lines[#lines + 1] = "  no rating figures: " .. (A.plotReason(summary) or "no ladder")
 	else
-
-
 
 		local skips = ("%d skipped where no rating read")
 			:format(summary.skipped - summary.rejected - summary.zeroed)
 		if summary.rejected > 0 then
 			skips = skips .. (", %d refused for leaving the ladder"):format(summary.rejected)
 		end
-
-
-
 		if summary.zeroed > 0 then
 			skips = skips .. (", %d at a rating of zero"):format(summary.zeroed)
 		end
