@@ -1,0 +1,21 @@
+<Bindings>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    <Binding name="WOWPVPHISTORY_TOGGLE" category="BINDING_HEADER_WOWPVPHISTORY">
+        WowPvpHistory_Toggle()
+    </Binding>
+</Bindings>

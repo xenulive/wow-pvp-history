@@ -1,0 +1,228 @@
+# The publish: a push to main publishes the draft release waiting for the version the shipped .toc
+# names, then pushes the wiki/ folder to this repository's wiki.
+#
+# A release arrives here as a pull request from release/v<version>, carrying the stripped addon,
+# LICENSE, wiki/ and this file, beside a draft release for v<version> with the zip attached. Merging
+# that pull request is the decision to release. A push runs the workflow file in the pushed commit,
+# so the merged commit's own copy of this file is the one that runs, the first release included.
+#
+# NOTHING WAITING IS A GREEN RUN THAT SAYS SO. A commit carrying no shipped .toc, or a version with no
+# draft release waiting, publishes nothing, and the summary names which happened. A release already
+# published for the version with its tag on this commit is a rerun: the release is left as it is and
+# the wiki push runs again.
+#
+# The release is published with GITHUB_TOKEN, which sets its target to the pushed commit and creates
+# the tag there. The wiki push takes PUBLIC_WIKI_TOKEN, a secret on this repository, since
+# GITHUB_TOKEN is not known to push to a wiki repository. A wiki push that fails leaves the release
+# published and fails the run, and rerunning the job pushes the wiki once the token can.
+#
+# This file is copied here by every release and is edited where the release run keeps it.
+
+name: publish
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out the pushed commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # A commit carrying no shipped .toc, the first commit holding LICENSE alone, has no version and
+      # publishes nothing. A .toc whose one ## Version: line is not X.Y.Z or X.Y.Z-rc.N fails.
+      - name: Read the version off the shipped .toc
+        id: version
+        shell: pwsh
+        run: |
+          $toc = 'WowPvpHistory/WowPvpHistory.toc'
+          if (-not (Test-Path -LiteralPath $toc -PathType Leaf)) {
+            Write-Host "version: this commit carries no $toc, so there is no release to publish"
+            'version=' | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+            exit 0
+          }
+          $lines = @(Get-Content -LiteralPath $toc | Where-Object { $_ -match '^##\s*Version:' })
+          if ($lines.Count -ne 1) {
+            Write-Host "::error title=version::$toc carries $($lines.Count) ## Version: lines where one was expected."
+            exit 1
+          }
+          if ($lines[0] -cnotmatch '^##\s*Version:\s*(\d+\.\d+\.\d+(-rc\.[1-9]\d*)?)\s*$') {
+            Write-Host "::error title=version::The ## Version: line of $toc names no release version."
+            exit 1
+          }
+          $version = $Matches[1]
+          $prerelease = if ($Matches[2]) { 'true' } else { 'false' }
+          Write-Host "version: $version, a pre-release: $prerelease"
+          "version=$version", "prerelease=$prerelease" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      # The releases are listed rather than looked up by tag, since a lookup by tag never returns a
+      # draft. The read-back compares the tag's commit with the pushed one, because the publish call
+      # answering 200 says nothing about where the tag landed.
+      - name: Publish the draft release waiting for the version
+        id: release
+        if: steps.version.outputs.version != ''
+        shell: pwsh
+        env:
+          RELEASE_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+          PRERELEASE: ${{ steps.version.outputs.prerelease }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tag = "v$env:VERSION"
+          $prerelease = $env:PRERELEASE -eq 'true'
+          $api = "https://api.github.com/repos/$env:GITHUB_REPOSITORY"
+          $headers = @{ Authorization = "Bearer $env:RELEASE_TOKEN"; Accept = 'application/vnd.github+json'; 'X-GitHub-Api-Version' = '2022-11-28' }
+          $all = [System.Collections.Generic.List[object]]::new()
+          for ($page = 1; ; $page++) {
+            $rows = @(Invoke-RestMethod -Uri "$api/releases?per_page=100&page=$page" -Headers $headers | Where-Object { $null -ne $_ })
+            foreach ($row in $rows) { $all.Add($row) }
+            if ($rows.Count -lt 100) { break }
+          }
+          $drafts = @($all | Where-Object { $_.draft -eq $true -and $_.tag_name -ceq $tag })
+          $published = @($all | Where-Object { $_.draft -eq $false -and $_.tag_name -ceq $tag })
+          if ($drafts.Count -gt 1) {
+            Write-Host "::error title=release::$($drafts.Count) draft releases wait for $tag, so which one to publish is not settled."
+            exit 1
+          }
+          $tagAt = {
+            $code = 0
+            $ref = Invoke-RestMethod -Uri "$api/git/ref/tags/$tag" -Headers $headers -SkipHttpErrorCheck -StatusCodeVariable code
+            if ($code -ne 200) { return '' }
+            if ($ref.object.type -cne 'commit') { return "a $($ref.object.type) object" }
+            return [string]$ref.object.sha
+          }
+          if ($drafts.Count -eq 0) {
+            if ($published.Count -eq 1 -and (& $tagAt) -ceq $env:GITHUB_SHA) {
+              Write-Host "release: $tag is already published with its tag on $env:GITHUB_SHA, so this is a rerun and only the wiki push runs again"
+              "state=already", "url=$($published[0].html_url)", "tag_commit=$env:GITHUB_SHA" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+              exit 0
+            }
+            Write-Host "release: no draft release for $tag was waiting, so nothing is published"
+            'state=none' | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+            exit 0
+          }
+          $draft = $drafts[0]
+          $body = @{
+            target_commitish = $env:GITHUB_SHA
+            draft            = $false
+            prerelease       = $prerelease
+            make_latest      = if ($prerelease) { 'false' } else { 'true' }
+          } | ConvertTo-Json
+          $null = Invoke-RestMethod -Method Patch -Uri "$api/releases/$($draft.id)" -Headers $headers -Body $body -ContentType 'application/json'
+          $read = Invoke-RestMethod -Uri "$api/releases/$($draft.id)" -Headers $headers
+          $at = & $tagAt
+          Write-Host "read back: release $($read.html_url), draft $($read.draft), pre-release $($read.prerelease), $(@($read.assets).Count) asset(s)"
+          Write-Host "read back: $tag at $(if ($at) { $at } else { 'nothing' }) against $env:GITHUB_SHA pushed"
+          if ($read.draft -ne $false) { Write-Host "::error title=release::The release for $tag still reads as a draft."; exit 1 }
+          if ($read.prerelease -ne $prerelease) { Write-Host "::error title=release::The release reads pre-release $($read.prerelease) and $tag is $(if ($prerelease) { 'a candidate' } else { 'a final release' })."; exit 1 }
+          if (@($read.assets).Count -ne 1) { Write-Host "::error title=release::The release carries $(@($read.assets).Count) assets where the zip is one."; exit 1 }
+          if ($at -cne $env:GITHUB_SHA) { Write-Host "::error title=release::The tag $tag is not on the pushed commit $env:GITHUB_SHA."; exit 1 }
+          Write-Host "release: $tag published at $env:GITHUB_SHA"
+          "state=published", "url=$($read.html_url)", "tag_commit=$at" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      # Runs where a release was published by this run or by the run it reruns. The wiki repository
+      # takes its whole content from wiki/, and an unchanged tree commits and pushes nothing.
+      - name: Push the wiki folder to this repository's wiki
+        id: wiki
+        if: steps.release.outputs.state == 'published' || steps.release.outputs.state == 'already'
+        shell: pwsh
+        env:
+          WIKI_TOKEN: ${{ secrets.PUBLIC_WIKI_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $false
+          $finish = "The release v$env:VERSION is published and its wiki is not; rerun this job once PUBLIC_WIKI_TOKEN can push to the wiki."
+          if ([string]::IsNullOrWhiteSpace($env:WIKI_TOKEN)) { Write-Host "::error title=wiki::PUBLIC_WIKI_TOKEN is not set. $finish"; exit 1 }
+          $pages = @(Get-ChildItem -LiteralPath 'wiki' -File -Filter '*.md' -ErrorAction SilentlyContinue)
+          if ($pages.Count -eq 0) { Write-Host "::error title=wiki::This commit carries no page under wiki/, so there is nothing to push. $finish"; exit 1 }
+          $basic = [Convert]::ToBase64String([System.Text.Encoding]::ASCII.GetBytes("x-access-token:$env:WIKI_TOKEN"))
+          Write-Host "::add-mask::$basic"
+          $env:GIT_CONFIG_COUNT = '1'
+          $env:GIT_CONFIG_KEY_0 = 'http.https://github.com/.extraheader'
+          $env:GIT_CONFIG_VALUE_0 = "AUTHORIZATION: basic $basic"
+          $env:GIT_TERMINAL_PROMPT = '0'
+          $env:GIT_AUTHOR_NAME = $env:GIT_COMMITTER_NAME = 'github-actions[bot]'
+          $env:GIT_AUTHOR_EMAIL = $env:GIT_COMMITTER_EMAIL = '41898283+github-actions[bot]@users.noreply.github.com'
+          $work = Join-Path $env:RUNNER_TEMP 'wiki-clone'
+          $cloned = @(& git clone -q "https://github.com/$env:GITHUB_REPOSITORY.wiki.git" $work 2>&1)
+          if ($LASTEXITCODE -ne 0) {
+            $cloned | ForEach-Object { Write-Host "  $_" }
+            Write-Host "::error title=wiki::Cloning the wiki answered $LASTEXITCODE; a token that cannot read it answers the same as a wiki with no page. $finish"
+            exit 1
+          }
+          Get-ChildItem -LiteralPath $work -Force | Where-Object { $_.Name -ne '.git' } | Remove-Item -Recurse -Force
+          Get-ChildItem -LiteralPath 'wiki' -Force | Copy-Item -Destination $work -Recurse -Force
+          & git -C $work add -A
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error title=wiki::git add answered $LASTEXITCODE. $finish"; exit 1 }
+          $images = @(Get-ChildItem -LiteralPath 'wiki/images' -Recurse -File -ErrorAction SilentlyContinue).Count
+          if (@(& git -C $work status --porcelain).Count -eq 0) {
+            Write-Host "wiki: unchanged, the wiki already carries these $($pages.Count) pages and $images images, so nothing is committed or pushed"
+            'state=unchanged', "pages=$($pages.Count)", "images=$images" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+            exit 0
+          }
+          & git -C $work commit -q -m "wiki: $env:VERSION"
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error title=wiki::git commit answered $LASTEXITCODE. $finish"; exit 1 }
+          $local = (& git -C $work rev-parse HEAD).Trim()
+          & git -C $work push -q origin 'HEAD:refs/heads/master'
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error title=wiki::git push answered $LASTEXITCODE. $finish"; exit 1 }
+          $remote = @(& git -C $work ls-remote origin refs/heads/master)
+          $read = if ($remote.Count -eq 1) { ($remote[0] -split '\s+')[0] } else { '' }
+          Write-Host "read back: wiki master at $(if ($read) { $read } else { 'nothing' }) against $local pushed"
+          if ($read -cne $local) { Write-Host "::error title=wiki::The wiki's master reads '$read' and the commit pushed is $local. $finish"; exit 1 }
+          Write-Host "wiki: $local pushed, $($pages.Count) pages and $images images"
+          'state=pushed', "commit=$local", "pages=$($pages.Count)", "images=$images" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      # Always, because the summary is most worth reading on the run that failed, and printed to the
+      # console as well as written to the run page.
+      - name: Put the summary on the run
+        if: always()
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          VERSION_OUTCOME: ${{ steps.version.outcome }}
+          RELEASE_OUTCOME: ${{ steps.release.outcome }}
+          RELEASE_STATE: ${{ steps.release.outputs.state }}
+          RELEASE_URL: ${{ steps.release.outputs.url }}
+          TAG_COMMIT: ${{ steps.release.outputs.tag_commit }}
+          WIKI_OUTCOME: ${{ steps.wiki.outcome }}
+          WIKI_STATE: ${{ steps.wiki.outputs.state }}
+          WIKI_COMMIT: ${{ steps.wiki.outputs.commit }}
+          WIKI_PAGES: ${{ steps.wiki.outputs.pages }}
+          WIKI_IMAGES: ${{ steps.wiki.outputs.images }}
+        run: |
+          $out = @('## Publish', '', '```text')
+          $out += "commit   $env:GITHUB_SHA"
+          if ($env:VERSION_OUTCOME -ne 'success') { $out += "version  not read, the version step reads $env:VERSION_OUTCOME" }
+          elseif (-not $env:VERSION) { $out += 'version  none, this commit carries no shipped .toc', 'release: nothing published' }
+          else { $out += "version  $env:VERSION" }
+          if ($env:VERSION) {
+            if ($env:RELEASE_OUTCOME -ne 'success') { $out += "release: not published, the release step reads $(if ($env:RELEASE_OUTCOME) { $env:RELEASE_OUTCOME } else { 'not run' })" }
+            elseif ($env:RELEASE_STATE -eq 'none') { $out += "release: no draft for v$env:VERSION was waiting, so nothing published" }
+            elseif ($env:RELEASE_STATE -eq 'already') { $out += "release: already published, $env:RELEASE_URL", "tag      v$env:VERSION at $env:TAG_COMMIT" }
+            else { $out += "release: published $env:RELEASE_URL", "tag      v$env:VERSION at $env:TAG_COMMIT" }
+          }
+          if ($env:RELEASE_STATE -in 'published', 'already') {
+            if ($env:WIKI_OUTCOME -eq 'success' -and $env:WIKI_STATE -eq 'unchanged') { $out += "wiki: unchanged, $env:WIKI_PAGES pages and $env:WIKI_IMAGES images already there" }
+            elseif ($env:WIKI_OUTCOME -eq 'success') { $out += "wiki: $env:WIKI_COMMIT pushed, $env:WIKI_PAGES pages and $env:WIKI_IMAGES images" }
+            else { $out += "wiki: not pushed, the wiki step reads $(if ($env:WIKI_OUTCOME) { $env:WIKI_OUTCOME } else { 'not run' })" }
+          }
+          else { $out += 'wiki: not pushed, no release was published' }
+          $out += '```'
+          $out | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          $out | Write-Host
