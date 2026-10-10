@@ -1,0 +1,52 @@
+# Compositions
+
+The composition table shows which team compositions you've faced and how you did against each. Pick a
+rated arena or Solo Shuffle tab, click **Stats** under the window, and light the **WORST COMP** card
+(see [Ask](Ask)). Other tabs have nothing to rank, so they don't offer it.
+
+For the specs you do well with and against, one at a time, see [Specs](Specs).
+
+![The Worst comp card lit on Solo Shuffle: the comps you meet, with one row open on the rounds behind it](images/comps-view.png)
+
+## What counts as one game
+
+- **In arena**, each match counts once: the team you faced.
+- **In Solo Shuffle**, each round counts once: the three players on the other side that round.
+
+A composition is **ranked** once you have met it ten times. The line under the table counts the ones
+with too few, such as `3 comps under 10 rounds` on Solo Shuffle, and `/pvph ask under on` lists them greyed after the
+ranked ones until you log out or reload.
+
+Only games with a known result count, so a Solo Shuffle round nobody could work out a winner for is
+left out. Rounds you [filled in yourself](Solo-Shuffle#filling-in-a-missing-round) aren't used here.
+
+Bot teams from practice modes are never counted.
+
+## The composition table
+
+Under **THE COMPS YOU MEET**, each row is a team you've faced:
+
+| Column | What it shows |
+| --- | --- |
+| **ENEMY COMP** | The three specs, by name, or by their icons alone where the names don't fit |
+| **ROUNDS**, or **GAMES** in arena | How many games you've met it in |
+| **RECORD** | Your wins and losses against it |
+| **WIN RATE** | Your win rate against it |
+| **RATING** | The rating you gained or lost against it, where the game reported a change you can tie to that round |
+| **AVG LEN** | How long those games took |
+
+The hardest ones are at the top.
+
+Click a row to see the games behind it under that row, under **MET IN**: one line per game, each
+opening its match window. A second click on the row puts the list away. In Solo Shuffle each line
+names the round and the two players who were on your team, which tells you whether it's the
+composition beating you or a particular partner you keep losing with. Clicking a row never narrows the
+[match list](Match-History-Window#the-match-list).
+
+## Narrowing it down
+
+The [time range dropdown](Summary-and-Rating-Graph#choosing-a-time-range) and the
+[character dropdown](Match-History-Window#showing-one-character) both apply here.
+
+`/pvph comps` prints the same ranking in chat. Add a format word (such as `shuffle` or `arena2`) to pick
+the format, and a row number to see the games behind that row.
