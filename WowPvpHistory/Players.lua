@@ -7,24 +7,7 @@
 
 
 
-
-
-
-
-
-
-
-
-
-
-
 local _, A = ...
-
-
-
-
-
-
 
 
 
@@ -44,34 +27,15 @@ local function newEntry()
 		formats = {},
 
 
-
-
-
-
-
-
-
 		with = { count = 0, wins = 0, decided = 0, manualDecided = 0, draws = 0 },
 		against = { count = 0, wins = 0, decided = 0, manualDecided = 0, draws = 0 },
 		undetermined = 0,
 
-
 		ratings = {},
-
-
-
-
 
 		fixture = 0,
 	}
 end
-
-
-
-
-
-
-
 
 
 
@@ -97,11 +61,6 @@ end
 
 
 
-
-
-
-
-
 local function noteRating(entry, record, participant, format)
 	if format == nil then
 		return
@@ -111,8 +70,6 @@ local function noteRating(entry, record, participant, format)
 	if not reading then
 		return
 	end
-
-
 
 
 
@@ -146,14 +103,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
 local function noteName(entry, name)
 	if type(name) ~= "string" or name == "" then
 		return
@@ -173,13 +122,7 @@ local function noteName(entry, name)
 end
 
 
-
-
-
-
 local function noteSeen(entry, record)
-
-
 
 	local epoch = record.openedEpoch
 	local stamp = record.openedAt
@@ -189,7 +132,6 @@ local function noteSeen(entry, record)
 	end
 
 	if type(epoch) ~= "number" then
-
 
 		if entry.firstEpoch == nil and entry.firstSeen == nil then
 			entry.firstSeen = stamp
@@ -205,7 +147,6 @@ local function noteSeen(entry, record)
 		entry.firstSeen = stamp
 	end
 
-
 	if entry.lastEpoch == nil or epoch >= entry.lastEpoch then
 		entry.lastEpoch = epoch
 		entry.lastSeen = stamp
@@ -216,15 +157,6 @@ end
 
 
 local WITH, AGAINST = "with", "against"
-
-
-
-
-
-
-
-
-
 
 
 
@@ -254,7 +186,6 @@ local NO_MATCH_SIDE = { shuffle = true, ["shuffle-unrated"] = true }
 
 
 
-
 local function recordSelfFaction(record)
 	if NO_MATCH_SIDE[record.format] then
 		return nil
@@ -262,12 +193,6 @@ local function recordSelfFaction(record)
 	local selfRow = record.character ~= nil and record.participants[record.character] or nil
 	return type(selfRow) == "table" and selfRow.faction or nil
 end
-
-
-
-
-
-
 
 
 function A.matchSide(record, guid)
@@ -280,8 +205,6 @@ function A.matchSide(record, guid)
 	end
 	return side(recordSelfFaction(record), participant)
 end
-
-
 
 
 
@@ -303,14 +226,6 @@ function A.bareName(name)
 	end
 	return name:sub(1, at - 1)
 end
-
-
-
-
-
-
-
-
 
 
 
@@ -355,9 +270,6 @@ end
 
 
 
-
-
-
 function A.playerByName(index, name)
 	local held = index[name]
 	if held then
@@ -386,10 +298,6 @@ end
 
 
 
-
-
-
-
 local function placeholder()
 	local text = UNKNOWNOBJECT
 	if type(text) == "string" and A.canRead(text) and text ~= "" then
@@ -397,7 +305,6 @@ local function placeholder()
 	end
 	return nil
 end
-
 
 
 
@@ -415,15 +322,11 @@ end
 
 
 
-
-
-
 function A.unitNames(token)
 	local names = {}
 	if type(UnitName) ~= "function" then
 		return names
 	end
-
 
 
 	local ok, bare, realm = pcall(UnitName, token)
@@ -436,9 +339,6 @@ function A.unitNames(token)
 	end
 	return names
 end
-
-
-
 
 
 
@@ -466,10 +366,6 @@ function A.unitNameFromGuid(guid)
 	end
 	return bare .. "-" .. realm
 end
-
-
-
-
 
 
 function A.nameplateTokens()
@@ -505,11 +401,6 @@ end
 
 
 
-
-
-
-
-
 function A.indexMatch(record, db)
 	db = db or A.db()
 	if not (db and type(db.players) == "table" and type(record) == "table") then
@@ -522,15 +413,7 @@ function A.indexMatch(record, db)
 	end
 
 	local players = db.players
-
-
 	local selfFaction = recordSelfFaction(record)
-
-
-
-
-
-
 
 
 	local outcome, byHand = record.result, false
@@ -549,7 +432,6 @@ function A.indexMatch(record, db)
 	local format = record.format ~= nil and tostring(record.format) or nil
 
 
-
 	local generated = record[A.FIXTURE_KEY] == true
 
 	local counted = 0
@@ -562,8 +444,6 @@ function A.indexMatch(record, db)
 			end
 
 			entry.matches = (entry.matches or 0) + 1
-
-
 			if generated then
 				entry.fixture = (entry.fixture or 0) + 1
 			end
@@ -584,10 +464,7 @@ function A.indexMatch(record, db)
 				bucket.decided = bucket.decided + decided
 				bucket.wins = bucket.wins + won
 
-
 				bucket.manualDecided = (bucket.manualDecided or 0) + manualDecided
-
-
 				bucket.draws = (bucket.draws or 0) + drawn
 			end
 
@@ -597,17 +474,6 @@ function A.indexMatch(record, db)
 
 	return counted
 end
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -635,17 +501,9 @@ function A.repairDuelRecord(record)
 
 	participants[name] = { name = name, side = "against" }
 
-
 	record.participantCount = (tonumber(record.participantCount) or 0) + 1
 	return true
 end
-
-
-
-
-
-
-
 
 
 
@@ -665,12 +523,6 @@ function A.indexCensus(db)
 	out.version = db.playerIndexVersion
 	return out
 end
-
-
-
-
-
-
 
 
 
@@ -696,9 +548,6 @@ function A.indexReading(db)
 end
 
 
-
-
-
 function A.reportRebuild()
 	local said = {}
 	local function say(line)
@@ -711,7 +560,6 @@ function A.reportRebuild()
 		say("no database. nothing was rebuilt")
 		return said
 	end
-
 
 
 
@@ -737,18 +585,9 @@ end
 
 
 
-
-
 local function guidKeyed(key, participant)
 	return type(key) == "string" and key ~= "" and key ~= participant.name
 end
-
-
-
-
-
-
-
 
 
 
@@ -783,11 +622,6 @@ end
 
 
 
-
-
-
-
-
 local function retargetRefusal(matches, nameKey, guid, character)
 	local bare = not nameKey:find("-", 1, true)
 	for i = 1, #matches do
@@ -808,15 +642,10 @@ end
 
 
 
-
-
-
-
 local function retarget(matches, nameKey, guid)
 	local moved = 0
 	for i = 1, #matches do
 		local record = matches[i]
-
 
 		if type(record) == "table" and type(record.participants) == "table" then
 			local participants = record.participants
@@ -824,8 +653,6 @@ local function retarget(matches, nameKey, guid)
 			if type(row) == "table" then
 				participants[nameKey] = nil
 				if type(participants[guid]) == "table" then
-
-
 
 					if type(record.participantCount) == "number" then
 						record.participantCount = record.participantCount - 1
@@ -839,13 +666,6 @@ local function retarget(matches, nameKey, guid)
 	end
 	return moved
 end
-
-
-
-
-
-
-
 
 
 
@@ -909,9 +729,6 @@ local function mergeNotes(notes, nameKey, guid)
 	end
 
 
-
-
-
 	if type(from.comments) == "table" and #from.comments > 0 then
 		local comments = type(into.comments) == "table" and into.comments or {}
 		for i = 1, #from.comments do
@@ -932,7 +749,6 @@ local function mergeNotes(notes, nameKey, guid)
 end
 
 
-
 local function holdsNamedEntry(players)
 	for key, entry in pairs(players) do
 		if type(entry) == "table" and type(entry.names) == "table" and entry.names[1] == key then
@@ -941,8 +757,6 @@ local function holdsNamedEntry(players)
 	end
 	return false
 end
-
-
 
 
 
@@ -957,7 +771,6 @@ local function foldRecord(db, record)
 	local merged = 0
 
 	for key, participant in pairs(participants) do
-
 
 		if type(participant) == "table" and guidKeyed(key, participant) and key ~= record.character
 			and type(participant.name) == "string" and participant.name ~= ""
@@ -991,21 +804,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 function A.mergeNamedPlayers(record, db)
 	db = db or A.db()
 	if not (db and type(db.players) == "table" and type(record) == "table") then
@@ -1015,14 +813,11 @@ function A.mergeNamedPlayers(record, db)
 	local merged = foldRecord(db, record)
 	if merged > 0 then
 		A.rebuildIndex(db)
-
 		A.trace("merge", { n = merged, id = record.id }, "data")
 	end
 
 	return merged
 end
-
-
 
 
 function A.playerHistories(entry)
@@ -1037,17 +832,11 @@ end
 
 
 
-
-
-
-
 function A.rebuildIndex(db)
 	db = db or A.db()
 	if not db then
 		return nil
 	end
-
-
 
 
 
@@ -1063,12 +852,9 @@ function A.rebuildIndex(db)
 			if type(record) == "table" then
 				walked = walked + 1
 
-
-
 				if A.repairDuelRecord(record) then
 					repaired = repaired + 1
 				end
-
 
 
 				if not record.worldOpen then
@@ -1081,8 +867,6 @@ function A.rebuildIndex(db)
 		end
 	end
 	walk()
-
-
 
 
 
@@ -1104,15 +888,9 @@ function A.rebuildIndex(db)
 
 
 
-
 	if walked > 0 then
 		db.playerIndexVersion = A.indexVersion
 	end
-
-
-
-
-
 
 	A.trace("rebuild", { n = people, rows = walked, repaired = repaired > 0 and repaired or nil,
 		folded = folded > 0 and folded or nil }, "data")
@@ -1134,12 +912,6 @@ end
 
 
 
-
-
-
-
-
-
 local function backfill()
 	local db = A.db()
 	if not db then
@@ -1149,7 +921,6 @@ local function backfill()
 
 	local stamped = db.playerIndexVersion
 	if type(stamped) == "number" and stamped >= A.indexVersion then
-
 		return
 	end
 

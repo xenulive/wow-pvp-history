@@ -8,18 +8,7 @@
 
 
 
-
-
-
-
-
-
-
-
-
-
 local _, A = ...
-
 
 
 
@@ -39,9 +28,6 @@ local function count(subject)
 end
 
 
-
-
-
 local function drops(db)
 	local total = 0
 	for _, n in pairs(db.dropped or {}) do
@@ -54,16 +40,10 @@ end
 
 
 
-
-
-
-
-
 local function pinPlan(db)
 	if not A.backupAvailable() then
 		return { state = "none", reason = "no-codec" }
 	end
-
 
 
 	local held = A.backupStore()
@@ -83,8 +63,6 @@ function A.resetPreview()
 	if not db then
 		return nil
 	end
-
-
 
 
 
@@ -111,9 +89,6 @@ end
 
 
 
-
-
-
 function A.resetLine(before)
 	before = before or A.resetPreview()
 	if not before then
@@ -135,17 +110,7 @@ end
 
 
 
-
-
-
-
-
-
-
 local function factory(db, schema)
-
-
-
 
 
 
@@ -156,7 +121,6 @@ local function factory(db, schema)
 	db.pruneLog = pruneLog
 
 
-
 	db.schema = type(schema) == "number" and schema or A.schema
 	db.matches = {}
 	db.nextMatchId = 1
@@ -165,23 +129,12 @@ local function factory(db, schema)
 	db.dropEvents = {}
 	db.incomplete = {}
 
-
 	db.nextIncompleteId = 1
 	db.players = {}
 	db.ui = {}
 
-
 	db.arenaMapRefiled = true
 end
-
-
-
-
-
-
-
-
-
 
 
 
@@ -198,30 +151,20 @@ local function redrive()
 	end
 
 
-
 	attempt(A.resetActiveTab)
-
 	attempt(A.resetActiveCharacter)
 	attempt(A.applyMinimapState)
-
 	attempt(A.applyWindowGeometry)
-
 
 	attempt(A.replaceOtherWindows)
 	attempt(A.applyChrome)
 
 
 
-
-
-
-
 	attempt(A.storeReplaced)
 
 
-
 	attempt(A.notifyEverySetting)
-
 
 
 
@@ -229,8 +172,6 @@ local function redrive()
 		pcall(A.refreshOptionsWindow)
 	end
 end
-
-
 
 
 
@@ -245,12 +186,9 @@ function A.applyReset()
 
 
 
-
 	if db.active ~= nil then
 		return nil, A.refusalText("in-flight"), "in-flight"
 	end
-
-
 
 
 	if A.sandboxed() then
@@ -265,9 +203,7 @@ function A.applyReset()
 
 
 
-
 	local pin = A.pinBackup()
-
 
 
 
@@ -277,12 +213,7 @@ function A.applyReset()
 
 
 
-
 	A.clearBackupGenerations()
-
-
-
-
 
 
 
@@ -308,8 +239,6 @@ function A.applyReset()
 
 
 
-
-
 	pcall(A.notePrune, "reset", storedBefore)
 
 	redrive()
@@ -326,20 +255,7 @@ end
 
 
 
-
-
-
-
-
-
 local resetArmed = false
-
-
-
-
-
-
-
 
 
 
@@ -373,7 +289,6 @@ function A.openResetConfirm()
 		note = "This cannot be undone from the interface. A copy is pinned first, and "
 			.. "/pvph restore pinned brings it back. Click twice."
 	else
-
 		note = "NOTHING WILL BE PINNED: this client provides no encoding surface, so none of this "
 			.. "comes back. Click twice."
 	end
@@ -382,7 +297,6 @@ function A.openResetConfirm()
 		"Erase all of it", function()
 			if not resetArmed then
 				resetArmed = true
-
 
 				A.transferConfirmText("Click again to erase")
 				return false

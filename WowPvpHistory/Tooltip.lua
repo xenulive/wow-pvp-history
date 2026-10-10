@@ -6,29 +6,10 @@
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 local _, A = ...
 
 
-
-
-
 local registered = false
-
-
 
 
 
@@ -42,7 +23,6 @@ function A.tooltipEnabled()
 	db.ui = db.ui or {}
 	return db.ui.tooltip ~= false
 end
-
 
 
 
@@ -75,8 +55,6 @@ end
 
 
 
-
-
 local function tooltipGuid(tooltip)
 	if type(tooltip) ~= "table" and type(tooltip) ~= "userdata" then
 		return nil
@@ -101,11 +79,6 @@ end
 
 
 
-
-
-
-
-
 function A.tooltipBlock(tooltip, guid)
 	if A.playerSummary(guid) == nil then
 		return 0, nil
@@ -119,15 +92,7 @@ function A.tooltipBlock(tooltip, guid)
 
 
 
-
-
-
-
 	tooltip:AddLine(" ")
-
-
-
-
 
 
 
@@ -161,10 +126,6 @@ end
 
 
 
-
-
-
-
 local function append(tooltip)
 	if not A.tooltipEnabled() then
 		return
@@ -186,8 +147,6 @@ local function append(tooltip)
 
 
 
-
-
 	if A.isOwnCharacter(guid) then
 		A.trace("tooltip", { reason = "self" }, "data")
 		return
@@ -201,8 +160,6 @@ local function append(tooltip)
 	end
 
 
-
-
 	if guid:find("^Player%-") then
 		A.trace("tooltip", { reason = "none", n = 0 }, "data")
 	end
@@ -213,10 +170,6 @@ end
 
 
 local sampleUp = false
-
-
-
-
 
 
 
@@ -250,11 +203,6 @@ function A.tooltipSampleHide()
 	end
 	return was
 end
-
-
-
-
-
 
 
 

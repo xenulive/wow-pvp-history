@@ -3,28 +3,12 @@
 
 
 
-
-
-
-
-
-
-
-
 local _, A = ...
 
 local FRAME_NAME = "WowPvpHistoryStoreFrame"
 
 
-
 local window
-
-
-
-
-
-
-
 
 
 
@@ -44,15 +28,10 @@ local function historyReading(db)
 end
 
 
-
-
-
 local function canaryRegister(state)
 	if state.state == "lost" or state.state == "short" then
 		return "fault"
 	end
-
-
 	if state.state == "absent" or state.state == "unknown" then
 		return "standing"
 	end
@@ -61,11 +40,7 @@ end
 
 
 
-
-
 local function backupRegister()
-
-
 	local held = A.backupStore()
 	if not held or type(held.current) ~= "table" then
 		return "fault"
@@ -75,9 +50,6 @@ local function backupRegister()
 	end
 	return "routine"
 end
-
-
-
 
 
 local function indexRegister(db)
@@ -90,12 +62,6 @@ local function indexRegister(db)
 	end
 	return "routine"
 end
-
-
-
-
-
-
 
 
 
@@ -120,7 +86,6 @@ function A.storeRows()
 			register = backupRegister(),
 			action = {
 				label = "Back up now",
-
 				run = function() return A.reportBackup() end,
 			},
 		},
@@ -145,9 +110,6 @@ local function surface()
 end
 
 
-
-
-
 function A.storeWindowTitle()
 	return ("%s: the store"):format(A.displayName())
 end
@@ -168,14 +130,12 @@ local function buildRow(frame, parent, index)
 	row.reading:SetWordWrap(false)
 
 
-
 	row.action = A.pill(parent, "", function()
 		local rows = A.storeRows()
 		local spec = rows[index] and rows[index].action
 		if spec then
 			spec.run()
 		end
-
 		A.refreshStoreWindow()
 	end, A.metric("actionMin"))
 
@@ -197,9 +157,7 @@ local function buildWindow()
 
 	frame:SetPoint("CENTER", UIParent, "CENTER",
 		A.metric("storeOffsetX"), A.metric("storeOffsetY"))
-
 	A.registerPlacedWindow(frame, "CENTER", A.metric("storeOffsetX"), A.metric("storeOffsetY"))
-
 
 
 	frame:SetFrameStrata("MEDIUM")
@@ -231,7 +189,6 @@ local function buildWindow()
 		-A.metric("margin"), -A.metric("headerHeight"))
 	frame.body:SetHeight(A.metric("storeHeight") - A.metric("headerHeight")
 		- A.metric("margin") * 2)
-
 
 	frame.sectionHeading = frame.body:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
 	frame.sectionHeading:SetPoint("TOPLEFT", frame.body, "TOPLEFT", 0, 0)
@@ -283,9 +240,6 @@ end
 
 
 
-
-
-
 function A.refreshStoreWindow()
 	if not window then
 		return false
@@ -318,7 +272,6 @@ function A.refreshStoreWindow()
 			widget.name:SetText(row.name)
 			widget.reading:SetText(row.reading)
 			A.style(widget.name, "bodyText", "text")
-
 
 			A.style(widget.reading, "bodyText", row.register)
 
@@ -360,9 +313,6 @@ function A.hideStoreWindow()
 	end
 	return (pcall(window.Hide, window))
 end
-
-
-
 
 
 function A.storeWindowShown()

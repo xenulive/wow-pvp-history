@@ -8,25 +8,7 @@
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 local _, A = ...
-
-
-
 
 
 
@@ -65,13 +47,7 @@ end
 
 
 
-
 local EXPORT_PREFIX = "WPH!1!"
-
-
-
-
-
 
 
 
@@ -129,20 +105,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 local EXCLUDED = { players = true, playerIndexVersion = true, active = true, pruneLog = true }
 
 local function payload(db)
@@ -157,12 +119,6 @@ end
 
 
 
-
-
-
-
-
-
 local function validate(value)
 	if type(value) ~= "table" then
 		return nil, "shape"
@@ -173,18 +129,11 @@ local function validate(value)
 	if type(value.schema) ~= "number" then
 		return nil, "empty"
 	end
-
 	if value.schema > A.schema then
 		return nil, "newer", value.schema
 	end
 	return value
 end
-
-
-
-
-
-
 
 
 local REFUSAL = {
@@ -197,27 +146,16 @@ local REFUSAL = {
 	["empty"] = "there is no history in this text",
 	["newer"] = "this was saved by a newer version of the addon. Update, then import it",
 
-
 	["in-flight"] = "a match is being recorded. Finish it or leave it, then try again",
 	["pin-failed"] = "the copy that would be kept could not be written, so nothing was erased",
-
 
 	["sandbox"] = "the sandbox is up and holds generated matches only. /reload ends it, then try again",
 }
 
 
-
-
-
 function A.refusalText(token)
 	return REFUSAL[token] or "this text could not be imported"
 end
-
-
-
-
-
-
 
 
 
@@ -254,9 +192,6 @@ end
 
 
 
-
-
-
 local function generatedCount(db)
 	if type(A.fixtureCount) ~= "function" or type(db) ~= "table" then
 		return nil
@@ -267,11 +202,6 @@ local function generatedCount(db)
 	end
 	return marked
 end
-
-
-
-
-
 
 
 local function realCount(matches, generated)
@@ -285,15 +215,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
 local function gatePair(held, heldGenerated, offered, offeredGenerated)
 	if type(heldGenerated) ~= "number" or type(offeredGenerated) ~= "number" then
 		return held, offered
@@ -303,31 +224,13 @@ end
 
 
 
-
-
-
 local function traceBackup(ev, state, reason, n)
 	A.trace(ev, { state = state, reason = reason, n = n }, "data")
 end
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 function A.takeBackup()
-
-
 
 
 	local db = A.savedDB()
@@ -349,12 +252,6 @@ function A.takeBackup()
 		local heldReal, offeredReal = gatePair(current.matches, current.generated, matches, generated)
 		if heldReal > offeredReal then
 
-
-
-
-
-
-
 			local previous = held.refused
 			local now = stamp()
 			held.refused = {
@@ -368,11 +265,7 @@ function A.takeBackup()
 					and previous.n or 0) + 1,
 			}
 
-
 			traceBackup("backup", "refused", "smaller", offeredReal)
-
-
-
 			return {
 				ok = false,
 				reason = "smaller",
@@ -432,18 +325,9 @@ function A.takeBackup()
 		schema = db.schema,
 		matches = matches,
 
-
-
-
-
-
 		generated = generated,
 		nextMatchId = db.nextMatchId,
 		bytes = #blob,
-
-
-
-
 
 		seconds = seconds,
 		blob = blob,
@@ -475,22 +359,7 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 function A.pinGate(db)
-
 	local held = A.backupStore()
 	local pinned = held and held.pinned
 	if type(pinned) ~= "table" or type(pinned.matches) ~= "number" then
@@ -498,10 +367,6 @@ function A.pinGate(db)
 	end
 	return gatePair(pinned.matches, pinned.generated, #db.matches, generatedCount(db))
 end
-
-
-
-
 
 
 
@@ -518,8 +383,6 @@ function A.pinBackup()
 	local pinned = held.pinned
 	local matches = #db.matches
 	local generated = generatedCount(db)
-
-
 
 
 	local heldReal, offeredReal = A.pinGate(db)
@@ -551,17 +414,11 @@ function A.pinBackup()
 
 	local replaced = pinned
 
-
-
-
-
 	held.pinned = {
 		at = stamp(),
 		addon = A.version,
 		schema = db.schema,
 		matches = matches,
-
-
 		generated = generated,
 		nextMatchId = db.nextMatchId,
 		bytes = #blob,
@@ -575,11 +432,6 @@ function A.pinBackup()
 		replaced = replaced and replaced.matches or nil,
 	}
 end
-
-
-
-
-
 
 
 
@@ -601,28 +453,10 @@ end
 
 
 
-
-
-
-
-
-
 local RESTORE_SLOTS = { current = true, pinned = true }
 
 
-
-
-
 local RESTORE_KEEPS = { "pruneLog" }
-
-
-
-
-
-
-
-
-
 
 
 
@@ -643,17 +477,10 @@ local function refill(db, value, keep)
 	end
 
 
-
-
-
-
 	if type(db.schema) ~= "number" or db.schema < A.schema then
 		db.schema = A.schema
 	end
 	db.matches = db.matches or {}
-
-
-
 
 
 	if type(db.nextMatchId) ~= "number" then
@@ -671,20 +498,10 @@ local function refill(db, value, keep)
 	db.incomplete = db.incomplete or {}
 
 
-
-
-
-
 	if db.nextIncompleteId == nil then
 		db.nextIncompleteId = A.assignIncompleteIds(db.incomplete)
 	end
-
-
-
 	db.ui = db.ui or {}
-
-
-
 
 
 
@@ -696,17 +513,8 @@ local function refill(db, value, keep)
 
 
 
-
-
 	pcall(A.noteCanary)
 end
-
-
-
-
-
-
-
 
 
 
@@ -731,7 +539,6 @@ function A.restorePreview(which)
 	end
 
 
-
 	local value = decode(current.blob)
 	if not value then
 		return nil, "this character's backup could not be read", "unreadable"
@@ -742,13 +549,6 @@ function A.restorePreview(which)
 		return nil, ("this character's backup holds no restorable history (%s)")
 			:format(A.refusalText(why)), why
 	end
-
-
-
-
-
-
-
 
 
 
@@ -769,7 +569,6 @@ function A.applyRestore(which)
 	local preview, why, token = A.restorePreview(which)
 	if not preview then
 
-
 		traceBackup("restore", "refused", token)
 		return nil, why
 	end
@@ -783,10 +582,7 @@ function A.applyRestore(which)
 	local before = #db.matches
 	refill(db, preview.payload, RESTORE_KEEPS)
 
-
 	pcall(A.notePrune, "restore", before)
-
-
 
 	A.storeReplaced()
 
@@ -794,11 +590,6 @@ function A.applyRestore(which)
 
 	return { matches = #db.matches, replaced = before, at = preview.entry.at }
 end
-
-
-
-
-
 
 
 
@@ -823,10 +614,6 @@ function A.exportString()
 end
 
 
-
-
-
-
 function A.importPreview(text)
 	if not codec then
 		return nil, A.refusalText("no-codec"), "no-codec"
@@ -836,13 +623,10 @@ function A.importPreview(text)
 	end
 
 
-
-
 	local cleaned = text:gsub("%s+", "")
 	if cleaned == "" then
 		return nil, A.refusalText("nothing"), "nothing"
 	end
-
 
 	if cleaned:sub(1, #EXPORT_PREFIX) ~= EXPORT_PREFIX then
 		return nil, A.refusalText("not-ours"), "not-ours"
@@ -857,15 +641,12 @@ function A.importPreview(text)
 	if not checked then
 		local text_ = A.refusalText(why)
 
-
 		if why == "newer" and found ~= nil then
 			text_ = text_ .. (" (it holds schema %s and this addon reads %s)")
 				:format(tostring(found), tostring(A.schema))
 		end
 		return nil, text_, why
 	end
-
-
 
 
 	if A.sandboxed() then
@@ -878,9 +659,6 @@ function A.importPreview(text)
 
 	return { payload = checked }
 end
-
-
-
 
 
 
@@ -903,8 +681,6 @@ function A.applyImport(text)
 	local before = #db.matches
 	refill(db, preview.payload, IMPORT_KEEPS)
 	pcall(A.notePrune, "import", before)
-
-
 	A.storeReplaced()
 
 	traceBackup("import", "applied", nil, #db.matches)
@@ -926,10 +702,6 @@ local function bytesText(bytes)
 end
 
 
-
-
-
-
 local function pinClause(held)
 	local pinned = held and held.pinned
 	if type(pinned) ~= "table" or type(pinned.blob) ~= "string" then
@@ -939,16 +711,6 @@ local function pinClause(held)
 	return (". A pinned copy holds %d %s from %s. /pvph restore pinned"):format(
 		pinned.matches or 0, pinned.matches == 1 and "match" or "matches", tostring(pinned.at))
 end
-
-
-
-
-
-
-
-
-
-
 
 
 local function generationClause(held, heldRaw, offered, offeredRaw)
@@ -966,27 +728,13 @@ local function generationClause(held, heldRaw, offered, offeredRaw)
 end
 
 
-
-
-
-
-
-
-
 function A.backupReading()
 	if not codec then
 		return "this client provides no encoding surface, so nothing is backed up"
 	end
 
-
-
-
 	local held = A.backupStore()
 	if not held or type(held.current) ~= "table" then
-
-
-
-
 
 		if held and type(held.failed) == "table" then
 			return ("none held. The last write failed at %s"):format(
@@ -999,9 +747,6 @@ function A.backupReading()
 	local text = ("%d %s from %s, %s"):format(current.matches or 0,
 		current.matches == 1 and "match" or "matches", tostring(current.at),
 		bytesText(current.bytes or 0))
-
-
-
 
 
 	local refused = held.refused
@@ -1029,8 +774,6 @@ end
 
 
 
-
-
 function A.reportBackup()
 	local said = {}
 	local function say(line)
@@ -1048,7 +791,6 @@ function A.reportBackup()
 		end
 		if result.seconds then
 
-
 			line = line .. (", in %.3f s"):format(result.seconds)
 		end
 		say(line)
@@ -1058,7 +800,6 @@ function A.reportBackup()
 	if result.reason == "no-codec" then
 		say("this client provides no encoding surface, so nothing can be backed up")
 	elseif result.reason == "smaller" then
-
 
 		say(("backup refused: %d %s stored against %d in the backup, which is not overwritten%s")
 			:format(result.matches, result.matches == 1 and "match" or "matches", result.held,
@@ -1079,17 +820,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
-
 function A.backupStandingLine()
 	if not codec then
 		return nil
@@ -1102,16 +832,12 @@ function A.backupStandingLine()
 	end
 
 
-
-
 	local since = refused.firstAt or refused.at
 	local n = type(refused.n) == "number" and refused.n or 1
 
 	return ("the backup has not written since %s, so the copy it holds is %d %s old. "
 		.. "/pvph backup tries again"):format(tostring(since), n, n == 1 and "logout" or "logouts")
 end
-
-
 
 
 
@@ -1135,16 +861,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
 local transfer
 
 local function buildFrame()
@@ -1152,9 +868,6 @@ local function buildFrame()
 		"BasicFrameTemplateWithInset")
 	frame:SetSize(A.metric("transferWidth"), A.metric("transferHeight"))
 	frame:SetPoint("CENTER")
-
-
-
 	A.registerPlacedWindow(frame, "CENTER", 0, 0)
 	frame:SetFrameStrata("DIALOG")
 	frame:SetClampedToScreen(true)
@@ -1190,8 +903,6 @@ local function buildFrame()
 	confirm:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -16, 14)
 	frame.confirm = confirm
 
-
-
 	A.registerChrome(frame)
 
 	return frame
@@ -1208,12 +919,6 @@ local function frameOrNil()
 	transfer = built
 	return transfer
 end
-
-
-
-
-
-
 
 
 
@@ -1257,10 +962,6 @@ function A.showTransfer(title, note, text, confirmText, onConfirm)
 end
 
 
-
-
-
-
 function A.transferConfirmText(text)
 	if not transfer then
 		return false
@@ -1277,10 +978,6 @@ end
 
 
 
-
-
-
-
 local function collector()
 	local said = {}
 	return said, function(line)
@@ -1288,13 +985,6 @@ local function collector()
 		A.say(line)
 	end
 end
-
-
-
-
-
-
-
 
 
 
@@ -1345,14 +1035,12 @@ function A.openExport()
 
 	if not A.showTransfer("PvP history export",
 			"Ctrl+C copies it. Paste it somewhere outside the game.", text, nil, nil) then
-
 		say("the copy window could not be opened, so the string cannot be reached from here")
 		return false, said
 	end
 
 	return true, said
 end
-
 
 
 local importPending
@@ -1376,7 +1064,6 @@ function A.openImport()
 			local preview, why = A.importPreview(text)
 			if not preview then
 
-
 				A.say("import: " .. tostring(why))
 				return false
 			end
@@ -1384,12 +1071,10 @@ function A.openImport()
 			local db = A.db()
 			local held = #preview.payload.matches
 
-
 			if importPending ~= text then
 				importPending = text
 				A.say(("import holds %d %s against %d stored. Click again to replace them")
 					:format(held, held == 1 and "match" or "matches", #db.matches))
-
 				A.transferConfirmText(("Replace %d with %d"):format(#db.matches, held))
 				return false
 			end
@@ -1404,13 +1089,9 @@ function A.openImport()
 			A.say(("imported %d %s, replacing %d. The player index was rebuilt")
 				:format(result.matches, result.matches == 1 and "match" or "matches",
 					result.replaced))
-
-
-
 			if A.refreshOptionsWindow then
 				pcall(A.refreshOptionsWindow)
 			end
-
 
 			return true
 		end)
@@ -1426,15 +1107,7 @@ end
 
 
 
-
-
-
-
-
-
 A.on("PLAYER_LOGOUT", function()
-
-
 
 
 	if type(A.closeWorldSession) == "function" then
@@ -1443,7 +1116,6 @@ A.on("PLAYER_LOGOUT", function()
 			A.noteError(why, "backup-world-close")
 		end
 	end
-
 
 
 	local ok, err = pcall(A.takeBackup)

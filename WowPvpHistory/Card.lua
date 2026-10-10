@@ -15,20 +15,6 @@
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 local ADDON, A = ...
 
 
@@ -224,6 +210,7 @@ local function layoutHeader(f, said, inner, padX, padY)
 	if filled then
 		chip.ground:SetColorTexture(A.color(said.repMark or "dim"))
 		chip.ground:Show()
+
 
 
 		local r, g, b = A.color("panelDeep")
@@ -543,15 +530,6 @@ local function draw(said, owner, under, finderClass)
 	end
 	return drew
 end
-
-
-
-
-
-
-
-
-
 
 
 

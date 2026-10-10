@@ -7,28 +7,7 @@
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 local _, A = ...
-
-
-
 
 
 
@@ -41,16 +20,11 @@ local token = 0
 
 
 
-
 local announcedChat = false
 local announcedBanner = false
 
 
-
 local reported = false
-
-
-
 
 
 
@@ -67,8 +41,6 @@ end
 
 
 
-
-
 function A.setAlerts(enabled)
 	local db = A.db()
 	if not db then
@@ -82,20 +54,11 @@ function A.setAlerts(enabled)
 	end
 
 
-
-
-
 	if A.notifyAlertsSetting then
 		A.notifyAlertsSetting()
 	end
 	return true
 end
-
-
-
-
-
-
 
 
 
@@ -112,8 +75,6 @@ function A.postGameEnabled()
 end
 
 
-
-
 function A.setPostGame(enabled)
 	local db = A.db()
 	if not db then
@@ -126,19 +87,11 @@ function A.setPostGame(enabled)
 		db.ui.postGame = nil
 	end
 
-
-
-
 	if A.notifyPostGameSetting then
 		A.notifyPostGameSetting()
 	end
 	return true
 end
-
-
-
-
-
 
 
 function A.openAfterMatchEnabled()
@@ -149,8 +102,6 @@ function A.openAfterMatchEnabled()
 	db.ui = db.ui or {}
 	return db.ui.openAfterMatch ~= false
 end
-
-
 
 
 function A.setOpenAfterMatch(enabled)
@@ -165,19 +116,11 @@ function A.setOpenAfterMatch(enabled)
 		db.ui.openAfterMatch = nil
 	end
 
-
-
 	if A.notifyOpenAfterMatchSetting then
 		A.notifyOpenAfterMatchSetting()
 	end
 	return true
 end
-
-
-
-
-
-
 
 
 function A.groupNotesEnabled()
@@ -188,8 +131,6 @@ function A.groupNotesEnabled()
 	db.ui = db.ui or {}
 	return db.ui.groupNotes ~= false
 end
-
-
 
 
 function A.setGroupNotes(enabled)
@@ -212,17 +153,9 @@ end
 
 
 
-
-
-
-
-
 function A.groupNotesAvailable()
 	return A.alertsEnabled()
 end
-
-
-
 
 
 
@@ -248,9 +181,6 @@ end
 
 
 
-
-
-
 local function guarded(fn, ...)
 	if type(fn) ~= "function" then
 		return nil
@@ -266,10 +196,6 @@ end
 
 
 
-
-
-
-
 function A.inMatchInstance()
 	if type(GetInstanceInfo) ~= "function" then
 		return false
@@ -280,44 +206,10 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 local function traceAlert(reason, n, restriction, noted, found)
 	A.trace("alert", { reason = reason, n = n, restriction = restriction, noted = noted,
 		found = found })
 end
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -343,7 +235,6 @@ function A.groupGuids()
 	for i = 1, count do
 		local guid = guarded(UnitGUID, prefix .. i)
 
-
 		if type(guid) == "string" and A.canRead(guid) and guid ~= selfGuid then
 			guids[#guids + 1] = guid
 		end
@@ -351,9 +242,6 @@ function A.groupGuids()
 
 	return guids, selfGuid
 end
-
-
-
 
 
 
@@ -369,18 +257,11 @@ local function signature(guids)
 end
 
 
-
-
-
-
 local function surfaces()
 	local banner = type(A.announceEnabled) == "function" and type(A.announceGroupRoster) == "function"
 		and A.announceEnabled() == true
 	return A.alertsEnabled(), banner
 end
-
-
-
 
 
 local function owed(sig)
@@ -397,8 +278,6 @@ local function forget()
 		A.announceGroupLeft()
 	end
 end
-
-
 
 
 
@@ -437,7 +316,6 @@ local function announce()
 	end
 
 
-
 	local known, noted
 	if chatDue then
 		announcedChat = true
@@ -445,8 +323,6 @@ local function announce()
 	else
 		known = A.knownPlayers(guids, selfGuid)
 	end
-
-
 
 	if bannerDue then
 		announcedBanner = true
@@ -458,22 +334,12 @@ end
 
 
 
-
-
-
-
-
-
-
 function A.sayGroupLines(guids, selfGuid, withNotes)
 	local known = A.knownPlayers(guids, selfGuid)
 	local line = A.knownLine(known, "group")
 	if line then
 		A.say(line)
 	end
-
-
-
 
 
 
@@ -491,9 +357,6 @@ function A.sayGroupLines(guids, selfGuid, withNotes)
 end
 
 
-
-
-
 local function schedule()
 	token = token + 1
 	local mine = token
@@ -506,16 +369,12 @@ local function schedule()
 
 	pcall(after, SETTLE_SECONDS, function()
 
-
 		if mine ~= token then
 			return
 		end
 		contained(announce)
 	end)
 end
-
-
-
 
 
 
@@ -534,9 +393,6 @@ local function onRoster()
 	end
 
 
-
-
-
 	if A.inMatchInstance() then
 		traceAlert("instance")
 		return
@@ -544,8 +400,6 @@ local function onRoster()
 
 	local guids = A.groupGuids()
 	if #guids == 0 then
-
-
 		forget()
 		traceAlert("no-group", 0)
 		return
@@ -574,14 +428,6 @@ end)
 
 
 
-
-
-
-
-
-
-
-
 function A.alertGatesGroup(rows, selfName, selfQualified, nameIndex)
 	if not A.alertsEnabled() then
 		A.trace("alert", { source = "gates", reason = "switch" })
@@ -599,7 +445,6 @@ function A.alertGatesGroup(rows, selfName, selfQualified, nameIndex)
 			return
 		end
 		said = printed == true
-
 		A.trace("alert", { source = "gates", reason = "announced", n = known.offered,
 			found = known.found, noted = withNotes and noted or nil })
 	end)
@@ -610,13 +455,11 @@ end
 
 
 
-
 function A.sayGatesLines(rows, selfName, selfQualified, nameIndex, withNotes)
 	local known, resolved = A.knownOnOwnSide(rows, selfName, selfQualified, nameIndex)
 	if not known then
 		return nil, resolved
 	end
-
 
 	local line = A.knownLine(known, "group")
 	if line then
@@ -636,14 +479,6 @@ function A.sayGatesLines(rows, selfName, selfQualified, nameIndex, withNotes)
 	end
 	return known, resolved, noted, line ~= nil
 end
-
-
-
-
-
-
-
-
 
 
 
@@ -682,14 +517,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
 function A.matchLinkLine(record)
 	if type(record) ~= "table" or type(record.id) ~= "number" or not A.linksAvailable() then
 		return nil
@@ -706,28 +533,13 @@ end
 
 
 
-
-
-
-
 local pendingId
 local waitedOn
-
-
-
-
-
-
 
 
 local function traceAfterMatch(state, id, reason)
 	A.trace("after-match", { state = state, id = id, reason = reason }, "ui")
 end
-
-
-
-
-
 
 
 
@@ -755,9 +567,6 @@ end
 
 
 
-
-
-
 local function attempt()
 	local id = pendingId
 	if id == nil then
@@ -777,7 +586,6 @@ local function attempt()
 	end
 	if held then
 
-
 		if waitedOn ~= held then
 			waitedOn = held
 			traceAfterMatch("waiting", id, held)
@@ -789,8 +597,6 @@ local function attempt()
 	local _, outcome = A.raiseMatchWindow("match", id, "aftermatch")
 	return outcome
 end
-
-
 
 
 
@@ -813,7 +619,6 @@ end
 
 
 
-
 function A.dropAfterMatch()
 	local id = pendingId
 	pendingId, waitedOn = nil, nil
@@ -822,9 +627,6 @@ function A.dropAfterMatch()
 	end
 	return id ~= nil
 end
-
-
-
 
 
 
@@ -852,9 +654,6 @@ function A.reportAfterMatch(word)
 		A.say(("the window after a match %s, nothing pending"):format(state))
 	end
 end
-
-
-
 
 
 local function onLift()

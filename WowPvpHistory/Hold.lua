@@ -8,40 +8,13 @@
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 local _, A = ...
 
 
 
 
 
-
-
-
-
-
-
 local CAP = 10
-
 
 
 local TICK = 0.25
@@ -53,10 +26,8 @@ local BEAT = 1
 
 local PREVIEW_SECONDS = 6
 
-
 local SAVING_TEXT = "Saving the match"
 local SAVED_TEXT = "Saved"
-
 
 
 local overlay
@@ -68,13 +39,10 @@ local held
 
 
 
-
-
 local heldFrom
 
 
 local savedUntil
-
 
 
 local lastText
@@ -83,13 +51,8 @@ local savedDrawn = false
 
 
 
-
-
 local preview
 local standIn
-
-
-
 
 
 
@@ -118,14 +81,11 @@ function A.setHold(enabled)
 	end
 
 
-
 	if A.notifyHoldSetting then
 		A.notifyHoldSetting()
 	end
 	return true
 end
-
-
 
 
 
@@ -153,13 +113,6 @@ end
 
 
 
-
-
-
-
-
-
-
 local function build(button, parent)
 	if type(CreateFrame) ~= "function" then
 		return false
@@ -173,7 +126,6 @@ local function build(button, parent)
 		overlay = made
 
 
-
 		pcall(overlay.EnableMouse, overlay, true)
 
 		local texture = overlay.CreateTexture and overlay:CreateTexture(nil, "OVERLAY")
@@ -181,9 +133,6 @@ local function build(button, parent)
 			pcall(texture.SetAllPoints, texture, overlay)
 			overlay.scrim = texture
 		end
-
-
-
 
 
 		local words = overlay.CreateFontString and overlay:CreateFontString(nil, "OVERLAY")
@@ -213,8 +162,6 @@ local function build(button, parent)
 end
 
 
-
-
 local function lift(button)
 	if not (overlay and type(button) == "table") then
 		return
@@ -224,7 +171,6 @@ local function lift(button)
 		pcall(overlay.SetFrameLevel, overlay, level + 10)
 	end
 end
-
 
 
 local function countdown(remaining)
@@ -245,9 +191,6 @@ local function coverWidth()
 	end
 	return nil
 end
-
-
-
 
 
 local function layout(wordsText, wordsTone, secondsText, secondsTone)
@@ -336,8 +279,6 @@ end
 
 
 
-
-
 local function standInFrame()
 	if standIn then
 		return standIn
@@ -390,11 +331,6 @@ local function endPreview(why)
 	A.trace("hold/preview", { state = "off", reason = why })
 	return true
 end
-
-
-
-
-
 
 
 
@@ -462,10 +398,6 @@ end
 
 
 
-
-
-
-
 local function since(from)
 	local now = A.precise and A.precise()
 	if type(now) == "number" and type(from) == "number" then
@@ -473,13 +405,6 @@ local function since(from)
 	end
 	return nil
 end
-
-
-
-
-
-
-
 
 
 
@@ -508,11 +433,6 @@ local function schedule(record, check)
 		end)
 	end
 end
-
-
-
-
-
 
 
 
@@ -560,11 +480,6 @@ end
 
 
 
-
-
-
-
-
 function A.armHold(record)
 	if type(record) ~= "table" then
 		return "no-record"
@@ -583,13 +498,9 @@ function A.armHold(record)
 	end
 
 
-
-
 	if held == record then
 		return "already-held"
 	end
-
-
 
 
 	local from = record.completedPrecise
@@ -610,7 +521,6 @@ function A.armHold(record)
 	end
 
 
-
 	if held and held ~= record then
 		release("superseded")
 	end
@@ -619,7 +529,6 @@ function A.armHold(record)
 	savedUntil, savedDrawn = nil, false
 	lift(button)
 
-
 	drawSaving(since(from) or 0)
 	pcall(overlay.Show, overlay)
 
@@ -627,7 +536,6 @@ function A.armHold(record)
 
 	return "armed"
 end
-
 
 
 
@@ -644,14 +552,9 @@ function A.holdAtTransition(record)
 end
 
 
-
-
-
 function A.holdCap()
 	return CAP
 end
-
-
 
 
 

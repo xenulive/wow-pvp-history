@@ -11,19 +11,10 @@
 
 
 
-
-
-
-
-
-
-
 local _, A = ...
 
 
-
 local SIGHT_REPEAT_MINUTES = 10
-
 
 
 local SIGHT_QUIET_SECONDS = 20
@@ -39,9 +30,7 @@ local MARK_SIZE = 14
 local marks = {}
 
 
-
 local plateOf = {}
-
 
 
 local namedAt = {}
@@ -52,8 +41,6 @@ local lastLine
 
 
 local reported = false
-
-
 
 
 
@@ -74,8 +61,6 @@ local function hideAll()
 		pcall(mark.Hide, mark)
 	end
 end
-
-
 
 
 
@@ -116,8 +101,6 @@ end
 
 
 
-
-
 local function plateFrame(token)
 	local plates = C_NamePlate
 	return guarded(plates and plates.GetNamePlateForUnit, token)
@@ -146,11 +129,6 @@ local function markedCount()
 	end
 	return n
 end
-
-
-
-
-
 
 
 
@@ -189,8 +167,6 @@ end
 
 
 
-
-
 local function examine(token, source)
 	if not A.sightEnabled() then
 		traceSight("refused", "switch", source)
@@ -210,6 +186,7 @@ local function examine(token, source)
 		traceSight("refused", "not-player", source)
 		return nil
 	end
+
 
 
 	local guid = guarded(UnitGUID, token)
@@ -359,8 +336,6 @@ end)
 A.on("PLAYER_TARGET_CHANGED", function()
 	contained(onTarget)
 end)
-
-
 
 
 

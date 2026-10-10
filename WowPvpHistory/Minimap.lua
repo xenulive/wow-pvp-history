@@ -3,21 +3,9 @@
 
 
 
-
-
-
-
-
-
-
-
-
-
-
 local _, A = ...
 
 local BUTTON_NAME = "WowPvpHistoryMinimapButton"
-
 
 
 local DEFAULT_ANGLE = 205
@@ -27,12 +15,9 @@ local RADIUS_PADDING = 5
 
 
 
-
 local FALLBACK_MINIMAP_SIZE = 140
 
 local button
-
-
 
 
 
@@ -50,7 +35,6 @@ end
 
 
 
-
 local function storedAngle()
 	local ui = uiState()
 	local angle = ui and tonumber(ui.minimapAngle)
@@ -59,9 +43,6 @@ local function storedAngle()
 	end
 	return angle % 360
 end
-
-
-
 
 
 
@@ -80,9 +61,6 @@ local function storedFree()
 end
 
 
-
-
-
 local function storedShown()
 	local ui = uiState()
 	if not ui then
@@ -90,11 +68,6 @@ local function storedShown()
 	end
 	return ui.minimapShown ~= false
 end
-
-
-
-
-
 
 
 
@@ -125,10 +98,6 @@ local function place()
 			math.cos(radians) * radius, math.sin(radians) * radius)
 	end))
 end
-
-
-
-
 
 
 
@@ -165,9 +134,6 @@ end
 
 
 
-
-
-
 local function draggedFree()
 	if not (button and Minimap and GetCursorPosition) then
 		return
@@ -194,9 +160,6 @@ end
 
 
 
-
-
-
 local function shiftHeld()
 	if type(IsShiftKeyDown) ~= "function" then
 		return false
@@ -204,10 +167,6 @@ local function shiftHeld()
 	local ok, held = pcall(IsShiftKeyDown)
 	return ok and held == true
 end
-
-
-
-
 
 
 
@@ -231,15 +190,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
 local MENU_ENTRIES = {
 	{ kind = "title", text = "PvP History" },
 	{ kind = "button", text = "Match history", run = function() A.toggleWindow() end },
@@ -247,9 +197,6 @@ local MENU_ENTRIES = {
 
 	{ kind = "button", text = "Stats", run = function() A.showWindowState({ body = "stats", view = "ask" }) end },
 	{ kind = "divider" },
-
-
-
 
 
 	{ kind = "button", text = "Settings", run = function() A.toggleSettings() end },
@@ -260,7 +207,6 @@ local MENU_ENTRIES = {
 		text = "Hide this button",
 		run = function()
 			A.setMinimapShown(false)
-
 
 			A.say("minimap button hidden. /pvph minimap shows it again")
 		end,
@@ -279,10 +225,6 @@ local function clickable()
 end
 
 
-
-
-
-
 local function playersMet()
 	local ok, view = pcall(A.playersView, {})
 	if not ok or type(view) ~= "table" or type(view.strip) ~= "table" then
@@ -294,11 +236,6 @@ local function playersMet()
 	end
 	return count
 end
-
-
-
-
-
 
 
 
@@ -319,18 +256,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
 local function menuOwner(region)
 	if not region then
 		return nil
@@ -341,9 +266,6 @@ local function menuOwner(region)
 	end
 	return region
 end
-
-
-
 
 
 
@@ -376,11 +298,6 @@ local function buildRows(root)
 	end
 	return built, players
 end
-
-
-
-
-
 
 
 
@@ -427,15 +344,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
 local function showTooltip(owner)
 	GameTooltip:SetOwner(owner, "ANCHOR_LEFT")
 	if type(GameTooltip.ClearLines) == "function" then
@@ -449,7 +357,6 @@ local function showTooltip(owner)
 
 
 	local character = A.barCharacter()
-
 	local newest = character ~= nil and A.lastMatch(nil, nil, A.barRecorder(character), nil, true) or nil
 	if newest == nil or newest.format == nil then
 		GameTooltip:AddLine("PvP History", ar, ag, ab)
@@ -500,7 +407,6 @@ local function showTooltip(owner)
 	GameTooltip:Show()
 
 
-
 	A.trace("minimap/tooltip", {
 		format = format,
 		rating = drawnRating,
@@ -520,8 +426,6 @@ local function buildButton()
 	made:SetFrameLevel((Minimap:GetFrameLevel() or 1) + 8)
 	made:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 	made:RegisterForDrag("LeftButton")
-
-
 
 	made:SetClampedToScreen(true)
 
@@ -547,7 +451,6 @@ local function buildButton()
 		if mouseButton == "RightButton" then
 
 
-
 			local opened, refused, built, players = openMenu(self)
 			A.trace("minimap/menu", { state = opened and "opened" or "fallback", reason = refused,
 				n = clickable(), entries = built and table.concat(built, "+") or nil,
@@ -556,10 +459,8 @@ local function buildButton()
 				return
 			end
 
-
 			local where, why = A.openSettings()
 			if not where then
-
 
 				if why == "combat" then
 					A.say("no menu, and the client's settings panel cannot be opened in combat. "
@@ -573,8 +474,6 @@ local function buildButton()
 		end
 		A.toggleWindow()
 	end)
-
-
 
 
 	made:SetScript("OnDragStart", function(self)
@@ -638,9 +537,6 @@ end
 
 
 
-
-
-
 local function notifySetting()
 	if A.notifyMinimapSetting then
 		A.notifyMinimapSetting()
@@ -676,9 +572,6 @@ end
 
 
 
-
-
-
 function A.resetMinimap()
 	local ui = uiState()
 	if ui then
@@ -698,17 +591,11 @@ end
 
 
 
-
-
-
-
-
 function A.applyMinimapState()
 	if not storedShown() then
 		if button then
 			return (pcall(button.Hide, button))
 		end
-
 		return true
 	end
 
@@ -721,15 +608,9 @@ end
 
 
 
-
-
-
 function A.minimapAvailable()
 	return Minimap ~= nil
 end
-
-
-
 
 
 function A.minimapState()
@@ -747,11 +628,7 @@ end
 
 
 
-
-
-
 A.on("PLAYER_LOGIN", function()
-
 
 	local ok, placed = pcall(A.applyMinimapState)
 	if not ok then

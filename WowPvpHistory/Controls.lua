@@ -13,38 +13,6 @@
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 local _, A = ...
 
 
@@ -53,14 +21,7 @@ local _, A = ...
 
 
 
-
-
-
-
 local controls = {}
-
-
-
 
 
 local function isOff(button)
@@ -72,10 +33,6 @@ local function isOff(button)
 	end
 	return false
 end
-
-
-
-
 
 
 
@@ -94,11 +51,9 @@ local function paintSurface(button, off)
 	end
 
 
-
 	if button.controlDown and not off then
 		button.bg:SetColorTexture(A.color("field"))
 	end
-
 
 
 	local selected = button.controlSelected == true and not off
@@ -126,8 +81,6 @@ local function paintPill(button)
 	local label = button.controlLabel
 	local tone = off and "dimmer" or (button.controlOver and "bright" or "text")
 
-
-
 	if not off and not button.controlOver and button.controlTone then
 		tone = button.controlTone
 	end
@@ -137,12 +90,8 @@ local function paintPill(button)
 		tone = "bright"
 	end
 
-
 	A.style(label, button.controlRole or "bodyMedium", tone)
 end
-
-
-
 
 
 local function paintCheck(button)
@@ -163,8 +112,6 @@ end
 
 
 
-
-
 local function paintTab(button)
 	local chosen = button.tabSelected and true or false
 
@@ -177,13 +124,8 @@ local function paintTab(button)
 	end
 
 
-
 	local role = chosen and "bodyMedium" or "bodyText"
 	local tone = chosen and "bright" or (button.controlOver and "text" or "dim")
-
-
-
-
 
 	if button.tabEmpty and not chosen and not button.controlOver then
 		tone = "dimmer"
@@ -205,11 +147,6 @@ local function showArt(button, keys, shown)
 		end
 	end
 end
-
-
-
-
-
 
 
 
@@ -236,7 +173,6 @@ local function paintPanelTab(button)
 	button.flatWash:SetShown(flat and not chosen and button.controlOver and true or false)
 
 
-
 	local e = button.flatEdges
 	e[1]:ClearAllPoints()
 	e[1]:SetPoint("TOPLEFT", button, "TOPLEFT", 0, top)
@@ -257,23 +193,17 @@ local function paintPanelTab(button)
 end
 
 
-
-
 local function paintSegmentTrack(track)
 	track.bg:SetColorTexture(A.color("panelDeep"))
 end
-
-
 
 
 local function paintSegment(button)
 	local chosen = button.segmentChosen and true or false
 
 
-
 	button.bg:SetColorTexture(A.color("selection"))
 	button.bg:SetShown(chosen)
-
 
 
 
@@ -286,21 +216,12 @@ local function paintSegment(button)
 	end
 
 
-
-
-
-
-
 	local tone = chosen and "bright" or (button.controlOver and "text" or "dim")
 	if button.segmentUnreachable and not chosen then
 		tone = "dimmer"
 	end
 	A.style(button.controlLabel, "label", tone)
 end
-
-
-
-
 
 
 local function paintEntry(box)
@@ -315,7 +236,6 @@ local function paintEntry(box)
 	A.style(box, "bodyText", "text")
 
 
-
 	if box.controlPlaceholder then
 		local ok, held = pcall(box.GetText, box)
 		local empty = not (ok and type(held) == "string" and held ~= "")
@@ -323,9 +243,6 @@ local function paintEntry(box)
 		A.style(box.controlPlaceholder, "bodyText", "dimmer")
 	end
 end
-
-
-
 
 
 local function paintChip(button)
@@ -342,14 +259,8 @@ local function paintChip(button)
 	end
 
 
-
 	A.style(button.chipClear, "label", (off or not button.controlOver) and "dimmer" or "accent")
 end
-
-
-
-
-
 
 
 
@@ -362,7 +273,6 @@ local function paintDropdown(button)
 	if off then
 		tone = "dimmer"
 	elseif button.chosenUnreachable then
-
 
 		tone = "dim"
 	elseif button.controlOver then
@@ -391,9 +301,6 @@ local function paintDropdown(button)
 		end
 	end
 end
-
-
-
 
 
 local function paintGrip(button)
@@ -433,8 +340,6 @@ end
 
 
 
-
-
 function A.registerControl(button)
 	if type(button) ~= "table" or not button.controlKind then
 		return false
@@ -451,11 +356,6 @@ function A.registerControl(button)
 	paint(button)
 	return true
 end
-
-
-
-
-
 
 
 
@@ -476,9 +376,6 @@ end
 
 
 
-
-
-
 local function attachLabel(button)
 	local label = button:CreateFontString(nil, "OVERLAY")
 	label:SetPoint("CENTER", button, "CENTER", 0, 0)
@@ -488,11 +385,6 @@ local function attachLabel(button)
 	button.controlLabel = label
 	return label
 end
-
-
-
-
-
 
 
 
@@ -559,9 +451,6 @@ local function attachStates(button)
 end
 
 
-
-
-
 local function stringWidth(fontString)
 	if type(fontString) ~= "table" or not fontString.GetStringWidth then
 		return 0
@@ -572,12 +461,6 @@ local function stringWidth(fontString)
 	end
 	return width
 end
-
-
-
-
-
-
 
 
 
@@ -594,9 +477,6 @@ function A.fitControl(button, minWidth, padding)
 	button:SetWidth(math.max(floor, text + pad))
 	return button:GetWidth() or floor
 end
-
-
-
 
 
 function A.pill(parent, text, onClick, minWidth)
@@ -622,11 +502,6 @@ function A.pill(parent, text, onClick, minWidth)
 end
 
 
-
-
-
-
-
 function A.setControlTone(button, tone)
 	if type(button) ~= "table" or not button.controlKind then
 		return false
@@ -649,11 +524,6 @@ end
 
 
 
-
-
-
-
-
 local function attachCheckedHook(button)
 	local base = button.SetChecked
 	if type(base) ~= "function" then
@@ -668,9 +538,6 @@ local function attachCheckedHook(button)
 end
 
 
-
-
-
 function A.check(parent)
 	local button = CreateFrame("CheckButton", nil, parent)
 	button.controlKind = "check"
@@ -678,7 +545,6 @@ function A.check(parent)
 	button:SetSize(A.metric("controlHeight"), A.metric("controlHeight"))
 
 	attachSurface(button)
-
 
 
 	button.mark = button:CreateTexture(nil, "OVERLAY")
@@ -693,11 +559,6 @@ function A.check(parent)
 	A.registerControl(button)
 	return button
 end
-
-
-
-
-
 
 
 
@@ -727,14 +588,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
 function A.entryPlaceholder(box, text)
 	if not box or type(text) ~= "string" then
 		return false
@@ -755,10 +608,6 @@ function A.entryPlaceholder(box, text)
 	paint(box)
 	return true
 end
-
-
-
-
 
 
 
@@ -803,12 +652,6 @@ end
 
 
 
-
-
-
-
-
-
 function A.setChipComp(chip, members)
 	if type(chip) ~= "table" or chip.controlKind ~= "chip" then
 		return 0
@@ -823,7 +666,6 @@ function A.setChipComp(chip, members)
 		chip.chipSwatches[i]:SetShown(m ~= nil)
 		chip.chipLabels[i]:SetShown(m ~= nil)
 		if m ~= nil then
-
 
 			chip.chipLabels[i]:SetText(A.chipText(m))
 			last = chip.chipLabels[i]
@@ -863,9 +705,6 @@ function A.setChipComp(chip, members)
 end
 
 
-
-
-
 function A.tab(parent, text, onClick)
 	local button = CreateFrame("Button", nil, parent)
 	button.controlKind = "tab"
@@ -903,9 +742,6 @@ function A.tab(parent, text, onClick)
 end
 
 
-
-
-
 function A.setTabSelected(button, selected)
 	if type(button) ~= "table" or button.controlKind ~= "tab" then
 		return false
@@ -922,11 +758,6 @@ function A.setTabSelected(button, selected)
 end
 
 
-
-
-
-
-
 function A.setTabEmpty(button, empty)
 	if type(button) ~= "table" or button.controlKind ~= "tab" then
 		return false
@@ -940,19 +771,12 @@ end
 
 
 
-
-
-
 function A.fitPanelTab(button)
 	local text = stringWidth(button.Text)
 	local flat = stringWidth(button.flatLabel)
 	button:SetWidth(math.max(text, flat) + A.metric("panelTabPad"))
 	return button:GetWidth()
 end
-
-
-
-
 
 
 
@@ -1021,8 +845,6 @@ function A.panelTab(parent, text, onClick)
 end
 
 
-
-
 function A.setPanelTabSelected(button, selected)
 	if type(button) ~= "table" or button.controlKind ~= "panelTab" then
 		return false
@@ -1037,13 +859,6 @@ function A.setPanelTabSelected(button, selected)
 	paint(button)
 	return true
 end
-
-
-
-
-
-
-
 
 
 
@@ -1073,7 +888,6 @@ function A.segment(parent, choices, onPick)
 		chip:SetHeight(A.metric("segmentHeight"))
 
 
-
 		chip.bg = chip:CreateTexture(nil, "BACKGROUND")
 		chip.bg:SetAllPoints(chip)
 		chip.bg:Hide()
@@ -1092,8 +906,6 @@ function A.segment(parent, choices, onPick)
 		attachLabel(chip)
 		attachStates(chip)
 		chip:SetText(choice.label)
-
-
 
 
 		chip:HookScript("OnEnter", function(self)
@@ -1136,20 +948,8 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
-
 function A.sectionList(parent, choices, onPick)
 	local list = CreateFrame("Frame", nil, parent)
-
 
 
 	list.controlKind = "sectionList"
@@ -1166,7 +966,6 @@ function A.sectionList(parent, choices, onPick)
 	end
 	list:SetWidth(widest + indent * 2)
 	list:SetHeight(row * #choices)
-
 
 
 	list.rule = list:CreateTexture(nil, "ARTWORK")
@@ -1223,18 +1022,7 @@ function A.sectionList(parent, choices, onPick)
 end
 
 
-
 local openDropdown = nil
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -1286,14 +1074,6 @@ function A.dropdown(parent, choices, onPick)
 
 
 
-
-
-
-
-
-
-
-
 	local function sizeToChoices()
 		local widest = 0
 		for i = 1, #button.choices do
@@ -1321,7 +1101,6 @@ function A.dropdown(parent, choices, onPick)
 		local visible = math.min(#button.choices, A.metric("dropdownRows"))
 		panel:SetHeight(math.max(visible * rowHeight + pad * 2, rowHeight))
 		sizeToChoices()
-
 
 
 		local most = math.max(#button.choices - visible, 0)
@@ -1354,9 +1133,7 @@ function A.dropdown(parent, choices, onPick)
 				row.label:SetWordWrap(false)
 
 
-
 				A.style(row.label, "bodyText", "text")
-
 
 
 				row:SetScript("OnEnter", function(self)
@@ -1418,9 +1195,6 @@ function A.dropdown(parent, choices, onPick)
 	end)
 
 
-
-
-
 	local function open()
 		if openDropdown ~= nil and openDropdown ~= button and openDropdown.closeDropdown then
 			openDropdown.closeDropdown()
@@ -1443,10 +1217,6 @@ function A.dropdown(parent, choices, onPick)
 	fill()
 	return button
 end
-
-
-
-
 
 
 
@@ -1481,16 +1251,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
 function A.grip(parent, onStop, onPress, onStarted)
 	local size = A.metric("gripSize")
 
@@ -1498,7 +1258,6 @@ function A.grip(parent, onStop, onPress, onStarted)
 	grip.controlKind = "grip"
 	grip:SetSize(size, size)
 	grip:EnableMouse(true)
-
 
 
 	grip.strokes = {}
@@ -1525,17 +1284,8 @@ function A.grip(parent, onStop, onPress, onStarted)
 		end
 
 
-
-
-
-
-
-
-
 		local alwaysStartFromMouse = true
 		pcall(parent.StartSizing, parent, "BOTTOMRIGHT", alwaysStartFromMouse)
-
-
 
 		if onStarted then
 			pcall(onStarted)
@@ -1543,9 +1293,6 @@ function A.grip(parent, onStop, onPress, onStarted)
 	end)
 	grip:SetScript("OnMouseUp", function(self)
 		pcall(parent.StopMovingOrSizing, parent)
-
-
-
 
 
 		pcall(parent.SetUserPlaced, parent, false)
@@ -1557,12 +1304,6 @@ function A.grip(parent, onStop, onPress, onStarted)
 	A.registerControl(grip)
 	return grip
 end
-
-
-
-
-
-
 
 
 
@@ -1597,11 +1338,6 @@ end
 
 
 
-
-
-
-
-
 function A.setSegmentUnreachable(track, marks, reason)
 	if type(track) ~= "table" or track.controlKind ~= "segmentTrack" then
 		return false
@@ -1609,7 +1345,6 @@ function A.setSegmentUnreachable(track, marks, reason)
 	if type(track.children) ~= "table" then
 		return false
 	end
-
 
 
 
@@ -1635,14 +1370,6 @@ function A.setSegmentUnreachable(track, marks, reason)
 	end
 	return found
 end
-
-
-
-
-
-
-
-
 
 
 
@@ -1679,15 +1406,10 @@ end
 
 
 
-
-
 local grounds = {}
 
 
-
 local tooltipMeasured = false
-
-
 
 
 
@@ -1702,10 +1424,6 @@ local function releaseTooltip()
 		pcall(GameTooltip.SetMinimumWidth, GameTooltip, 0)
 	end
 end
-
-
-
-
 
 
 
@@ -1727,7 +1445,6 @@ local function tooltipGroundFor(tooltip)
 		ground:SetPoint("BOTTOMRIGHT", tooltip, "BOTTOMRIGHT", -4, 4)
 		ground:Hide()
 
-
 		if tooltip == GameTooltip and type(tooltip.HookScript) == "function" then
 			tooltip:HookScript("OnHide", releaseTooltip)
 		end
@@ -1739,11 +1456,6 @@ local function tooltipGroundFor(tooltip)
 	end
 	return nil
 end
-
-
-
-
-
 
 
 
@@ -1759,9 +1471,6 @@ local function tooltipGroundColour()
 end
 
 
-
-
-
 function A.groundTooltip(tooltip)
 	local ground = tooltip ~= nil and tooltipGroundFor(tooltip) or nil
 	if not ground then
@@ -1772,8 +1481,6 @@ function A.groundTooltip(tooltip)
 	ground:Show()
 	return true
 end
-
-
 
 
 
@@ -1789,31 +1496,6 @@ function A.styleTooltip(tooltip)
 	A.groundTooltip(tooltip)
 	return measured
 end
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -1842,17 +1524,13 @@ function A.keyedTooltip(owner, lines, anchor)
 		end
 		GameTooltip:SetText(lines[1], 1, 0.82, 0, 1, true)
 
-
-
 		local longest = #tostring(lines[1])
 		for i = 2, #lines do
 			local held = lines[i]
 			if type(held) == "table" and held.gap then
 
-
 				GameTooltip:AddLine(" ")
 			elseif type(held) == "table" and held.key then
-
 
 
 				local text = held.key .. "  " .. tostring(held.text)
@@ -1872,8 +1550,6 @@ function A.keyedTooltip(owner, lines, anchor)
 
 
 
-
-
 		local used, check = type(anchor) == "string" and anchor or "ANCHOR_BOTTOM", nil
 		if pointed then
 			used = type(anchor.name) == "string" and anchor.name or "point"
@@ -1890,10 +1566,6 @@ function A.keyedTooltip(owner, lines, anchor)
 		end
 
 
-
-
-
-
 		local okWidth, width = pcall(GameTooltip.GetWidth, GameTooltip)
 		A.trace("tooltip", {
 			source = lines[1],
@@ -1905,13 +1577,6 @@ function A.keyedTooltip(owner, lines, anchor)
 		}, "ui")
 	end))
 end
-
-
-
-
-
-
-
 
 
 
@@ -1946,21 +1611,12 @@ function A.tooltipRoomBelow(tooltip, anchor)
 end
 
 
-
-
-
 function A.hideTooltip()
 	releaseTooltip()
 	if GameTooltip then
 		pcall(GameTooltip.Hide, GameTooltip)
 	end
 end
-
-
-
-
-
-
 
 
 
@@ -1976,16 +1632,12 @@ function A.setPillUnreachable(button, reason)
 	button.pillReason = marked and reason or nil
 
 
-
 	if type(button.Enable) == "function" and type(button.Disable) == "function" then
 		pcall(marked and button.Disable or button.Enable, button)
 	end
 	paint(button)
 	return marked
 end
-
-
-
 
 
 function A.attachPillReason(button)
@@ -1996,7 +1648,6 @@ function A.attachPillReason(button)
 		if not self.pillReason then
 			return
 		end
-
 
 		local title = ""
 		if type(self.GetText) == "function" then

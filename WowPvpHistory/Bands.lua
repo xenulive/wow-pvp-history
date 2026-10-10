@@ -1,19 +1,7 @@
 
 
 
-
-
-
-
-
-
-
-
 local _, A = ...
-
-
-
-
 
 
 
@@ -30,16 +18,6 @@ local REASONS = {
 
 
 
-
-
-
-
-
-
-
-
-
-
 function A.bandVerdict(band)
 	if type(band) ~= "table" then
 		return false, "empty"
@@ -52,7 +30,6 @@ function A.bandVerdict(band)
 	end
 
 
-
 	if band.heading == nil or band.heading == false then
 		return true, "unnamed"
 	end
@@ -62,13 +39,9 @@ function A.bandVerdict(band)
 	end
 
 
-
 	if band.folded == true then
 		return false, "folded"
 	end
-
-
-
 
 
 
@@ -92,18 +65,10 @@ end
 
 
 
-
-
 function A.bandShown(band)
 	local shown = A.bandVerdict(band)
 	return shown
 end
-
-
-
-
-
-
 
 
 
@@ -117,12 +82,6 @@ function A.bandSplit(band)
 	end
 	return extent ~= contents
 end
-
-
-
-
-
-
 
 
 function A.bandPass(bands)
@@ -146,13 +105,6 @@ end
 
 
 
-
-
-
-
-
-
-
 function A.bandFaults(bands, where)
 	local out = {}
 	local pass = A.bandPass(bands)
@@ -166,7 +118,6 @@ function A.bandFaults(bands, where)
 			out[#out + 1] = { what = "region-too-short", where = named,
 				why = "the room will not hold the heading and one row of what it names" }
 		elseif band.reason == "unmeasured" then
-
 
 			out[#out + 1] = { what = "band-unmeasured", where = named,
 				why = "no room was declared, so the region cannot be found too short" }
@@ -182,15 +133,9 @@ function A.bandFaults(bands, where)
 end
 
 
-
-
 function A.bandReasonKnown(reason)
 	return type(reason) == "string" and REASONS[reason] == true
 end
-
-
-
-
 
 
 
@@ -202,15 +147,6 @@ local ARRANGEMENTS = {
 	["a reading with no qualifier"] = true,
 	["no card qualified"] = true,
 }
-
-
-
-
-
-
-
-
-
 
 
 
@@ -234,14 +170,12 @@ function A.columnShareFaults(columns, room, where)
 	end
 
 
-
 	local span = A.metric("rowLabelPad") * 2 + A.metric("rowCellGap") * (#columns - 1)
 	for i = 1, #columns do
 		local column = columns[i]
 		local share = column.width
 		local named = tostring(column.name or column.key or i)
 		if type(share) ~= "number" then
-
 
 			out[#out + 1] = { what = "column-share", where = at,
 				why = ("%s carries no share where the set beside it does"):format(named) }
@@ -253,8 +187,6 @@ function A.columnShareFaults(columns, room, where)
 			out[#out + 1] = { what = "column-share", where = at,
 				why = ("%s is spread to %s, which no value draws in"):format(named, tostring(shareAt)) }
 		end
-
-
 
 
 		local head = type(A.headerFloor) == "function" and A.headerFloor(column.name) or 0
@@ -276,21 +208,9 @@ function A.columnShareFaults(columns, room, where)
 end
 
 
-
-
 function A.cardRowArrangementKnown(arrangement)
 	return type(arrangement) == "string" and ARRANGEMENTS[arrangement] == true
 end
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -340,16 +260,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
 function A.shortfallFaults(blocks, where)
 	local out = {}
 	if type(blocks) ~= "table" then
@@ -359,7 +269,6 @@ function A.shortfallFaults(blocks, where)
 
 	for i = 1, #blocks do
 		local block = blocks[i]
-
 
 
 		local needs = type(block) == "table" and A.unitFigure(block.needs) or nil
@@ -376,14 +285,7 @@ end
 
 
 
-
-
-
 local promised = {}
-
-
-
-
 
 
 
@@ -400,10 +302,6 @@ function A.notePromisedRoom(name, needs, room)
 end
 
 
-
-
-
-
 function A.promisedRooms()
 	local out = {}
 	for _, held in pairs(promised) do
@@ -414,17 +312,6 @@ function A.promisedRooms()
 	end)
 	return out
 end
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -451,27 +338,11 @@ end
 
 
 
-
-
-
-
 local UNREAD_WORDS = {
 	["absent"] = "the box was not there",
 	["invalid-rect"] = "its rect had not resolved",
 	["no-value"] = "the height call answered nothing usable",
 }
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -488,14 +359,12 @@ function A.viewportFaults(views, where)
 		if type(view) == "table" and type(view.extent) == "number" and view.extent > 0
 			and type(view.room) ~= "number" then
 
-
 			out[#out + 1] = { what = "viewport-unread", where = at .. tostring(view.name),
 				why = ("the height did not read, %s, so whether it ends on a whole row of %s is unestablished")
 					:format(UNREAD_WORDS[view.why] or "and no reason was recorded",
 						unitText(A.unitFigure(view.extent) or view.extent)) }
 		elseif type(view) == "table" and view.composed and type(view.room) == "number"
 			and type(view.rectNow) == "number" and not A.roomsAgree(view.room, view.rectNow) then
-
 
 
 			out[#out + 1] = { what = "viewport-disagrees", where = at .. tostring(view.name),
@@ -507,19 +376,12 @@ function A.viewportFaults(views, where)
 			and type(view.extent) == "number" and view.extent > 0 then
 
 
-
 			local room = A.unitFigure(view.room) or view.room
 			local extent = A.unitFigure(view.extent) or view.extent
 			local rows, whole = A.viewportRows(room, extent)
 
 
-
-
-
-
-
 			local over = A.unitFigure(room - whole) or 0
-
 
 			if rows >= 1 and over > 0 and not view.varies then
 
@@ -535,21 +397,7 @@ end
 
 
 
-
 local viewports = {}
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -577,13 +425,6 @@ end
 
 
 
-
-
-
-
-
-
-
 function A.forgetViewport(name)
 	if type(name) ~= "string" or viewports[name] == nil then
 		return false
@@ -591,13 +432,6 @@ function A.forgetViewport(name)
 	viewports[name] = nil
 	return true
 end
-
-
-
-
-
-
-
 
 
 
@@ -618,26 +452,9 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 function A.recordedViewports()
 	local out, unshown = {}, {}
 	for _, held in pairs(viewports) do
-
 
 		if held.frame ~= nil and boxOnScreen(held.frame) == false then
 			unshown[#unshown + 1] = held
@@ -671,10 +488,6 @@ function A.recordedViewports()
 end
 
 
-
-
-
-
 function A.unshownViewportLine()
 	if type(A.recordedViewports) ~= "function" then
 		return nil
@@ -690,15 +503,6 @@ function A.unshownViewportLine()
 	return ("%d viewport%s not showing, unchecked: %s")
 		:format(#names, #names == 1 and "" or "s", table.concat(names, ", "))
 end
-
-
-
-
-
-
-
-
-
 
 
 
@@ -736,8 +540,6 @@ function A.viewportLines()
 			local rect, why = A.bandHeight(held.frame)
 			if type(rect) == "number" then
 				now = "rect " .. unitText(A.unitFigure(rect) or rect) .. " now"
-
-
 				if room ~= nil and held.composed then
 					now = now .. (A.roomsAgree(held.room, rect) and ", agreeing"
 						or ", DISAGREEING with the arithmetic, which is what the paint rounded against")
@@ -768,11 +570,7 @@ end
 
 
 
-
-
 local placed = {}
-
-
 
 
 
@@ -783,7 +581,6 @@ function A.notePlacedRow(where, blocks)
 	placed[where] = { where = where, blocks = type(blocks) == "table" and blocks or {} }
 	return true
 end
-
 
 
 

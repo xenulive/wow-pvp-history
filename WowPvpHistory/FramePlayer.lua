@@ -7,24 +7,9 @@
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 local _, A = ...
 
 local NAME_PREFIX = "WowPvpHistoryPlayer"
-
 
 
 local MET_ROWS = 4
@@ -107,9 +92,6 @@ end
 
 
 
-
-
-
 function A.playerWindowStack(metRows, tagRows)
 	local rows = type(metRows) == "number" and metRows or MET_ROWS
 	local tags = type(tagRows) == "number" and tagRows or 1
@@ -156,9 +138,6 @@ end
 
 
 
-
-
-
 function A.playerCopyTexts(guid, entry)
 	local identity = A.playerIdentity(guid, entry)
 	if identity.name == nil or identity.unnamed then
@@ -174,7 +153,6 @@ local paintWindow
 
 
 
-
 local function paintTagSuggestions(frame)
 	if not (frame and frame.guid and frame.tagRow) then
 		return false
@@ -186,8 +164,6 @@ local function paintTagSuggestions(frame)
 	pcall(A.trace, "paint", { source = "tags", shown = tagRows, format = "player" }, "ui")
 	return true
 end
-
-
 
 
 
@@ -296,8 +272,6 @@ end
 
 
 
-
-
 local function commitComment(frame)
 	local ok, text = pcall(frame.commentBox.GetText, frame.commentBox)
 	if not ok then
@@ -350,16 +324,8 @@ end
 
 
 
-
-
-
-
-
-
-
 local COPY_NAME = "WowPvpHistoryCopyBox"
 local copyBox
-
 
 
 function A.copyBoxSize()
@@ -539,7 +505,6 @@ local function buildHead(frame, body)
 
 
 
-
 	frame.inPlayers = A.pill(body, "In Players", function()
 		if frame.guid ~= nil and type(A.selectPlayer) == "function" then
 			A.selectPlayer(frame.guid)
@@ -647,7 +612,6 @@ local function buildComments(frame, body)
 	frame.commentOrder:SetWordWrap(false)
 
 
-
 	frame.addComment = A.pill(body, "Add", function()
 		commitComment(frame)
 	end, A.metric("tagMin"))
@@ -665,7 +629,6 @@ local function buildComments(frame, body)
 		pcall(self.SetText, self, "")
 		pcall(self.ClearFocus, self)
 	end)
-
 
 
 
@@ -722,7 +685,6 @@ local function buildWindow(index)
 	frame:SetSize(A.playerWindowWidth(frame.stripFloor), A.playerWindowHeight())
 	frame.widthFrom = "build"
 
-
 	frame:SetFrameStrata("MEDIUM")
 	frame:SetToplevel(true)
 	frame:SetClampedToScreen(true)
@@ -767,7 +729,6 @@ local function buildWindow(index)
 		A.metric("margin"))
 	frame.footState:SetJustifyH("RIGHT")
 	frame.footState:SetWordWrap(false)
-
 
 
 	if pcall(frame.SetResizable, frame, true) then
@@ -848,7 +809,6 @@ end
 
 
 
-
 local function paintMatchStrip(frame, index)
 	local strip = frame.matchStrip
 	local record = frame.fromMatch ~= nil and A.match(frame.fromMatch) or nil
@@ -899,13 +859,11 @@ local function paintMatchStrip(frame, index)
 		against = { againstText, stripSide("Vs", info.against) },
 	}
 
-
 	frame.stripRounds = math.min(#pips, #strip.rounds)
 	frame.stripFloor = A.playerStripFloor(frame.stripRounds, withText, againstText, strip.with)
 	frame.stripResult = resultWords
 	return info.id, info
 end
-
 
 
 
@@ -935,7 +893,6 @@ local function paintHead(frame, dossier)
 
 	frame.copyText, frame.murlokText = A.playerCopyTexts(frame.guid, dossier.entry)
 
-
 	frame.inPlayers:ClearAllPoints()
 	frame.inPlayers:SetPoint("TOPRIGHT", frame.matchStrip, "BOTTOMRIGHT", 0, -A.metric("paneGap"))
 	local edge = frame.inPlayers
@@ -964,7 +921,6 @@ local function paintMet(frame, dossier, widths)
 	for i = 1, math.min(#encounters, MET_ROWS) do
 		shown[i] = encounters[i]
 	end
-
 
 	if frame.fromMatch ~= nil then
 		local inView = false
@@ -1009,7 +965,6 @@ local function paintMet(frame, dossier, widths)
 		local more = #encounters - drawn
 		tail = ("%d more %s"):format(more, more == 1 and "encounter" or "encounters")
 	end
-
 
 	local under = drawn > 0 and frame.metRows[drawn] or frame.metHeader
 	frame.metTail:ClearAllPoints()
@@ -1096,7 +1051,6 @@ paintWindow = function(frame, index)
 	frame.heading:SetText(dossier.identity.full)
 	local stripId, stripInfo = paintMatchStrip(frame, index)
 
-
 	local body = A.playerWindowBody(frame.stripFloor)
 	local width = A.playerWindowWidth(frame.stripFloor)
 	pcall(frame.SetWidth, frame, width)
@@ -1130,7 +1084,6 @@ paintWindow = function(frame, index)
 
 
 
-
 	pcall(A.trace, "paint", { source = "player", rows = metDrawn, n = comments,
 		shown = tagRows, typed = typed or nil, id = stripId, marked = marked or nil,
 		with = sideReading(dossier.with), against = sideReading(dossier.against),
@@ -1160,13 +1113,8 @@ end
 
 
 
-
-
-
-
 local function trace(state, source, reason, drafts, frame, beside)
 	local placed = state == "opened" and frame or nil
-
 
 	local bottom, height, srcBottom
 	if placed then
@@ -1188,7 +1136,6 @@ local function trace(state, source, reason, drafts, frame, beside)
 		screen = placed and placed.placedScreen and A.unitFigure(placed.placedScreen) or nil,
 		id = frame and frame.fromMatch or nil,
 		bottom = bottom, height = height, srcBottom = srcBottom,
-
 		stripFloor = frame and frame.stripFloor and A.unitFigure(frame.stripFloor) or nil,
 		widthFrom = frame and frame.widthFrom or nil }, "ui")
 end
@@ -1203,15 +1150,10 @@ forget = function(frame)
 			end
 		end
 
-
 		trace("closed", "hide")
 	end
 	frame.guid = nil
 end
-
-
-
-
 
 
 
@@ -1268,12 +1210,6 @@ end
 
 
 
-
-
-
-
-
-
 function A.playerWindowSide(beside, width)
 	if type(beside) ~= "table" or type(width) ~= "number" then
 		return nil
@@ -1293,15 +1229,11 @@ function A.playerWindowSide(beside, width)
 		return "right", roomRight, screen
 	end
 
-
 	if roomLeft > roomRight then
 		return "left", roomLeft, screen
 	end
 	return "right", roomRight, screen
 end
-
-
-
 
 
 
@@ -1316,14 +1248,11 @@ local function place(frame, beside)
 		local okWidth, width = pcall(frame.GetWidth, frame)
 		if not (okWidth and type(width) == "number" and width > 0) then
 
-
 			width = A.playerWindowWidth(frame.stripFloor)
 			frame.widthFrom = "fallback"
 		end
 		local side, room, screen = A.playerWindowSide(beside, width)
 		frame.placedSide, frame.placedRoom, frame.placedScreen = side or "right", room, screen
-
-
 
 
 		frame.placedOver = type(room) == "number" and room < width or nil
@@ -1355,13 +1284,6 @@ end
 
 
 
-
-
-
-
-
-
-
 function A.openPlayer(guid, forWriting, source, beside)
 	local usable, why = A.playerKey(guid)
 	if not usable then
@@ -1385,7 +1307,6 @@ function A.openPlayer(guid, forWriting, source, beside)
 		outcome = "opened"
 		pcall(frame.Show, frame)
 	end
-
 
 
 	if outcome == "opened" then
@@ -1421,14 +1342,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
 function A.togglePlayer(guid, source, beside)
 	local frame = guid ~= nil and open[guid] or nil
 	if frame then
@@ -1438,8 +1351,6 @@ function A.togglePlayer(guid, source, beside)
 	end
 	return A.openPlayer(guid, false, source, beside)
 end
-
-
 
 
 function A.refreshPlayerWindows(index)

@@ -18,34 +18,10 @@
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 local _, A = ...
 
 
 local ATTACH_TIMEOUT = 60
-
 
 
 
@@ -57,8 +33,6 @@ local TYPES = {
 
 
 local waiters = {}
-
-
 
 
 
@@ -103,12 +77,6 @@ end
 
 
 
-
-
-
-
-
-
 local function readSession(sessionName)
 	local out = { byGuid = {}, sources = 0, unread = 0 }
 	local sessionType = enumValue("DamageMeterSessionType", sessionName)
@@ -140,7 +108,6 @@ local function readSession(sessionName)
 			if got and type(source) == "table" then
 				out.sources = out.sources + 1
 
-
 				local gotGuid, guid = pcall(A.index, source, "sourceGUID")
 				if gotGuid and A.canRead(guid) and type(guid) == "string" then
 					local entry = out.byGuid[guid]
@@ -171,7 +138,6 @@ end
 local function allWithheld(read)
 	return read.unread > 0 and next(read.byGuid) == nil
 end
-
 
 
 
@@ -220,12 +186,6 @@ local function waitedSince(since)
 	end
 	return A.unitFigure(now - since)
 end
-
-
-
-
-
-
 
 
 
@@ -281,8 +241,6 @@ local function giveUp(w, stored, why)
 	end
 	traceMeter(w, nil, nil, nil, why)
 end
-
-
 
 
 
@@ -352,11 +310,6 @@ end
 
 
 
-
-
-
-
-
 function A.meterAttach(record, since, superseded)
 	if type(record) ~= "table" then
 		return
@@ -367,7 +320,6 @@ function A.meterAttach(record, since, superseded)
 
 	local db = A.db()
 	local locked = lockdown()
-
 
 
 
@@ -411,7 +363,6 @@ function A.meterAttach(record, since, superseded)
 	end
 
 
-
 	if watch and watch.regen then
 		giveUp(w, "not-reached", "combat-again")
 		return
@@ -444,9 +395,6 @@ end
 
 
 
-
-
-
 local function readRound(w)
 	if not settle(w) then
 		return
@@ -468,7 +416,6 @@ local function readRound(w)
 		overall = figureMap(overall),
 		resets = type(w.record.meterResets) == "number" and w.record.meterResets or 0,
 	}
-
 
 	traceMeter(w, current.sources, kept, current.unread, nil)
 end
@@ -502,10 +449,6 @@ end
 
 
 
-
-
-
-
 function A.meterStateChanged(record, name)
 	local due = {}
 	for i = 1, #waiters do
@@ -521,9 +464,6 @@ function A.meterStateChanged(record, name)
 		end
 	end
 end
-
-
-
 
 
 
@@ -585,11 +525,6 @@ end
 
 
 
-
-
-
-
-
 local function holdRegen()
 	for _, watch in pairs(watches) do
 		if not watch.regen then
@@ -624,7 +559,6 @@ local function onRegen()
 			end
 		elseif not db or db.active ~= w.record then
 
-
 			if settle(w) then
 				traceMeter(w, nil, nil, nil, "replaced")
 			end
@@ -635,11 +569,6 @@ local function onRegen()
 		end
 	end
 end
-
-
-
-
-
 
 
 
@@ -672,10 +601,6 @@ A.on("DAMAGE_METER_RESET", onReset)
 
 
 
-
-
-
-
 function A.meterState(record)
 	local meter = type(record) == "table" and record.meter or nil
 	if type(meter) ~= "table" then
@@ -694,9 +619,6 @@ function A.meterState(record)
 	end
 	return "read"
 end
-
-
-
 
 
 
@@ -721,9 +643,6 @@ function A.participantMeter(record, guid)
 	end
 	return dispels, p.meterReason
 end
-
-
-
 
 
 
@@ -792,9 +711,6 @@ local REASON_WORDS = {
 function A.meterReasonWords(reason)
 	return REASON_WORDS[reason] or tostring(reason)
 end
-
-
-
 
 
 function A.roundMeterLines(record, guid, index)

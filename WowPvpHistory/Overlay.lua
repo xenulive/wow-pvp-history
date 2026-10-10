@@ -10,20 +10,6 @@
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 local _, A = ...
 
 
@@ -37,9 +23,6 @@ local OPACITY_MIN, OPACITY_MAX, OPACITY_STEP, OPACITY_DEFAULT = 0, 100, 10, 70
 
 
 
-
-
-
 local DEFAULT_POINT, DEFAULT_X, DEFAULT_Y = "TOP", 0, -72
 
 
@@ -49,7 +32,6 @@ local DEFAULT_POINT, DEFAULT_X, DEFAULT_Y = "TOP", 0, -72
 
 local PAD, SQUARE, DELTA_GAP, CELL_GAP, BLOCK_GAP = 6, 30, 2, 5, 10
 local LINE_GAP, TODAY_GAP = 1, 6
-
 
 
 
@@ -68,22 +50,18 @@ local frame
 local cells = {}
 
 
+
 local previewUp = false
-
-
 
 
 local previewFormat
 local previewOpacity
 
 
-
 local hovered
 
 
-
 local inCombat = false
-
 
 
 local last = { state = "hidden", ids = {} }
@@ -95,12 +73,7 @@ local last = { state = "hidden", ids = {} }
 
 
 
-
-
-
-
 local painted
-
 
 
 local midnightCall = 0
@@ -124,16 +97,12 @@ local function clamp(value, min, max)
 end
 
 
-
 local function whole(value)
 	if type(value) ~= "number" then
 		return nil
 	end
 	return math.floor(value + 0.5)
 end
-
-
-
 
 
 
@@ -146,9 +115,6 @@ function A.overlayEnabled()
 	end
 	return db.ui.overlayShown == true
 end
-
-
-
 
 
 function A.setOverlay(enabled)
@@ -292,9 +258,6 @@ end
 
 
 
-
-
-
 function A.overlayPosition()
 	local db = A.db()
 	if not db or type(db.ui) ~= "table" then
@@ -310,7 +273,6 @@ function A.overlayPosition()
 	end
 	return { point = held.point, x = x, y = y }
 end
-
 
 
 
@@ -347,7 +309,6 @@ end
 
 
 
-
 local function recordById(id)
 	local db = A.db()
 	if id == nil or not (db and type(db.matches) == "table") then
@@ -365,10 +326,6 @@ end
 
 
 local SANDBOX_READER = "the sandbox's generated character"
-
-
-
-
 
 
 
@@ -393,8 +350,6 @@ end
 
 
 
-
-
 local function newestOf(format, character, count)
 	local rows = {}
 	local db = A.db()
@@ -414,8 +369,6 @@ local function newestOf(format, character, count)
 		if at ~= bt then
 			return at > bt
 		end
-
-
 		local ak, an = A.matchIdRank(a.id)
 		local bk, bn = A.matchIdRank(b.id)
 		if ak ~= bk then
@@ -428,9 +381,6 @@ local function newestOf(format, character, count)
 	end
 	return rows
 end
-
-
-
 
 
 
@@ -459,7 +409,6 @@ end
 
 
 
-
 local function dayOf(record)
 	return A.dayKey(record.openedAt or record.completedAt or record.endedAt)
 end
@@ -481,20 +430,6 @@ local function todaysMatches(format, character)
 	end
 	return out
 end
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -560,7 +495,6 @@ end
 
 
 
-
 function A.ratingTint(format, rating)
 	local _, _, reason, r, g, b = A.ratingColour(format, rating)
 	if reason == "unheard" then
@@ -572,12 +506,6 @@ function A.ratingTint(format, rating)
 	local br, bg, bb = A.color("bright")
 	return br, bg, bb
 end
-
-
-
-
-
-
 
 
 
@@ -601,8 +529,6 @@ local function secondLine(format, character)
 		end
 		return line
 	end
-
-
 	if figures.record == nil then
 		return nil
 	end
@@ -639,6 +565,7 @@ end
 
 
 
+
 local function barHeight()
 	local tiles, block = tileHeight(), blockHeight(true)
 	if block > tiles then
@@ -651,6 +578,7 @@ end
 local function centredTop(own)
 	return math.floor((barHeight() - own) / 2)
 end
+
 
 
 
@@ -671,10 +599,6 @@ local function ratingLine(record, head)
 	end
 	return line
 end
-
-
-
-
 
 
 
@@ -700,8 +624,6 @@ end
 
 
 
-
-
 local function hoverAnchor(cell)
 	return {
 		point = "TOP", relativeTo = cell.delta, relativePoint = "BOTTOM", x = 0, y = -DELTA_GAP,
@@ -710,8 +632,6 @@ local function hoverAnchor(cell)
 			name = "square" },
 	}
 end
-
-
 
 
 
@@ -775,7 +695,6 @@ local function cellAt(i)
 	held.delta:SetWordWrap(false)
 
 
-
 	held:SetScript("OnClick", function(self)
 		if self.matchId ~= nil then
 			A.showMatchWindow("match", self.matchId, "overlay")
@@ -809,15 +728,12 @@ local function build()
 	made:SetSize(columnWidth(), barHeight())
 	made:SetPoint(DEFAULT_POINT, UIParent, DEFAULT_POINT, DEFAULT_X, DEFAULT_Y)
 
-
 	A.registerPlacedWindow(made, DEFAULT_POINT, DEFAULT_X, DEFAULT_Y)
 	made:Hide()
 
 
 	made.ground = made:CreateTexture(nil, "BACKGROUND")
 	made.ground:SetAllPoints(made)
-
-
 
 	made.title = made:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
 	made.title:SetJustifyH("LEFT")
@@ -845,14 +761,10 @@ local function build()
 	end)
 	made:SetScript("OnDragStop", function(self)
 		pcall(self.StopMovingOrSizing, self)
-
-
-
 		local read = A.frameGeometry(self)
 		if read and read.point then
 			A.setOverlayPosition(read)
 		end
-
 		local stored = A.overlayPosition()
 		A.trace("overlay/move", {
 			point = read and read.point or nil,
@@ -868,7 +780,6 @@ local function build()
 end
 
 
-
 local function drawnOpacity()
 	if previewOpacity ~= nil then
 		return previewOpacity
@@ -877,14 +788,10 @@ local function drawnOpacity()
 end
 
 
-
 local function tintRating(fontString, format, rating)
 	local r, g, b = A.ratingTint(format, rating)
 	fontString:SetTextColor(r, g, b)
 end
-
-
-
 
 
 local function nameFloor()
@@ -907,13 +814,6 @@ end
 
 
 
-
-
-
-
-
-
-
 local function paintBlock(text, tone, format, line, floored)
 	frame.title:SetText(TITLE_TEXT)
 	A.style(frame.title, "label", "accent")
@@ -931,7 +831,6 @@ local function paintBlock(text, tone, format, line, floored)
 	frame.label:SetText(text)
 	A.style(frame.label, "label", tone)
 
-
 	local labelWidth = A.headerFloor(text)
 	frame.label:SetWidth(labelWidth)
 	frame.label:ClearAllPoints()
@@ -945,7 +844,6 @@ local function paintBlock(text, tone, format, line, floored)
 	if titleWidth > labelWidth then
 		labelWidth = titleWidth
 	end
-
 
 	local function finish(blockWidth)
 		local ruleWidth = blockWidth + BLOCK_GAP - RULE_SHORT
@@ -979,7 +877,6 @@ local function paintBlock(text, tone, format, line, floored)
 		frame.rating:SetWidth(0)
 		frame.rating:Hide()
 	end
-
 
 
 	local todayText
@@ -1018,8 +915,6 @@ end
 
 
 
-
-
 local function paint(character, format, rows)
 	local text = "No matches yet."
 	local tone = "dim"
@@ -1031,7 +926,6 @@ local function paint(character, format, rows)
 	local blockWidth, ruleWidth = paintBlock(text, tone, format, line, #rows > 0)
 
 	local height = barHeight()
-
 	local tileTop = centredTop(tileHeight())
 	local column = columnWidth()
 	local x = PAD + blockWidth
@@ -1045,7 +939,6 @@ local function paint(character, format, rows)
 	else
 		frame.divider:Hide()
 	end
-
 	local tileX = #rows > 0 and x or nil
 
 	local ids, texts = {}, {}
@@ -1058,11 +951,9 @@ local function paint(character, format, rows)
 		cell:ClearAllPoints()
 		cell:SetPoint("TOPLEFT", frame, "TOPLEFT", x, -tileTop)
 
-
 		local resultTone = A.resultTone(record)
 		local r, g, b = A.color(resultTone or "dim")
 		cell.square:SetColorTexture(r, g, b, 1)
-
 
 		local letter = A.resultLetter(record)
 		cell.letterText = letter
@@ -1090,7 +981,6 @@ local function paint(character, format, rows)
 		width = PAD + blockWidth + PAD
 	end
 	frame:SetSize(width, height)
-
 
 	local r, g, b = A.color("panel")
 	frame.ground:SetColorTexture(r, g, b, drawnOpacity() / 100)
@@ -1136,17 +1026,6 @@ local function armMidnight(wanted)
 		end
 	end)
 end
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -1206,7 +1085,6 @@ function A.overlayRepaint(source, via)
 		else
 
 
-
 			if source ~= "combat" then
 				painted = nil
 			end
@@ -1216,7 +1094,6 @@ function A.overlayRepaint(source, via)
 		end
 
 		local state = (reason == nil or reason == "empty") and "shown" or "hidden"
-
 		local pairsDrawn = {}
 		for i = 1, #ids do
 			pairsDrawn[i] = tostring(ids[i]) .. ":" .. tostring(texts[i])
@@ -1248,12 +1125,9 @@ function A.overlayRepaint(source, via)
 end
 
 
-
 function A.overlayRecordStored()
 	A.overlayRepaint("stored")
 end
-
-
 
 
 function A.overlayReplaced()
@@ -1263,9 +1137,6 @@ function A.overlayReplaced()
 		A.overlayRepaint("reset")
 	end
 end
-
-
-
 
 
 
@@ -1299,8 +1170,6 @@ end
 
 
 
-
-
 function A.overlayPreviewFormat(format)
 	if type(format) ~= "string" or format == "" or A.formatShortLabel(format) == format then
 		return false
@@ -1310,8 +1179,6 @@ function A.overlayPreviewFormat(format)
 	A.overlayRepaint("preview", "format")
 	return true
 end
-
-
 
 
 
@@ -1333,9 +1200,6 @@ end
 
 
 
-
-
-
 function A.overlayHover(index)
 	if index == nil then
 		A.hideTooltip()
@@ -1353,7 +1217,6 @@ function A.overlayHover(index)
 	end
 	return "shown", cell.matchId
 end
-
 
 
 
@@ -1421,7 +1284,6 @@ A.on("PLAYER_LOGIN", function()
 	inCombat = ok and locked == true
 	A.overlayRepaint("login")
 end)
-
 
 
 A.on("PLAYER_REGEN_DISABLED", function()

@@ -9,15 +9,6 @@ local _, A = ...
 
 
 
-
-
-
-
-
-
-
-
-
 function A.loginLineEnabled()
 	local db = A.db()
 	if not db then
@@ -26,8 +17,6 @@ function A.loginLineEnabled()
 	db.ui = db.ui or {}
 	return db.ui.loginLine ~= false
 end
-
-
 
 
 
@@ -44,7 +33,6 @@ function A.setLoginLine(enabled)
 	end
 
 
-
 	if A.notifyLoginLineSetting then
 		A.notifyLoginLineSetting()
 	end
@@ -52,26 +40,9 @@ function A.setLoginLine(enabled)
 end
 
 
-
-
-
 local function canaryAnnouncing()
 	return type(A.canaryWillAnnounce) == "function" and A.canaryWillAnnounce() == true
 end
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -89,8 +60,6 @@ function A.loginLines()
 		add("nothing is stored: the account-wide database did not load, so no match "
 			.. "can be recorded", "fault")
 	else
-
-
 		if type(A.lastErrorLines) == "function" then
 			local lines = A.lastErrorLines(db)
 			if type(lines) == "table" then
@@ -102,10 +71,6 @@ function A.loginLines()
 	end
 
 
-
-
-
-
 	if type(A.backupStandingLine) == "function" then
 		local standing = A.backupStandingLine()
 		if type(standing) == "string" then
@@ -113,26 +78,12 @@ function A.loginLines()
 		end
 	end
 
-
 	if #out == 0 and A.loginLineEnabled() and not canaryAnnouncing() then
-
 		add(("v%s loaded. /pvph opens the match history"):format(tostring(A.version)), "routine")
 	end
 
 	return out
 end
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -158,8 +109,6 @@ function A.rememberCharacter()
 	end
 
 
-
-
 	local ok, name = pcall(UnitName, "player")
 	local isString = ok and type(name) == "string"
 	local readable = isString and A.canRead(name)
@@ -183,9 +132,6 @@ function A.rememberCharacter()
 	for _ in pairs(db.characters) do
 		count = count + 1
 	end
-
-
-
 
 
 

@@ -4,14 +4,7 @@
 
 
 
-
-
-
-
-
-
 local _, A = ...
-
 
 
 
@@ -29,8 +22,6 @@ end
 function A.standingTrendCount()
 	return TREND_COUNT
 end
-
-
 
 
 
@@ -71,7 +62,6 @@ local function endEpoch(subject)
 		or type(subject.seconds) == "number" and subject.seconds or 0
 	return opened + length
 end
-
 
 
 
@@ -152,12 +142,6 @@ end
 
 
 
-
-
-
-
-
-
 function A.buildSessions(entries)
 	local sessions, unplaced = {}, 0
 	if type(entries) ~= "table" then
@@ -185,7 +169,6 @@ function A.buildSessions(entries)
 			previousStart = started
 		end
 	end
-
 
 	for i = 1, #sessions do
 		local session = sessions[i]
@@ -224,8 +207,6 @@ local EVENING_HOUR = 17
 
 
 
-
-
 function A.sessionDayLabel(stamp, now)
 	local key = A.dayKey(stamp)
 	if key == nil then
@@ -254,7 +235,6 @@ function A.sessionDayLabel(stamp, now)
 	end
 	return A.dayLabel(stamp) or key
 end
-
 
 
 
@@ -339,9 +319,6 @@ local YESTERDAY_WORDS = { morning = "Yesterday morning", afternoon = "Yesterday 
 
 
 
-
-
-
 function A.sessionHeadForms(stamp, now)
 	local day, part = sessionDayPart(stamp)
 	if day == nil then
@@ -378,11 +355,6 @@ end
 
 
 
-
-
-
-
-
 function A.sessionGridLabelForms(stamp, now)
 	local forms = A.sessionHeadForms(stamp, now)
 	if forms == nil or #forms < 2 then
@@ -403,10 +375,6 @@ function A.sessionGridLabelForms(stamp, now)
 	end
 	return out
 end
-
-
-
-
 
 
 
@@ -447,13 +415,6 @@ end
 
 
 
-
-
-
-
-
-
-
 function A.seasonPart(newer, older, crossed)
 	if type(newer) ~= "table" or type(older) ~= "table" then
 		return nil
@@ -485,15 +446,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
 function A.withSeasonBreaks(rows, rowEntries, selectedAt, lineRecords)
 	if type(rows) ~= "table" or type(rowEntries) ~= "table" then
 		return rows, rowEntries, selectedAt
@@ -518,8 +470,6 @@ function A.withSeasonBreaks(rows, rowEntries, selectedAt, lineRecords)
 		if record ~= nil and newer ~= nil then
 			local part = A.seasonPart(newer.record, record, crossed)
 			if part ~= nil then
-
-
 
 				local text = type(A.seasonText) == "function" and A.seasonText(record, true) or nil
 				table.insert(out, newer.index + 1, {
@@ -559,11 +509,7 @@ end
 
 
 
-
-
-
 local GRID_FORMATS = { "shuffle", "blitz", "arena2", "arena3", "rbg" }
-
 
 local GRID_NAMES = {
 	shuffle = "SOLO SHUFFLE",
@@ -605,10 +551,6 @@ end
 
 
 
-
-
-
-
 function A.sessionGridFormats(entries)
 	local present = {}
 	for _, entry in ipairs(type(entries) == "table" and entries or {}) do
@@ -639,8 +581,6 @@ end
 
 
 
-
-
 function A.sessionGridCell(listed, format)
 	local matches, from, to = 0, nil, nil
 	for _, entry in ipairs(type(listed) == "table" and listed or {}) do
@@ -660,7 +600,6 @@ function A.sessionGridCell(listed, format)
 	end
 	return { format = format, matches = matches, from = from, to = to, change = to and (to - from) or nil }
 end
-
 
 
 
@@ -691,10 +630,6 @@ end
 
 
 
-
-
-
-
 function A.sessionTickTone(entry)
 	if type(entry) ~= "table" then
 		return "dim"
@@ -704,7 +639,6 @@ function A.sessionTickTone(entry)
 	end
 	return A.resultTone(entry.subject) or "dim"
 end
-
 
 
 
@@ -733,17 +667,6 @@ function A.sessionGridSummaryName(format)
 	end
 	return format == "shuffle" and "ROUNDS" or "RECORD"
 end
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -815,7 +738,6 @@ end
 
 
 
-
 function A.sessionGridSummaryText(summary)
 	if type(summary) ~= "table" or not summary.any then
 		return A.colorEscape("dim") .. "-|r"
@@ -830,17 +752,6 @@ function A.sessionGridSummaryText(summary)
 	end
 	return text
 end
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -923,8 +834,6 @@ end
 
 
 
-
-
 function A.sessionOpen(key, newest)
 
 	if key ~= nil and type(heldFolds[key]) == "boolean" then
@@ -997,7 +906,6 @@ function A.pruneSessionFolds()
 	local gone = {}
 	for key in pairs(folds) do
 
-
 		local held = matches[key] or (type(key) == "string" and unfinished[key])
 		if not held then
 			gone[#gone + 1] = key
@@ -1052,12 +960,6 @@ local DUEL_SQUARES = 10
 local function pairText(wins, losses)
 	return ("%d-%d"):format(wins or 0, losses or 0)
 end
-
-
-
-
-
-
 
 
 
@@ -1140,9 +1042,6 @@ function A.duelReading(records, character, season, bound)
 	end
 	return hero
 end
-
-
-
 
 
 
@@ -1231,9 +1130,6 @@ end
 
 
 
-
-
-
 function A.standingReading(format, season, character, bound, summary, now)
 	summary = type(summary) == "table" and summary or A.summarize(format, season, character, bound)
 	local shape = A.standingShape(format)
@@ -1250,8 +1146,6 @@ function A.standingReading(format, season, character, bound, summary, now)
 		end
 	end
 	local reading = { shape = shape, format = format, season = season, matches = #records }
-
-
 
 
 
@@ -1278,7 +1172,6 @@ function A.standingReading(format, season, character, bound, summary, now)
 		reading.sessionChange = ladder and ladder.change or nil
 		reading.high = A.seasonHigh(format, stripSeason, character)
 
-
 		local bars, moved = trendBars(records, newestKeys), 0
 		for i = 1, #bars do
 			if bars[i].change ~= nil then
@@ -1286,7 +1179,6 @@ function A.standingReading(format, season, character, bound, summary, now)
 			end
 		end
 		reading.bars = moved >= 2 and bars or {}
-
 
 
 		local rate = select(4, A.winRecord(summary))
@@ -1304,7 +1196,6 @@ function A.standingReading(format, season, character, bound, summary, now)
 					tone = A.winRateTone(rate) },
 			}
 		end
-
 
 
 		local gap = summary.mmrGap
@@ -1367,7 +1258,6 @@ function A.standingReading(format, season, character, bound, summary, now)
 	else
 		local rate = select(4, A.winRecord(summary))
 		reading.record = A.winRecordText(summary, format)
-
 
 		if reading.record == nil and #records > 0 then
 			reading.record = ("%d %s"):format(#records, #records == 1 and "match" or "matches")

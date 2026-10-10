@@ -12,19 +12,7 @@
 
 
 
-
-
-
-
-
-
-
-
-
-
-
 local ADDON, A = ...
-
 
 
 local tip
@@ -52,12 +40,7 @@ local sessionPosition
 local dragFrom
 
 
-
 local last = { decision = "not-run", rows = {} }
-
-
-
-
 
 
 
@@ -175,8 +158,6 @@ end
 
 
 
-
-
 function A.finderPosition()
 	local db = A.db()
 	if not db or type(db.ui) ~= "table" then
@@ -242,9 +223,6 @@ end
 
 
 
-
-
-
 local function subject()
 	if A.sandboxed() then
 		return { guid = nil, sandbox = true }
@@ -272,7 +250,6 @@ local function ownName()
 	end
 	return nil
 end
-
 
 
 
@@ -307,11 +284,6 @@ end
 
 
 
-
-
-
-
-
 local function colourRow(row, now)
 	local rating, ratingTone = "-", "dimmer"
 	if row.group == "unrated" then
@@ -340,7 +312,6 @@ end
 
 
 
-
 local function worldTally(season, character)
 	local db = A.db()
 	if not (db and type(db.matches) == "table") then
@@ -363,25 +334,6 @@ local function worldTally(season, character)
 	end
 	return ("%d-%d"):format(kills, deaths)
 end
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -421,7 +373,6 @@ function A.finderRows(prior)
 				if row.group == "rated" and type(summary.rating) == "number" then
 					row.rating = summary.rating
 				end
-
 
 				if summary.decided > 0 then
 					row.won, row.lost, row.drawn, row.rate = A.winRecord(summary)
@@ -479,9 +430,6 @@ end
 
 
 
-
-
-
 local function uiRatio(frame)
 	local function scaleOf(f)
 		if type(f) ~= "table" or type(f.GetEffectiveScale) ~= "function" then
@@ -499,11 +447,6 @@ local function uiRatio(frame)
 	end
 	return own / ui
 end
-
-
-
-
-
 
 
 
@@ -540,7 +483,6 @@ local function drop(self, cause)
 		x = A.unitFigure(x),
 		y = A.unitFigure(y),
 
-
 		kept = kept,
 		dockFrom = from,
 		source = cause,
@@ -561,8 +503,6 @@ local function dragStart(self)
 	end
 	dragFrom = from
 end
-
-
 
 
 
@@ -599,7 +539,6 @@ local function tipOrNil()
 		end)
 
 
-
 		f:SetScript("OnHide", function(self)
 			if dragFrom ~= nil then
 				drop(self, "hide")
@@ -629,12 +568,6 @@ end
 
 
 
-
-
-
-
-
-
 local function layout(f, rows)
 	local padX, padY = A.metric("finderPadX"), A.metric("finderPadY")
 	local gap, colGap, rowH = A.metric("finderGap"), A.metric("finderColGap"), A.metric("finderRowHeight")
@@ -656,7 +589,6 @@ local function layout(f, rows)
 		f.heads[c]:SetText(HEADS[c])
 		widths[c + 1] = math.max(widths[c + 1], A.textRoom(f.heads[c], HEADS[c]))
 	end
-
 
 	for i = 1, #rows do
 		local held = rowStrings(f, i)
@@ -759,10 +691,6 @@ end
 
 
 
-
-
-
-
 local function sizeOf(frame, getter)
 	if type(frame) ~= "table" or type(frame[getter]) ~= "function" then
 		return nil
@@ -776,12 +704,6 @@ local function sizeOf(frame, getter)
 	end
 	return nil
 end
-
-
-
-
-
-
 
 
 
@@ -801,13 +723,6 @@ local function screenEdge(frame, which)
 	end
 	return A.unitFigure(edge * scale)
 end
-
-
-
-
-
-
-
 
 
 
@@ -836,18 +751,10 @@ end
 
 
 
-
-
 local function takeMouse(tooltip, on)
 	pcall(tooltip.SetMovable, tooltip, on)
 	pcall(tooltip.EnableMouse, tooltip, on)
 end
-
-
-
-
-
-
 
 
 
@@ -961,16 +868,12 @@ local function pass(reason)
 	A.trace("finder", {
 		state = decision,
 
-
 		dock = dock,
 		dockFrom = dockFrom,
 
 
-
-
 		anchor = anchor,
 		check = check,
-
 
 		bottom = bottom,
 		top = top,
@@ -978,18 +881,14 @@ local function pass(reason)
 		formats = #formats > 0 and table.concat(formats, ",") or nil,
 
 
-
 		tiers = #tiers > 0 and table.concat(tiers, ",") or nil,
-
 
 
 		groups = last.groups,
 		rule = rule,
 		source = reason,
 
-
 		via = via,
-
 
 		width = A.unitFigure(width),
 		height = A.unitFigure(height),
@@ -1017,8 +916,6 @@ end
 
 
 
-
-
 A.on("PVP_RATED_STATS_UPDATE", function()
 	if shownFrame(tip) then
 		schedule("rated")
@@ -1031,14 +928,11 @@ function A.finderHeardRated()
 end
 
 
-
 function A.finderRecordStored()
 	if shownFrame(PVEFrame) then
 		schedule("stored")
 	end
 end
-
-
 
 
 
@@ -1094,8 +988,6 @@ end)
 
 
 
-
-
 function A.finderReadout()
 	local lines = {
 		("finder: setting %s, session %s, PvP panel %s, tooltip %s"):format(
@@ -1110,7 +1002,6 @@ function A.finderReadout()
 	}
 	lines[#lines + 1] = ("groups: %s"):format(last.groups or "none")
 	lines[#lines + 1] = ("rule: %s"):format(last.rule or "none")
-
 
 	if last.dock ~= nil then
 		lines[#lines + 1] = ("dock: %s (%s)"):format(last.dock, tostring(last.dockFrom))
@@ -1131,7 +1022,6 @@ function A.finderReadout()
 	end
 	return lines
 end
-
 
 
 

@@ -10,23 +10,7 @@
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 local _, A = ...
-
-
 
 
 
@@ -37,32 +21,12 @@ local OPPONENT_ROWS = 4
 
 
 
-
-
-
-
-
 local READING_ROWS = 7
-
-
-
 
 
 function A.readingRows()
 	return READING_ROWS
 end
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -74,23 +38,10 @@ end
 
 
 
-
-
-
-
-
 local PLOT_SHARE = 0.25
 
 
-
 local lastGrowth = 0
-
-
-
-
-
-
-
 
 
 
@@ -113,14 +64,6 @@ function A.summaryGrowth(frameHeight)
 	end
 	return -math.floor((authored - frameHeight) * PLOT_SHARE)
 end
-
-
-
-
-
-
-
-
 
 
 
@@ -159,7 +102,6 @@ function A.plotGain(share, reading)
 end
 
 
-
 function A.plotShare()
 	return PLOT_SHARE
 end
@@ -168,20 +110,6 @@ end
 function A.lastSummaryGrowth()
 	return lastGrowth
 end
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -196,10 +124,6 @@ function A.summaryHeightNoPlot(headline, reading, note)
 end
 
 
-
-
-
-
 function A.summaryHeightFolded(headline, reading)
 	local read = type(reading) == "number" and reading or 0
 	if read < 0 then
@@ -207,17 +131,6 @@ function A.summaryHeightFolded(headline, reading)
 	end
 	return A.stripHeight(headline) + A.metric("stripGap") + read + A.plotFoldHeight()
 end
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -236,8 +149,6 @@ function A.summaryHeightFought(rows, note, headline, reading)
 	if note then
 		body = body + A.noteRowHeight()
 	end
-
-
 
 	local plot = A.metric("plotHeight")
 	local ceiling = plot
@@ -259,9 +170,6 @@ function A.summaryHeightFought(rows, note, headline, reading)
 end
 
 
-
-
-
 function A.plotRoom(headline, reading, grow)
 	local read = type(reading) == "number" and reading or 0
 	if read < 0 then
@@ -281,19 +189,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 function A.summaryBands(opts)
 	opts = type(opts) == "table" and opts or {}
 	local lines = type(opts.lines) == "number" and opts.lines or 0
@@ -305,24 +200,19 @@ function A.summaryBands(opts)
 			rowHeight = A.metric("readingRow"),
 			contents = lines,
 
-
 			folded = opts.collapsed == true,
 			room = A.readingRoom(headline),
-
 
 			extentFrom = "summary region",
 			contentsFrom = "summary region",
 		},
 		{
 
-
 			name = "details control",
 			heading = A.metric("segmentHeight"),
 			rowHeight = A.metric("segmentHeight"),
 			contents = lines > 0 and 1 or 0,
 			room = A.stripHeight(headline),
-
-
 			extentFrom = "summary region",
 			contentsFrom = "summary region",
 		},
@@ -337,8 +227,6 @@ function A.summaryBands(opts)
 			contents = type(opts.marks) == "number" and opts.marks or 0,
 
 			room = A.plotRoom(headline, opts.reading, opts.grow),
-
-
 			extentFrom = "summary region",
 			contentsFrom = "summary region",
 		}
@@ -350,16 +238,6 @@ end
 
 
 local lastStrip = nil
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -383,8 +261,6 @@ function A.stripRow(opts)
 	end
 
 
-
-
 	local widths = type(opts.widths) == "table" and opts.widths or nil
 	local at = origin
 	for i = 1, tiles do
@@ -404,16 +280,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
 function A.viewRowBlocks(opts)
 	opts = type(opts) == "table" and opts or {}
 	local function figure(name)
@@ -427,7 +293,6 @@ function A.viewRowBlocks(opts)
 	if figure("head") > 0 then
 		blocks[#blocks + 1] = { kind = "head", name = "head line", from = 0, to = figure("head") }
 	end
-
 
 
 	local edge = width
@@ -461,23 +326,12 @@ function A.viewRowBlocks(opts)
 end
 
 
-
-
-
-
-
-
-
-
 function A.lastStripRow()
 	if type(lastStrip) ~= "table" then
 		return nil
 	end
 	return lastStrip.blocks, lastStrip.where
 end
-
-
-
 
 
 
@@ -504,18 +358,9 @@ function A.stripCluster(track, control, toggle, specs, maps)
 end
 
 
-
-
-
-
 local function setColor(fontString, name)
 	fontString:SetTextColor(A.color(name))
 end
-
-
-
-
-
 
 
 
@@ -542,9 +387,6 @@ local function ratingInline(format, rating)
 end
 
 
-
-
-
 local function percentText(rate)
 	return A.percentText(rate)
 end
@@ -555,10 +397,7 @@ end
 
 
 
-
-
 local standing = {}
-
 
 
 standing.TILES = 4
@@ -596,7 +435,6 @@ function standing.build(region)
 	strip:Hide()
 
 
-
 	strip.ground = strip:CreateTexture(nil, "BACKGROUND")
 	strip.ground:SetAllPoints(strip)
 
@@ -623,7 +461,6 @@ function standing.build(region)
 			sub = standing.text(strip, "note", "dim"),
 		}
 	end
-
 
 
 	strip.tiles = {}
@@ -736,7 +573,6 @@ function standing.figuresAt(strip, figures, width)
 		local x = left + (i - 1) * each
 		standing.place(strip, held.label, figure.label, x, -4, each)
 
-
 		local value = figure.value or "-"
 		figure.fit = nil
 		if type(figure.forms) == "table" and #figure.forms > 0 then
@@ -756,18 +592,10 @@ end
 
 
 
-
-
-
-
-
-
-
 function standing.trend(strip, bars, from, to)
 	local height = A.metric("standingStrip")
 	local mid = math.floor(height * 0.5)
 	local inset = A.metric("standingTrendInset")
-
 
 	local reach = math.min(mid - inset, height - inset - (mid + 1))
 	local widest, gap = A.metric("standingBar"), A.metric("standingBarGap")
@@ -817,9 +645,6 @@ end
 
 
 
-
-
-
 function standing.blocks(strip, bars, from, to)
 	local count = math.min(#bars, #strip.bars)
 	if count == 0 or to - from < count then
@@ -847,7 +672,6 @@ function standing.blocks(strip, bars, from, to)
 		end
 		lastDay = held.day
 	end
-
 	local fits = #labels > 0
 	for n, label in ipairs(labels) do
 		local room = (labels[n + 1] and labels[n + 1].x or to) - label.x
@@ -875,11 +699,6 @@ function standing.lineHeight(text, role)
 	end
 	return A.fontSize(role)
 end
-
-
-
-
-
 
 
 function standing.fill(held, cell)
@@ -944,7 +763,6 @@ end
 
 
 
-
 function standing.placeCell(strip, held, cell, m, x, width)
 	local pad, gap, beside = A.metric("standingPad"), A.metric("standingLineGap"), standing.BESIDE
 	local height = A.metric("standingStrip")
@@ -987,10 +805,6 @@ function standing.ruleAt(strip, index, x)
 	rule:SetColorTexture(A.color("insetEdge"))
 	rule:Show()
 end
-
-
-
-
 
 
 
@@ -1073,12 +887,6 @@ end
 
 
 
-
-
-
-
-
-
 function standing.ratedFit(natural, count, hasTrend, room)
 	local floor, each = A.metric("standingCellFloor"), A.metric("standingStat") + 1
 	local need = hasTrend and floor or 0
@@ -1093,9 +901,6 @@ function standing.ratedFit(natural, count, hasTrend, room)
 	local trend = hasTrend and math.max(0, room - cell - each * kept) or 0
 	return cell, kept, trend
 end
-
-
-
 
 
 
@@ -1183,8 +988,6 @@ function standing.paintCells(strip, reading, width)
 	end
 
 
-
-
 	local statWidth = A.metric("standingStat")
 	local trendTo = rateX - 1
 	if reading.shape == "rated" then
@@ -1250,16 +1053,11 @@ function standing.paintCells(strip, reading, width)
 		shed = #shed > 0 and table.concat(shed, ",") or nil,
 		edge = "strip",
 
-
-
 		trend = trendRoom,
 		inset = inset,
 		barWidth = barWidth,
 	}
 end
-
-
-
 
 
 function standing.paint(region, reading)
@@ -1363,6 +1161,7 @@ end
 
 
 
+
 function standing.paintOther(strip, held, data, width)
 	local each = 170
 	local tiles = {
@@ -1411,7 +1210,6 @@ function standing.paintOther(strip, held, data, width)
 	end
 	return drawn
 end
-
 
 
 
@@ -1525,7 +1323,6 @@ function standing.hide(region)
 		region.standing:Hide()
 	end
 end
-
 
 
 
@@ -1672,8 +1469,6 @@ function A.paintDuelPanel(panel, hero, shown)
 end
 
 
-
-
 function A.traceHeroTab(format, hero, rows, panelRows)
 	if type(A.trace) ~= "function" then
 		return
@@ -1698,13 +1493,7 @@ end
 local function buildTile(parent)
 	local tile = CreateFrame("Frame", nil, parent)
 
-
-
 	tile:SetSize(96, A.tileHeight())
-
-
-
-
 
 
 	tile.ground = tile:CreateTexture(nil, "BACKGROUND")
@@ -1728,11 +1517,6 @@ local function buildTile(parent)
 	tile.edges[4]:SetWidth(1)
 
 
-
-
-
-
-
 	local pad = A.metric("tilePad")
 	tile.label = tile:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
 	tile.label:SetPoint("TOPLEFT", tile, "TOPLEFT", pad, -pad)
@@ -1754,17 +1538,12 @@ local function buildTile(parent)
 
 
 
-
 	tile.beside = tile:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
 	tile.beside:SetPoint("BOTTOMRIGHT", tile, "BOTTOMRIGHT", -pad, pad)
 	tile.beside:SetJustifyH("RIGHT")
 	tile.beside:SetWordWrap(false)
 	A.style(tile.beside, "rowNote", "dim")
 	tile.beside:Hide()
-
-
-
-
 
 
 
@@ -1777,8 +1556,6 @@ local function buildTile(parent)
 	tile.moment:Hide()
 
 
-
-
 	tile.lane = tile:CreateTexture(nil, "OVERLAY")
 	tile.lane:SetPoint("TOPLEFT", tile, "TOPLEFT", 0, 0)
 	tile.lane:SetPoint("BOTTOMLEFT", tile, "BOTTOMLEFT", 0, 0)
@@ -1786,13 +1563,10 @@ local function buildTile(parent)
 	tile.lane:Hide()
 
 
-
-
 	tile.door = tile:CreateTexture(nil, "OVERLAY")
 	tile.door:SetSize(A.metric("tileDoorMark"), A.metric("tileDoorMark"))
 	tile.door:SetPoint("TOPRIGHT", tile, "TOPRIGHT", -pad, -pad)
 	tile.door:Hide()
-
 
 
 
@@ -1806,17 +1580,9 @@ local function buildTile(parent)
 
 
 
-
-
-
-
-
 	tile:EnableMouse(true)
 
-
 	tile.showTooltip = function(self)
-
-
 
 
 		return A.keyedTooltip(self, self.tooltipLines, "ANCHOR_TOP")
@@ -1826,18 +1592,10 @@ local function buildTile(parent)
 
 
 
-
-
-
-
-
-
-
 	tile:SetScript("OnMouseUp", function(self, button)
 		if button ~= "LeftButton" or self.opens == nil then
 			return
 		end
-
 
 
 		if type(A.showMatchWindow) == "function" then
@@ -1847,12 +1605,6 @@ local function buildTile(parent)
 
 	return tile
 end
-
-
-
-
-
-
 
 
 
@@ -1872,12 +1624,6 @@ end
 
 
 
-
-
-
-
-
-
 function A.tileAsideRoom(inner, need)
 	if type(inner) ~= "number" or type(need) ~= "number" then
 		return 0
@@ -1888,11 +1634,6 @@ function A.tileAsideRoom(inner, need)
 	end
 	return math.floor(room)
 end
-
-
-
-
-
 
 
 
@@ -1939,13 +1680,6 @@ end
 
 
 
-
-
-
-
-
-
-
 local function paintTrend(tile, points, shape, width, tone)
 	local trend = tile.trend
 	if not trend then
@@ -1959,7 +1693,6 @@ local function paintTrend(tile, points, shape, width, tone)
 	trend:SetWidth(width)
 	local height = A.fontSize("number")
 	trend:SetHeight(height)
-
 
 
 	local function hideFrom(pool, first)
@@ -1978,7 +1711,6 @@ local function paintTrend(tile, points, shape, width, tone)
 				texture = trend:CreateTexture(nil, "ARTWORK")
 				trend.bars[i] = texture
 			end
-
 
 			local tall = math.max(1, math.floor(points[i].value * height))
 			texture:ClearAllPoints()
@@ -2017,13 +1749,6 @@ end
 
 
 
-
-
-
-
-
-
-
 local function setTile(tile, label, value, note, valueColor, noteColor, width, extra)
 	if value == nil then
 		tile:Hide()
@@ -2037,7 +1762,6 @@ local function setTile(tile, label, value, note, valueColor, noteColor, width, e
 
 
 
-
 	tile.beside:Hide()
 	tile.moment:Hide()
 	tile.besideDrawn, tile.momentDrawn = nil, nil
@@ -2046,8 +1770,6 @@ local function setTile(tile, label, value, note, valueColor, noteColor, width, e
 	tile.trend:Hide()
 
 	if extra.door then
-
-
 
 		tile.lane:SetColorTexture(A.color(valueColor or "bright"))
 		tile.lane:Show()
@@ -2066,9 +1788,6 @@ local function setTile(tile, label, value, note, valueColor, noteColor, width, e
 	tile.ground:SetColorTexture(A.color("field"))
 
 
-
-
-
 	local edge = "hairline"
 	if extra.door then
 		edge = valueColor or "text"
@@ -2078,7 +1797,6 @@ local function setTile(tile, label, value, note, valueColor, noteColor, width, e
 	end
 
 
-
 	local inner = width - A.metric("tilePad") * 2
 	if inner < 1 then
 		inner = 1
@@ -2086,11 +1804,6 @@ local function setTile(tile, label, value, note, valueColor, noteColor, width, e
 	tile.label:SetWidth(inner)
 	tile.value:SetWidth(inner)
 	tile.note:SetWidth(inner)
-
-
-
-
-
 
 
 
@@ -2119,7 +1832,6 @@ local function setTile(tile, label, value, note, valueColor, noteColor, width, e
 	end
 
 
-
 	if type(extra.trend) == "table" then
 		paintTrend(tile, extra.trend, extra.trendShape,
 			A.tileTrendRoom(inner, A.textRoom(tile.value, tile.value:GetText() or "")),
@@ -2136,25 +1848,17 @@ end
 
 
 
-
 local KEY_SWATCH, KEY_GAP = 14, 5
-
-
 
 
 
 local POOLS = {
 	ticks = "BACKGROUND",
 
-
-
 	marks = "BORDER",
 	mmr = "BORDER",
 	lines = "ARTWORK",
 }
-
-
-
 
 
 
@@ -2218,7 +1922,6 @@ local function plotTexture(plot, pool, index)
 end
 
 
-
 local function tierTone(format, value)
 	if type(A.ratingColour) == "function" then
 		local _, _, _, r, g, b = A.ratingColour(format, value)
@@ -2258,14 +1961,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
 local function drawMarkers(plot, series, place, foot, height, loose, note, width)
 	plot.peakPlan = nil
 	local peakIndex, endIndex = nil, #series
@@ -2288,15 +1983,9 @@ local function drawMarkers(plot, series, place, foot, height, loose, note, width
 	end
 
 
-
-
-
-
 	for i = 1, #(loose or {}) do
 		marker(loose[i], "dim")
 	end
-
-
 
 
 	local firstX, firstY = nil, nil
@@ -2315,18 +2004,12 @@ local function drawMarkers(plot, series, place, foot, height, loose, note, width
 	end
 
 
-
 	local peakX, peakY = marker(peakIndex, "accent")
 	local endX, endY = marker(endIndex, "text")
 
 
-
 	local pad = A.metric("plotLabelPad")
 	local face = A.fontSize("note")
-
-
-
-
 
 
 
@@ -2350,12 +2033,9 @@ local function drawMarkers(plot, series, place, foot, height, loose, note, width
 	end
 
 
-
-
 	local peakRepeats = series[peakIndex].rating == series[endIndex].rating
 	local peakText = ("PEAK %d"):format(math.floor(series[peakIndex].rating))
 	local endText = ("%d"):format(math.floor(series[endIndex].rating))
-
 
 	local peakRoom = A.textRoom(plot.peakLabel, peakText)
 	local endRoom = A.textRoom(plot.endLabel, endText)
@@ -2366,20 +2046,7 @@ local function drawMarkers(plot, series, place, foot, height, loose, note, width
 
 
 
-
-
-
-
-
-
-
 	local endSide, endDrop = labelSide(endY, endX - pad - endRoom, endX - pad)
-
-
-
-
-
-
 
 
 
@@ -2390,8 +2057,6 @@ local function drawMarkers(plot, series, place, foot, height, loose, note, width
 
 	local peakBox = labelBox(peakX + pad, peakX + pad + peakRoom, peakY, peakSide, peakDrop)
 	local endBox = labelBox(endX - pad - endRoom, endX - pad, endY, endSide, endDrop)
-
-
 
 
 	local peakCollides = not peakRepeats
@@ -2427,7 +2092,6 @@ local function drawMarkers(plot, series, place, foot, height, loose, note, width
 	plot.endLabel:SetPoint(endSide .. "RIGHT", plot, "BOTTOMLEFT", endX - pad, endY + endDrop)
 	plot.endLabel:SetText(endText)
 	plot.endLabel:Show()
-
 
 
 	plot.startPlan = nil
@@ -2467,7 +2131,6 @@ local function drawMarkers(plot, series, place, foot, height, loose, note, width
 	end
 
 
-
 	local from = A.dayText(series[1].at)
 	local to = A.dayText(series[endIndex].at)
 	A.style(plot.startDate, "note", "dimmer")
@@ -2480,20 +2143,10 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
 local function seriesRange(series, first, last)
 	local lo, hi
 
 	for i = first or 1, last or #series do
-
 
 		local value = series[i].rating
 		if type(value) == "number" then
@@ -2508,15 +2161,6 @@ local function seriesRange(series, first, last)
 
 	return lo, hi
 end
-
-
-
-
-
-
-
-
-
 
 
 
@@ -2543,9 +2187,6 @@ end
 
 
 
-
-
-
 local function plotBranch(fmt, summary, folded)
 	if type(summary) ~= "table" then
 		return "noPlot", {}
@@ -2556,7 +2197,6 @@ local function plotBranch(fmt, summary, folded)
 	if summary.rating == nil and #tally > 0 then
 		return "fought", tally
 	end
-
 
 	if barsDrawable(summary) then
 		return folded and "folded" or "bars", tally
@@ -2569,8 +2209,6 @@ local function plotBranch(fmt, summary, folded)
 	end
 	return "plot", tally
 end
-
-
 
 
 
@@ -2587,23 +2225,12 @@ local function seasonPanels(series)
 end
 
 
-
-
 function A.seriesSeasons(series)
 	if type(series) ~= "table" then
 		return 0
 	end
 	return #seasonPanels(series)
 end
-
-
-
-
-
-
-
-
-
 
 
 
@@ -2622,7 +2249,6 @@ function A.seriesPanels(series, width, height, axisLo, axisHi)
 	local drawable = width - gap * (#panels - 1)
 
 
-
 	local at = 0
 	for p = 1, #panels do
 		local panel = panels[p]
@@ -2637,20 +2263,8 @@ function A.seriesPanels(series, width, height, axisLo, axisHi)
 		panel.lo, panel.hi = axisLo, axisHi
 		if #panels > 1 then
 
-
-
 			panel.lo, panel.hi = A.plotExtent(series, panel.first, panel.last)
 		end
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -2661,14 +2275,6 @@ function A.seriesPanels(series, width, height, axisLo, axisHi)
 	end
 	return panels
 end
-
-
-
-
-
-
-
-
 
 
 
@@ -2702,21 +2308,11 @@ end
 
 
 
-
-
-
-
-
-
-
 local function drawSeries(plot, series, showMmr, note)
-
-
 	if not seriesDrawable(series) then
 		hideLinesFrom(plot, 1)
 		return 0, 0
 	end
-
 
 
 	local width = plot:GetWidth()
@@ -2727,16 +2323,12 @@ local function drawSeries(plot, series, showMmr, note)
 	end
 
 
-
-
 	local foot = A.plotFoot()
 	width = width - A.metric("plotGutter")
-
 
 	if type(note) == "table" then
 		note = { at = note.at, room = note.room, width = width + A.metric("plotGutter") }
 	end
-
 
 	height = height - A.metric("plotLabelDrop") - foot
 	if width < 40 or height < A.metric("plotCurveMin") then
@@ -2746,14 +2338,7 @@ local function drawSeries(plot, series, showMmr, note)
 
 
 
-
-
-
-
-
 	local extentLo, extentHi = A.plotExtent(series)
-
-
 
 
 	local tickBound = A.plotTicks(A.unitFigure(plot:GetHeight()))
@@ -2772,28 +2357,8 @@ local function drawSeries(plot, series, showMmr, note)
 
 
 
-
-
-
-
-
-
-
-
-
-
 	local panels = A.seriesPanels(series, width, height, axisLo, axisHi)
 	local gap = #panels > 1 and A.metric("plotPanelGap") or 0
-
-
-
-
-
-
-
-
-
-
 
 
 	local panelOf = {}
@@ -2803,7 +2368,6 @@ local function drawSeries(plot, series, showMmr, note)
 			panelOf[i] = panel
 		end
 	end
-
 
 
 	local loose = {}
@@ -2819,15 +2383,12 @@ local function drawSeries(plot, series, showMmr, note)
 		local panel = panelOf[index] or panels[1]
 
 
-
 		local x
 		if panel.last > panel.first then
 			x = panel.x0 + (index - panel.first) / (panel.last - panel.first) * (panel.x1 - panel.x0)
 		else
 			x = panel.x0 + (panel.x1 - panel.x0) * 0.5
 		end
-
-
 
 
 		local y
@@ -2839,14 +2400,6 @@ local function drawSeries(plot, series, showMmr, note)
 		end
 		return x, y
 	end
-
-
-
-
-
-
-
-
 
 
 
@@ -2872,7 +2425,6 @@ local function drawSeries(plot, series, showMmr, note)
 
 
 
-
 	local ladder, ladderReason = nil, nil
 	if type(A.ratingLadder) == "function" and plot.format ~= nil then
 		ladder, ladderReason = A.ratingLadder(plot.format)
@@ -2883,7 +2435,6 @@ local function drawSeries(plot, series, showMmr, note)
 			entries[i] = ladder.tiers[i].entry
 		end
 	end
-
 
 
 	local bands, rules = 0, 0
@@ -2929,7 +2480,6 @@ local function drawSeries(plot, series, showMmr, note)
 
 	local marks = 0
 
-
 	local mmrDrawn = 0
 	for i = 2, #series do
 		local from, to = series[i - 1], series[i]
@@ -2937,15 +2487,7 @@ local function drawSeries(plot, series, showMmr, note)
 
 
 
-
-
-
-
-
-
-
 		if from.season ~= to.season then
-
 
 			local left = panelOf[i - 1]
 			local x = left and (left.x1 + gap * 0.5) or (((i - 1) - 0.5) / (#series - 1) * width)
@@ -2958,23 +2500,9 @@ local function drawSeries(plot, series, showMmr, note)
 		end
 
 
-
-
 		if from.season == to.season and (panelOf[i] or panels[1]).joined then
 			local x1, y1 = place(i - 1, from.rating)
 			local x2, y2 = place(i, to.rating)
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -2986,12 +2514,10 @@ local function drawSeries(plot, series, showMmr, note)
 				mmrDrawn = mmrDrawn + 1
 				local mmr = plotLine(plot, "mmr", mmrDrawn, A.metric("plotMmrThickness"))
 
-
 				mmr:SetColorTexture(1, 1, 1, A.metric("plotMmrAlpha"))
 				mmr:SetStartPoint("BOTTOMLEFT", plot, mx1, my1)
 				mmr:SetEndPoint("BOTTOMLEFT", plot, mx2, my2)
 			end
-
 
 
 			local pieces = { { at = 0, value = from.rating } }
@@ -3026,7 +2552,6 @@ local function drawSeries(plot, series, showMmr, note)
 
 	drawMarkers(plot, series, place, foot, height, loose, note, width)
 
-
 	plot.tierReading = { tiers = bands, seg = used, reason = ladder == nil and ladderReason or nil,
 		from = (plot.startPlan and plot.startPlan.shown) and math.floor(series[1].rating) or nil }
 	return used, mmrDrawn
@@ -3054,7 +2579,6 @@ local function buildOpponentRow(parent, index)
 	row.record:SetPoint("LEFT", row, "LEFT", 210, 0)
 	row.record:SetJustifyH("LEFT")
 
-
 	A.style(row.record, "numberSmall")
 
 	return row
@@ -3069,9 +2593,7 @@ local function paintOpponents(region, rows)
 		if entry then
 			row.name:SetText(entry.name)
 
-
 			row.record:SetText(("%d W  %d L"):format(entry.wins, entry.losses))
-
 
 			setColor(row.record, entry.wins == entry.losses and "dim"
 				or (entry.wins > entry.losses and "win" or "loss"))
@@ -3089,31 +2611,13 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
 function A.buildSummaryRegion(parent, controlHost, scopeChoices, onScopePick, onDetailsToggle,
 		onGraphFold)
 	local region = CreateFrame("Frame", nil, parent)
 	region:SetHeight(A.summaryHeight())
 
 
-
-
-
-
-
-
 	local host = controlHost or region
-
-
 
 
 	region.fromValue = region:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
@@ -3123,10 +2627,8 @@ function A.buildSummaryRegion(parent, controlHost, scopeChoices, onScopePick, on
 
 
 
-
 	region.link = region:CreateFontString(nil, "ARTWORK", "GameFontNormal")
 	region.link:SetPoint("LEFT", region.fromValue, "RIGHT", A.metric("headlineJoin"), -1)
-
 
 	A.style(region.link, "bodyMedium", "dim")
 
@@ -3146,36 +2648,21 @@ function A.buildSummaryRegion(parent, controlHost, scopeChoices, onScopePick, on
 	end
 
 
-
-
 	if type(A.dropdown) == "function" and type(scopeChoices) == "table" and #scopeChoices > 0 then
 		region.scope = A.dropdown(host, scopeChoices, onScopePick)
-
-
 
 
 		region.scope:SetPoint("TOPRIGHT", host, "TOPRIGHT", 0, 0)
 	end
 
 
-
-
-
-
-
 	if type(A.pill) == "function" then
 		region.details = A.pill(host, "Details", onDetailsToggle)
 		region.details:SetHeight(A.metric("segmentHeight"))
 
-
 		region.details.controlRole = "label"
 		A.setControlTone(region.details, "dim")
 	end
-
-
-
-
-
 
 
 	if type(A.pill) == "function" then
@@ -3184,7 +2671,6 @@ function A.buildSummaryRegion(parent, controlHost, scopeChoices, onScopePick, on
 		region.graphToggle.controlRole = "label"
 		A.setControlTone(region.graphToggle, "dim")
 	end
-
 
 
 	if type(A.pill) == "function" then
@@ -3198,7 +2684,6 @@ function A.buildSummaryRegion(parent, controlHost, scopeChoices, onScopePick, on
 		A.setControlTone(region.specsToggle, "dim")
 		region.specsToggle:Hide()
 	end
-
 
 
 	if type(A.pill) == "function" then
@@ -3218,12 +2703,10 @@ function A.buildSummaryRegion(parent, controlHost, scopeChoices, onScopePick, on
 
 
 
-
 	region.reading = CreateFrame("Frame", nil, region)
 	region.reading.bg = region.reading:CreateTexture(nil, "BACKGROUND")
 	region.reading.bg:SetAllPoints(region.reading)
 	region.reading.rows = {}
-
 
 	for i = 1, READING_ROWS do
 		local row = CreateFrame("Frame", nil, region.reading)
@@ -3241,7 +2724,6 @@ function A.buildSummaryRegion(parent, controlHost, scopeChoices, onScopePick, on
 			A.metric("readingKeyWidth") + A.metric("readingKeyGap"), 0)
 		row.text:SetPoint("TOPRIGHT", row, "TOPRIGHT", 0, 0)
 		row.text:SetJustifyH("LEFT")
-
 
 
 		row.text:SetWordWrap(false)
@@ -3268,7 +2750,6 @@ function A.buildSummaryRegion(parent, controlHost, scopeChoices, onScopePick, on
 	A.style(region.plotLabel, "label", "dim")
 
 
-
 	region.plot.peakLabel = region.plot:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
 	region.plot.peakLabel:SetJustifyH("LEFT")
 	region.plot.peakLabel:SetWordWrap(false)
@@ -3283,14 +2764,11 @@ function A.buildSummaryRegion(parent, controlHost, scopeChoices, onScopePick, on
 	region.plot.startDate:SetWordWrap(false)
 
 
-
 	region.plot.endDate = region.plot:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
 	region.plot.endDate:SetPoint("BOTTOMRIGHT", region.plot, "BOTTOMRIGHT",
 		-A.metric("plotGutter"), 0)
 	region.plot.endDate:SetJustifyH("RIGHT")
 	region.plot.endDate:SetWordWrap(false)
-
-
 
 
 	region.plotKeys = {}
@@ -3315,17 +2793,10 @@ function A.buildSummaryRegion(parent, controlHost, scopeChoices, onScopePick, on
 
 
 
-
-
-
-
-
 	region.plotNote = region.plot:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
 	region.plotNote:SetPoint("TOPRIGHT", region.plot, "TOPRIGHT", 0, 0)
 	region.plotNote:SetJustifyH("RIGHT")
 	A.style(region.plotNote, "note", "dimmer")
-
-
 
 
 	region.plotSpan = region.plot:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
@@ -3334,7 +2805,6 @@ function A.buildSummaryRegion(parent, controlHost, scopeChoices, onScopePick, on
 	region.plotSpan:SetWordWrap(false)
 	A.style(region.plotSpan, "note", "dimmer")
 	region.plotSpan:Hide()
-
 
 
 
@@ -3347,16 +2817,10 @@ function A.buildSummaryRegion(parent, controlHost, scopeChoices, onScopePick, on
 
 
 
-
-
-
-
 	region.foughtNote = region.plot:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
 	region.foughtNote:SetPoint("TOPLEFT", region.opponents[OPPONENT_ROWS], "BOTTOMLEFT", 0, -4)
 	region.foughtNote:SetPoint("TOPRIGHT", region.opponents[OPPONENT_ROWS], "BOTTOMRIGHT", 0, -4)
 	region.foughtNote:SetJustifyH("LEFT")
-
-
 
 	region.foughtNote:SetWordWrap(true)
 	region.foughtNote:Hide()
@@ -3371,27 +2835,8 @@ end
 
 
 
-
-
-
-
 local function paintHeadline(region, summary)
 	if summary.rating ~= nil then
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 		local oneLadder = type(A.seriesSeasons) ~= "function"
@@ -3413,7 +2858,6 @@ local function paintHeadline(region, summary)
 
 
 
-
 		region.toValue:ClearAllPoints()
 		if arc then
 			region.toValue:SetPoint("LEFT", region.link, "RIGHT", A.metric("headlineJoin"), 1)
@@ -3424,15 +2868,11 @@ local function paintHeadline(region, summary)
 
 
 
-
-
-
 		region.delta:ClearAllPoints()
 		region.delta:SetPoint("TOPLEFT", arc and region.fromValue or region.toValue,
 			"BOTTOMLEFT", 0, -4)
 		return
 	end
-
 
 
 	region.fromValue:SetText("")
@@ -3446,27 +2886,17 @@ end
 
 local function paintDelta(region, summary)
 
-
 	local parts = {}
 	local delta = A.signedText(summary.ratingChange)
 	if summary.rating ~= nil and delta ~= nil then
 		parts[#parts + 1] = delta .. " last match"
 	end
 
-
 	if summary.rating ~= nil and summary.peak ~= nil and summary.peak ~= summary.rating then
 		parts[#parts + 1] = "peak " .. ratingInline(summary.format, math.floor(summary.peak))
 	end
 	if #parts > 0 then
 		region.delta:SetText(table.concat(parts, "   "))
-
-
-
-
-
-
-
-
 
 
 		local tone = "dim"
@@ -3481,7 +2911,6 @@ local function paintDelta(region, summary)
 		region.delta:Show()
 		return
 	end
-
 
 
 	region.delta:Hide()
@@ -3501,8 +2930,6 @@ end
 
 
 
-
-
 local function controlWidth(control)
 	if not (control and control.IsShown and control:IsShown()) then
 		return 0
@@ -3513,12 +2940,6 @@ local function controlWidth(control)
 	end
 	return width
 end
-
-
-
-
-
-
 
 
 
@@ -3534,20 +2955,12 @@ local function tileOrigin(region)
 	end
 
 
-
 	local widest = math.max(headline, widthOf(region.delta))
 	if widest <= 0 then
 		return 0
 	end
 	return widest + A.metric("tileGap")
 end
-
-
-
-
-
-
-
 
 
 local function tileRoom(region, count)
@@ -3560,25 +2973,9 @@ local function tileRoom(region, count)
 	end
 
 
-
-
 	local slots = count
 	return width - tileOrigin(region) - (slots - 1) * A.metric("tileGap"), slots
 end
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -3616,8 +3013,6 @@ function A.tileWidths(room, needs, slots)
 
 
 
-
-
 	local order = {}
 	for i = 1, slots do
 		order[i] = i
@@ -3651,10 +3046,6 @@ end
 
 
 
-
-
-
-
 local function viewRowNow(region)
 	local row = region.controlHost
 
@@ -3668,7 +3059,6 @@ local function viewRowNow(region)
 		maps = controlWidth(region.mapsToggle),
 	})
 end
-
 
 
 
@@ -3690,13 +3080,6 @@ end
 
 
 
-
-
-
-
-
-
-
 function A.noteViewRow(region)
 	if type(region) ~= "table" or type(A.notePlacedRow) ~= "function" then
 		return nil
@@ -3705,13 +3088,6 @@ function A.noteViewRow(region)
 	A.notePlacedRow("view row", blocks)
 	return blocks
 end
-
-
-
-
-
-
-
 
 
 
@@ -3741,7 +3117,6 @@ function A.ratedFigures(summary)
 			nil, { beside = ("%d-%d"):format(summary.roundsWon, lost) } }
 	end
 
-
 	local wins, losses, _, matchRate = A.winRecord(summary)
 	local record = A.winRecordText(summary, format)
 	local recordForms = nil
@@ -3770,19 +3145,8 @@ end
 
 local function paintTiles(region, summary, scopeSeason, scopeBound, stats)
 
-
 	local rate = select(4, A.winRecord(summary))
 	local winRate = percentText(rate)
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -3792,19 +3156,8 @@ local function paintTiles(region, summary, scopeSeason, scopeBound, stats)
 
 
 
-
-
-
-
-
-
-
-
-
 	local last = type(A.lastMatchCard) == "function"
 		and A.lastMatchCard(summary.format, scopeSeason, A.windowCharacter(), scopeBound) or nil
-
-
 
 
 	local function trendFor(key)
@@ -3815,8 +3168,6 @@ local function paintTiles(region, summary, scopeSeason, scopeBound, stats)
 			A.windowCharacter(), scopeBound)
 		return ok and points or nil
 	end
-
-
 
 
 	local rateTone = A.winRateTone(rate)
@@ -3837,8 +3188,6 @@ local function paintTiles(region, summary, scopeSeason, scopeBound, stats)
 	}
 
 
-
-
 	local drawing, needs = 0, {}
 	for i = 1, #cards do
 		if cards[i][2] ~= nil then
@@ -3849,17 +3198,7 @@ local function paintTiles(region, summary, scopeSeason, scopeBound, stats)
 	local room, slots = tileRoom(region, drawing)
 	local widths, short = A.tileWidths(room, needs, slots)
 
-
-
-
-
-
 	region.stripRoom = A.unitFigure(room)
-
-
-
-
-
 
 
 
@@ -3879,10 +3218,7 @@ local function paintTiles(region, summary, scopeSeason, scopeBound, stats)
 
 	local drawn = 0
 
-
-
 	local tones = {}
-
 
 	local asides, moment = {}, nil
 	for i = 1, #cards do
@@ -3908,21 +3244,15 @@ local function paintTiles(region, summary, scopeSeason, scopeBound, stats)
 				moment = tile.momentDrawn
 			end
 
-
-
 			tile.opens = type(card[6]) == "table" and card[6].door and card[6].id or nil
 			tile.opensKind = type(card[6]) == "table" and card[6].kind or nil
 			local spot = spots[drawn]
 
-
-
 			tile:SetPoint("TOPLEFT", region, "TOPLEFT", spot and spot.from or 0, 0)
-
 
 
 			tile.tooltipLines = A.tileTooltip(summary, card[1])
 		else
-
 
 
 			tile.tooltipLines = nil
@@ -3940,13 +3270,8 @@ local function paintTiles(region, summary, scopeSeason, scopeBound, stats)
 	region.stripAsides = #asides > 0 and table.concat(asides, ";") or nil
 	region.stripMoment = moment
 
-
 	return short
 end
-
-
-
-
 
 
 
@@ -3969,14 +3294,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
 local function plotNoteAnchor(label, legend)
 	if legend then
 		return "TOPRIGHT", "RIGHT", false
@@ -3989,20 +3306,9 @@ end
 
 
 
-
-
 function A.plotShape(branch)
 	return branch ~= "noPlot", branch == "plot" or branch == "bars"
 end
-
-
-
-
-
-
-
-
-
 
 
 
@@ -4023,16 +3329,8 @@ end
 
 
 
-
-
-
-
-
 local function paintDetails(region, lines, headline, collapsed)
-
 	local bands = A.summaryBands({ lines = lines, headline = headline })
-
-
 
 
 	local controlDraws = A.bandShown(bands[1]) and A.bandShown(bands[2])
@@ -4045,11 +3343,6 @@ local function paintDetails(region, lines, headline, collapsed)
 	end
 	return controlDraws
 end
-
-
-
-
-
 
 
 local function paintReading(region, summary, lines, collapsed)
@@ -4077,8 +3370,6 @@ local function paintReading(region, summary, lines, collapsed)
 			row.key:SetText(lines[i].key)
 			row.text:SetText(lines[i].text)
 
-
-
 			A.style(row.key, "label", "dim")
 			A.style(row.text, "note", "text")
 			row:Show()
@@ -4089,13 +3380,11 @@ local function paintReading(region, summary, lines, collapsed)
 
 	region.reading.bg:SetColorTexture(A.color("panelDeep"))
 
-
 	return A.readingHeight(draws and shown or 0, collapsed), #lines
 end
 
 
 local BAR_WIDTH_CAP = 12
-
 
 
 
@@ -4107,15 +3396,7 @@ local function barWidthFor(width, count)
 end
 
 
-
 local lastBarPlotWidth = nil
-
-
-
-
-
-
-
 
 
 
@@ -4125,20 +3406,15 @@ local function setRegionPlot(region, branch, height, format, headline, reading, 
 
 	local noteRow = note == false and 0 or A.noteRowHeight()
 
-
 	local want = type(reading) == "number" and reading or 0
 	if want < 0 then
 		want = 0
 	end
 
-
-
 	local ceiling = A.readingRoom(headline)
 	if want > ceiling then
 		want = ceiling
 	end
-
-
 
 	local gain = legend and A.plotGain(grow, want) or 0
 
@@ -4152,12 +3428,6 @@ local function setRegionPlot(region, branch, height, format, headline, reading, 
 
 
 
-
-
-
-
-
-
 	local read = want
 	local most = total - strip - A.metric("stripGap") - noteRow
 	if most < 0 then
@@ -4168,13 +3438,7 @@ local function setRegionPlot(region, branch, height, format, headline, reading, 
 	end
 
 
-
 	local plot = total - strip - A.metric("stripGap") - read
-
-
-
-
-
 
 
 
@@ -4199,7 +3463,6 @@ local function setRegionPlot(region, branch, height, format, headline, reading, 
 	region.plotLabel:SetShown(drawing and true or false)
 
 
-
 	if region.plotSpan then
 		region.plotSpan:SetShown(folded and true or false)
 	end
@@ -4217,8 +3480,6 @@ local function setRegionPlot(region, branch, height, format, headline, reading, 
 
 
 
-
-
 	local drop = ownLine and A.noteRowHeight() or 0
 	region.plotLabel:ClearAllPoints()
 	region.plotLabel:SetPoint("TOPLEFT", region.plot, "TOPLEFT", 0, -drop)
@@ -4232,12 +3493,6 @@ local function setRegionPlot(region, branch, height, format, headline, reading, 
 
 
 
-
-
-
-
-
-
 	if type(A.trace) == "function" then
 		pcall(A.trace, "summary/region", {
 			format = format,
@@ -4246,35 +3501,23 @@ local function setRegionPlot(region, branch, height, format, headline, reading, 
 			strip = strip,
 			plot = plot,
 
-
-
 			reading = read,
 			lines = type(lines) == "number" and lines or 0,
-
 
 
 			head = headline ~= false,
 			tiles = A.tileHeight(),
 			note = noteRow,
 
-
 			noteAt = noteAt,
-
-
-
 
 
 			short = region.stripShort,
 			bare = region.stripBare,
-
 			room = region.stripRoom,
-
 			tones = region.stripTones,
-
-
 			asides = region.stripAsides,
 			moment = region.stripMoment,
-
 
 
 			bars = branch == "bars" and region.barReading and region.barReading.bars or nil,
@@ -4284,20 +3527,11 @@ local function setRegionPlot(region, branch, height, format, headline, reading, 
 
 			drawn = branch == "bars" and region.barReading and region.barReading.drawn or nil,
 
-
 			barWidth = branch == "bars" and region.barReading
 				and barWidthFor(region.plot:GetWidth(), region.barReading.bars) or nil,
 		}, "ui")
 	end
 end
-
-
-
-
-
-
-
-
 
 
 
@@ -4319,7 +3553,6 @@ local function paintPlotKeys(region, shown, accounted)
 		key.label:SetShown(drawn and true or false)
 	end
 end
-
 
 
 local function paintBarKeys(region, shown)
@@ -4408,13 +3641,6 @@ end
 
 
 
-
-
-
-
-
-
-
 local function drawBars(region, held)
 	local plot = region.plot
 	local columns = type(held) == "table" and held.columns or {}
@@ -4481,7 +3707,6 @@ local function drawBars(region, held)
 	hideBars(plot, #columns + 1)
 
 
-
 	if not plot.barScaleTop then
 		plot.barScaleTop = plot:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
 		plot.barScaleBottom = plot:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
@@ -4499,8 +3724,6 @@ local function drawBars(region, held)
 		label:SetText(tostring(tallest))
 		label:SetShown(tallest > 0)
 	end
-
-
 
 
 
@@ -4549,16 +3772,10 @@ local function drawBars(region, held)
 	lastBarPlotWidth = width
 
 
-
-
 	plot.barPlan = { axis = axis, half = half, step = step, width = barWidth, columns = #columns,
 		labels = labels, startText = startText, endText = endText, scale = tallest }
 	return #columns
 end
-
-
-
-
 
 
 
@@ -4576,12 +3793,6 @@ local function headingReach(region)
 	end
 	return reach
 end
-
-
-
-
-
-
 
 
 
@@ -4613,9 +3824,6 @@ local function placePeakLabel(region)
 
 
 
-
-
-
 	if type(A.trace) == "function" then
 		pcall(A.trace, "summary/peak", {
 			reason = reason,
@@ -4630,13 +3838,6 @@ end
 
 
 
-
-
-
-
-
-
-
 function A.paintSummaryRegion(region, summary, scope, reading)
 	if not (region and type(summary) == "table") then
 		return false
@@ -4645,14 +3846,8 @@ function A.paintSummaryRegion(region, summary, scope, reading)
 	local notRated = type(reading) == "table" and reading.notRated or nil
 	local collapsed = type(reading) == "table" and reading.collapsed == true or false
 
-
 	local grow = A.summaryGrowth(type(reading) == "table" and reading.frameHeight or nil)
 	lastGrowth = grow
-
-
-
-
-
 
 
 
@@ -4669,13 +3864,8 @@ function A.paintSummaryRegion(region, summary, scope, reading)
 	paintDelta(region, summary)
 
 
-
 	local lines = A.readingLines(summary, notRated, true)
 	paintDetails(region, #lines, summary.rating ~= nil, collapsed)
-
-
-
-
 
 
 
@@ -4685,8 +3875,6 @@ function A.paintSummaryRegion(region, summary, scope, reading)
 
 
 	local showMmr = A.mmrLineOffered(summary) == true
-
-
 
 
 	local clusterHost = region.controlHost or region
@@ -4702,7 +3890,6 @@ function A.paintSummaryRegion(region, summary, scope, reading)
 
 
 
-
 	if region.graphToggle and region.graphToggle:IsShown() then
 		region.graphToggle:ClearAllPoints()
 		if region.details and region.details:IsShown() then
@@ -4714,7 +3901,6 @@ function A.paintSummaryRegion(region, summary, scope, reading)
 				-A.metric("segmentTrackPad"))
 		end
 	end
-
 
 
 	if region.specsToggle then
@@ -4765,7 +3951,6 @@ function A.paintSummaryRegion(region, summary, scope, reading)
 
 
 
-
 	local short = paintTiles(region, summary,
 		type(reading) == "table" and reading.season or nil,
 		type(reading) == "table" and reading.bound or nil,
@@ -4773,18 +3958,11 @@ function A.paintSummaryRegion(region, summary, scope, reading)
 
 
 
-
-
 	region.stripShort = short
 
 
 
-
-
 	region.stripBare = nil
-
-
-
 
 
 	if type(reading) == "table" and reading.stripOnly == true and type(reading.standing) == "table" then
@@ -4815,12 +3993,9 @@ function A.paintSummaryRegion(region, summary, scope, reading)
 				last = lastFigure and lastFigure.drawn or nil,
 				lastFit = lastFigure and lastFigure.fit or nil,
 
-
 				stripSeason = reading.standing.stripSeason, n = drew.tiles,
 				record = reading.standing.shape == "ladderless"
 					and (reading.standing.recordKind or (reading.standing.record and "record") or "none") or nil,
-
-
 
 				labels = drew.layout and drew.layout.labels or nil,
 				widths = drew.layout and drew.layout.widths or nil,
@@ -4829,8 +4004,6 @@ function A.paintSummaryRegion(region, summary, scope, reading)
 				centre = drew.layout and drew.layout.centre or nil,
 				shed = drew.layout and drew.layout.shed or nil,
 				edge = drew.layout and drew.layout.edge or nil,
-
-
 				trend = drew.layout and drew.layout.trend or nil,
 				inset = drew.layout and drew.layout.inset or nil,
 				barWidth = drew.layout and drew.layout.barWidth or nil }, "ui")
@@ -4842,15 +4015,12 @@ function A.paintSummaryRegion(region, summary, scope, reading)
 	region.standingShape = nil
 
 
-
-
 	if type(reading) == "table" and reading.stripOnly == true then
 		local headline = summary.rating ~= nil
 		local strip = A.stripHeight(headline)
 		region.reading:Hide()
 		region.plot:Hide()
 		region:SetHeight(strip)
-
 
 		if type(A.trace) == "function" then
 			pcall(A.trace, "summary/region", {
@@ -4877,20 +4047,9 @@ function A.paintSummaryRegion(region, summary, scope, reading)
 	region.plot:Show()
 
 
-
-
 	local readingHeight, readingCount = paintReading(region, summary, lines, collapsed)
 
 	setPlotNote(region, nil)
-
-
-
-
-
-
-
-
-
 
 
 
@@ -4902,7 +4061,6 @@ function A.paintSummaryRegion(region, summary, scope, reading)
 		paintBarKeys(region, false)
 		region.barReading = nil
 
-
 		paintPlotKeys(region, false)
 		local shown = paintOpponents(region, tally)
 
@@ -4911,20 +4069,10 @@ function A.paintSummaryRegion(region, summary, scope, reading)
 		region.foughtNote:SetShown(fought ~= nil)
 
 
-
 		region.foughtNote:ClearAllPoints()
 		local last = region.opponents[math.max(1, math.min(shown, OPPONENT_ROWS))]
 		region.foughtNote:SetPoint("TOPLEFT", last, "BOTTOMLEFT", 0, -4)
 		region.foughtNote:SetPoint("TOPRIGHT", last, "BOTTOMRIGHT", 0, -4)
-
-
-
-
-
-
-
-
-
 
 
 
@@ -4940,8 +4088,6 @@ function A.paintSummaryRegion(region, summary, scope, reading)
 
 
 	region.foughtNote:Hide()
-
-
 
 
 	region.barReading = nil
@@ -4976,12 +4122,6 @@ function A.paintSummaryRegion(region, summary, scope, reading)
 
 
 
-
-
-
-
-
-
 	if branch == "folded" then
 		if region.plotSpan then
 			region.plotSpan:SetText(A.plotSpanText(summary.series) or "")
@@ -4996,25 +4136,13 @@ function A.paintSummaryRegion(region, summary, scope, reading)
 
 
 
-
-
-
-
-
-
 	setRegionPlot(region, branch, nil, summary.format,
 		summary.rating ~= nil, readingHeight, readingCount, grow, false)
 
 
 
-
-
-
-
-
 	region.plot.format = summary.format
 	local drawn, mmrDrawn = drawSeries(region.plot, summary.series, showMmr, nil)
-
 
 	local tier = region.plot.tierReading
 	if type(tier) == "table" then
@@ -5022,8 +4150,6 @@ function A.paintSummaryRegion(region, summary, scope, reading)
 			reason = tier.reason, from = tier.from, tones = region.stripTones,
 			asides = region.stripAsides, moment = region.stripMoment }, "ui")
 	end
-
-
 
 
 	local plotBands = A.summaryBands({
@@ -5045,21 +4171,8 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
-
 local function regionLinesPinned(format)
 	local out = {}
-
-
 
 
 
@@ -5073,7 +4186,6 @@ local function regionLinesPinned(format)
 				and A.windowBodyLabel(shownBody) or tostring(shownBody))
 		end
 	end
-
 
 	local function cardLines()
 		if type(A.askCardLines) ~= "function" then
@@ -5089,14 +4201,8 @@ local function regionLinesPinned(format)
 
 	local function describe(name, fmt)
 
-
-
-
 		local rated = type(A.movesRating) ~= "function" or A.movesRating(fmt)
 		local oneLadder = type(A.oneLadder) ~= "function" or A.oneLadder(fmt)
-
-
-
 
 
 
@@ -5109,18 +4215,11 @@ local function regionLinesPinned(format)
 		end
 
 
-
-
 		local ok, summary = pcall(A.summarize, fmt, season, A.windowCharacter(), bound)
 		local headline = ok and type(summary) == "table" and summary.rating ~= nil or false
 
 		local strip = A.stripHeight(headline)
 		local gap = A.metric("stripGap")
-
-
-
-
-
 
 
 
@@ -5138,17 +4237,10 @@ local function regionLinesPinned(format)
 
 
 
-
-
 		local branch, fought = plotBranch(fmt, ok and summary or nil,
 			type(A.graphFolded) == "function" and A.graphFolded() or false)
 		local drawing, legend = A.plotShape(branch)
 		local noteAt, _, ownLine = plotNoteAnchor(drawing, legend)
-
-
-
-
-
 
 
 		local body
@@ -5156,11 +4248,8 @@ local function regionLinesPinned(format)
 		local plotBound
 
 
-
 		local block = (branch == "plot" or branch == "bars") and "plot" or "note"
 		if branch == "plot" or branch == "bars" then
-
-
 
 
 			local gain
@@ -5168,7 +4257,6 @@ local function regionLinesPinned(format)
 			total = A.summaryHeight(true) + gain
 			body = total - strip - gap - reading
 		elseif branch == "folded" then
-
 
 			total = A.summaryHeightFolded(headline, reading)
 			body = A.plotFoldHeight()
@@ -5183,14 +4271,10 @@ local function regionLinesPinned(format)
 			block = "fought"
 		else
 
-
-
 			local noted = false
 			total = A.summaryHeightNoPlot(headline, reading, noted)
 			body = noted and A.noteRowHeight() or 0
 		end
-
-
 
 
 		local boundWords = ""
@@ -5206,18 +4290,14 @@ local function regionLinesPinned(format)
 			return tostring(A.unitFigure(value))
 		end
 
-
-
 		local barsWords = ""
 		if branch == "bars" then
 			local held = summary.winLoss
-
 
 			local barWidth = barWidthFor(lastBarPlotWidth, #held.columns)
 			barsWords = (" bars=%d per=%s won=%d lost=%d drawn=%d barWidth=%s"):format(#held.columns, held.per,
 				held.won, held.lost, held.drawn or 0, barWidth and figure(barWidth) or "none")
 		elseif branch == "fought" then
-
 
 			barsWords = (" opponents=%d"):format(#fought)
 		end
@@ -5225,26 +4305,15 @@ local function regionLinesPinned(format)
 			:format(name, figure(total), figure(strip), figure(gap), figure(reading), block, figure(body),
 				boundWords, barsWords)
 
-
-
 		out[#out + 1] = ("    tiles %d, headline %s, strip reserve %d, one ladder %s, season "
 			.. "boundary %s"):format(A.tileHeight(), headline and "drawn" or "none",
 				strip - A.tileHeight(), oneLadder and "yes" or "no", rated and "yes" or "no")
-
-
-
 
 		out[#out + 1] = ("    note %s, scope %s")
 			:format(branch == "folded" and "none, the graph is folded"
 				or ("anchors " .. noteAt .. (ownLine and " on its own line" or "")),
 				type(A.scopeText) == "function" and A.scopeText(fmt)
 					or (season ~= nil and ("season " .. tostring(season)) or "all time"))
-
-
-
-
-
-
 
 
 
@@ -5258,7 +4327,6 @@ local function regionLinesPinned(format)
 					and (" over a pool of " .. tostring(A.readingRows())) or "",
 				collapsed and "folded" or "open",
 				#keys > 0 and table.concat(keys, ", ") or "nothing to qualify")
-
 
 
 		local drawnText = {}
@@ -5277,8 +4345,6 @@ local function regionLinesPinned(format)
 
 
 
-
-
 		local bands = A.bandPass(A.summaryBands({
 			lines = #lines,
 			headline = headline,
@@ -5286,7 +4352,6 @@ local function regionLinesPinned(format)
 			reading = reading,
 			plot = branch == "plot" or branch == "bars",
 			marks = 1,
-
 
 			grow = A.lastSummaryGrowth(),
 		}))
@@ -5296,20 +4361,13 @@ local function regionLinesPinned(format)
 				bands[b].shown and "draws" or "hidden", bands[b].reason)
 		end
 
-
-
 		out[#out + 1] = ("    details %s%s, bands %s")
 			:format(collapsed and "collapsed" or "open", branch == "folded" and ", graph folded" or "",
 				table.concat(said, ", "))
 
 
 
-
-
 		if type(A.listEntries) == "function" and type(A.listColumnSet) == "function" then
-
-
-
 
 
 			local okEntries, entries = pcall(A.listEntries, fmt, A.windowCharacter(), season, bound)
@@ -5324,12 +4382,9 @@ local function regionLinesPinned(format)
 			else
 
 
-
 				out[#out + 1] = "    columns none, this tab draws the joined line"
 			end
 		end
-
-
 
 
 		if type(A.compRounds) == "function" and A.compRounds(fmt)
@@ -5342,12 +4397,7 @@ local function regionLinesPinned(format)
 					ascending and "upward" or "downward", A.specSortWords(key, ascending))
 
 
-
 		end
-
-
-
-
 
 
 
@@ -5355,30 +4405,19 @@ local function regionLinesPinned(format)
 			local width = A.windowWidth() - A.metric("margin") * 2 - A.metric("plotGutter")
 
 
-
-
 			local height = body - A.metric("plotLabelDrop") - A.plotFoot()
 
 
-
 			local lo, hi = A.plotExtent(summary.series)
-
 			local tickBound, tickRule = A.plotTicks(body)
 			local scale = A.plotScale(lo, hi, tickBound or A.metric("plotTickMax"))
 			local panels = A.seriesPanels(summary.series, width, height,
 				scale and scale.lo or lo, scale and scale.hi or hi)
 
-
-
-
-
-
-
 			local ticks = {}
 			for i = 1, scale and #scale.ticks or 0 do
 				ticks[#ticks + 1] = tostring(scale.ticks[i])
 			end
-
 
 			local tickWords = #ticks > 0 and table.concat(ticks, " ") or "none"
 			if tickRule == "floor" then
@@ -5391,8 +4430,6 @@ local function regionLinesPinned(format)
 					tostring(scale and scale.step or "none"), tickWords)
 			for p = 1, #panels do
 				local panel = panels[p]
-
-
 
 				local mmr = A.panelMmr(summary.series, panel.first, panel.last)
 				local mmrSaid
@@ -5409,15 +4446,6 @@ local function regionLinesPinned(format)
 			end
 		end
 	end
-
-
-
-
-
-
-
-
-
 
 
 
@@ -5449,8 +4477,6 @@ local function regionLinesPinned(format)
 			end
 		end
 
-
-
 		for _, lines in ipairs({ "viewportLines", "listEdgeLines", "foldControlLines" }) do
 			if type(A[lines]) == "function" then
 				local ok, said = pcall(A[lines])
@@ -5462,8 +4488,6 @@ local function regionLinesPinned(format)
 			end
 		end
 	end
-
-
 
 
 	if historyUp then
@@ -5478,7 +4502,6 @@ local function regionLinesPinned(format)
 		end
 		local ok, summary = pcall(A.summarize, fmt, season, A.windowCharacter(), bound)
 		local headline = ok and type(summary) == "table" and summary.rating ~= nil or false
-
 
 		if type(A.standingShape) == "function" then
 			out[#out + 1] = ("%s  standing strip %s, %s tall; the reading region, the graph and the "
@@ -5506,22 +4529,16 @@ local function regionLinesPinned(format)
 	end
 
 
-
 	local tabs = type(A.tabList) == "function" and A.tabList(A.windowCharacter()) or {}
 	for i = 1, #tabs do
 		describe(tabs[i].label, tabs[i].format)
 	end
-
 
 	cardLines()
 	roomLine()
 	bodyLine()
 	return out
 end
-
-
-
-
 
 
 
@@ -5536,9 +4553,7 @@ function A.regionLines(format)
 end
 
 
-
 local PANE_SETS = { "round", "specpair", "lobby" }
-
 
 
 local FAULT_FAMILIES = {
@@ -5549,10 +4564,7 @@ local FAULT_FAMILIES = {
 	"no clause past its room",
 	"no column over an accessor nothing fills",
 	"no sortable column nothing orders by",
-
-
 	"no column set whose shares miss the room they were spread to",
-
 
 	"no split pane narrower than the key column it draws",
 	"no reading named by more than one card or by none",
@@ -5561,9 +4573,6 @@ local FAULT_FAMILIES = {
 	"no viewport ending inside one of its own rows",
 	"no caption contradicted by the figures under it",
 }
-
-
-
 
 
 
@@ -5576,7 +4585,6 @@ function A.faultPaneSets()
 end
 
 
-
 function A.faultFamilies()
 	local out = {}
 	for i = 1, #FAULT_FAMILIES do
@@ -5587,28 +4595,12 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 local function regionFaultsPinned()
 	local out = {}
 
 	local function fault(what, where, why)
 		out[#out + 1] = ("%s  %s: %s"):format(what, where, why)
 	end
-
 
 
 	local tabs = type(A.tabList) == "function" and A.tabList(A.windowCharacter()) or {}
@@ -5633,19 +4625,10 @@ local function regionFaultsPinned()
 
 
 
-
 			if #lines > A.readingRows() then
 				fault("clause-dropped", name,
 					("%d clauses over a pool of %d"):format(#lines, A.readingRows()))
 			end
-
-
-
-
-
-
-
-
 
 
 
@@ -5668,12 +4651,9 @@ local function regionFaultsPinned()
 			end
 
 
-
 			local room = A.windowWidth() - A.metric("margin") * 2
 				- A.metric("readingKeyWidth") - A.metric("readingKeyGap")
 			for l = 1, #lines do
-
-
 
 
 				local wide, roomAt = A.unitFigure(A.labelRoom(lines[l].text)), A.unitFigure(room)
@@ -5683,7 +4663,6 @@ local function regionFaultsPinned()
 				end
 			end
 		end
-
 
 
 
@@ -5700,15 +4679,6 @@ local function regionFaultsPinned()
 
 
 
-
-
-
-
-
-
-
-
-
 	if type(A.lastStripRow) == "function" and type(A.overlapFaults) == "function" then
 		local blocks, where = A.lastStripRow()
 		if type(blocks) == "table" then
@@ -5717,7 +4687,6 @@ local function regionFaultsPinned()
 			end
 		end
 	end
-
 
 
 
@@ -5732,11 +4701,6 @@ local function regionFaultsPinned()
 
 
 
-
-
-
-
-
 	if type(A.promisedRooms) == "function" and type(A.shortfallFaults) == "function" then
 		for _, said in ipairs(A.shortfallFaults(A.promisedRooms())) do
 			fault(said.what, said.where, said.why)
@@ -5746,20 +4710,11 @@ local function regionFaultsPinned()
 
 
 
-
-
-
-
-
-
-
-
 	if type(A.recordedViewports) == "function" and type(A.viewportFaults) == "function" then
 		for _, said in ipairs(A.viewportFaults(A.recordedViewports())) do
 			fault(said.what, said.where, said.why)
 		end
 	end
-
 
 
 	if type(A.rowColumns) == "function" and type(A.columnFillers) == "function" then
@@ -5788,8 +4743,6 @@ local function regionFaultsPinned()
 
 
 
-
-
 	if type(A.rowColumns) == "function" then
 		for _, which in ipairs(A.faultPaneSets()) do
 			local fillers = (which == "lobby") and A.lobbyFillers or A.paneFillers
@@ -5801,11 +4754,6 @@ local function regionFaultsPinned()
 			end
 		end
 	end
-
-
-
-
-
 
 
 
@@ -5822,21 +4770,12 @@ local function regionFaultsPinned()
 
 
 
-
-
-
-
-
-
 	if type(A.rowColumns) == "function" and type(A.askFillers) == "function"
 		and type(A.askQuestions) == "function" then
 		local questions = A.askQuestions()
 
-
-
 		local room = type(A.askTableWidth) == "function" and A.askTableWidth() or nil
 		for i = 1, #questions do
-
 
 			if questions[i].columns ~= nil then
 				local which = tostring(questions[i].columns)
@@ -5846,16 +4785,12 @@ local function regionFaultsPinned()
 					fault("column-unfilled", which .. " answer set", said)
 				end
 
-
 				local span = type(A.columnSpan) == "function" and A.unitFigure(A.columnSpan(columns)) or nil
 				local roomAt = A.unitFigure(room)
 				if roomAt ~= nil and roomAt > 0 and span ~= nil and span ~= roomAt then
 					fault("column-share", which .. " answer set",
 						("the four shares span %s in a pane of %s"):format(tostring(span), tostring(roomAt)))
 				end
-
-
-
 
 
 				for c = 1, (type(columns) == "table" and #columns or 0) do
@@ -5874,15 +4809,6 @@ local function regionFaultsPinned()
 
 
 
-
-
-
-
-
-
-
-
-
 	if type(A.specGroupRuns) == "function" then
 		for _, group in ipairs(A.specGroupRuns()) do
 			local run, need = A.unitFigure(group.run), A.unitFigure(group.need)
@@ -5894,7 +4820,6 @@ local function regionFaultsPinned()
 		end
 	end
 	if type(A.specPaneWidth) == "function" then
-
 		local pane = A.unitFigure(A.specPaneWidth())
 		local need = A.unitFigure(A.metric("readingKeyWidth") + A.metric("readingKeyGap"))
 		if pane ~= nil and need ~= nil and pane < need then
@@ -5903,7 +4828,6 @@ local function regionFaultsPinned()
 					tostring(need)))
 		end
 	end
-
 
 
 
@@ -5953,11 +4877,6 @@ local function regionFaultsPinned()
 	end
 
 
-
-
-
-
-
 	if type(A.recordedLobbyClaims) == "function" and type(A.lobbyClaimFaults) == "function" then
 		for _, held in ipairs(A.recordedLobbyClaims()) do
 			for _, said in ipairs(A.lobbyClaimFaults(held.claim, held.drawn)) do
@@ -5971,10 +4890,6 @@ local function regionFaultsPinned()
 end
 
 
-
-
-
-
 function A.regionFaults()
 	local held = type(A.windowFrameOf) == "function" and A.windowFrameOf("matches") or nil
 	if type(A.withScopeClock) == "function" and type(A.withWindowWidth) == "function" then
@@ -5984,8 +4899,6 @@ function A.regionFaults()
 	end
 	return regionFaultsPinned()
 end
-
-
 
 
 
@@ -6006,7 +4919,6 @@ local OVERVIEW_RUN = 20
 
 local OVERVIEW_WEEK_MIN = 6
 local OVERVIEW_CELL_MIN = 14
-
 
 
 local OVERVIEW_CHART_MIN = 20
@@ -6097,7 +5009,6 @@ local function overviewWeek(host, index)
 end
 
 
-
 local function overviewCell(host, day, block)
 	host.cells[day] = host.cells[day] or {}
 	local cell = host.cells[day][block]
@@ -6164,8 +5075,6 @@ function A.overviewRecordText(record)
 end
 
 
-
-
 function A.overviewBlockFloors()
 	local label, note = A.fontSize("label"), A.fontSize("note")
 	local week = label + 8 + OVERVIEW_CHART_MIN + note * 2 + 6
@@ -6210,8 +5119,6 @@ end
 
 
 
-
-
 function A.paintStatsOverview(frame, overview, season, bound, settled)
 	local host = frame and frame.statsOverview
 	if host == nil then
@@ -6236,7 +5143,6 @@ function A.paintStatsOverview(frame, overview, season, bound, settled)
 	local runRoom = OVERVIEW_RUN * (OVERVIEW_BLOCK + OVERVIEW_BLOCK_GAP)
 	local gap = A.metric("rowCellGap")
 	local nameWidth = math.max(60, width - pad * 2 - fixed - runRoom - gap * 6)
-
 
 	local at = { pad }
 	at[2] = pad + nameWidth + gap + OVERVIEW_PLAYED
@@ -6264,8 +5170,6 @@ function A.paintStatsOverview(frame, overview, season, bound, settled)
 
 
 
-
-
 	local namesFit, tiersFit = true, true
 	for i = 1, #formats do
 		local held = formats[i]
@@ -6280,7 +5184,6 @@ function A.paintStatsOverview(frame, overview, season, bound, settled)
 			tiersFit = false
 		end
 	end
-
 
 
 	local rowTop = top
@@ -6344,8 +5247,6 @@ function A.paintStatsOverview(frame, overview, season, bound, settled)
 		A.style(row.rate, "numberSmall", tone)
 
 
-
-
 		row.rating:ClearAllPoints()
 		row.rating:SetPoint("LEFT", row, "LEFT", at[4], 0)
 		row.rating:SetWidth(OVERVIEW_RATING)
@@ -6359,6 +5260,7 @@ function A.paintStatsOverview(frame, overview, season, bound, settled)
 		row.season:SetPoint("LEFT", row, "LEFT", at[5], 0)
 		row.season:SetText(A.overviewSeasonText(held))
 		A.style(row.season, "note", "dim")
+
 
 
 		local marks = held.last or {}
@@ -6390,7 +5292,6 @@ function A.paintStatsOverview(frame, overview, season, bound, settled)
 	for i = #formats + 1, #host.rows do
 		host.rows[i]:Hide()
 	end
-
 
 
 	local blocksTop = rowTop - A.metric("paneGap")
@@ -6582,7 +5483,6 @@ function A.paintStatsOverview(frame, overview, season, bound, settled)
 	A.style(host.legendWin, "note", "win")
 
 
-
 	if not weekFits then
 		host.weekTitle:Hide()
 		host.weekKey:Hide()
@@ -6638,7 +5538,6 @@ function A.paintStatsOverview(frame, overview, season, bound, settled)
 		nameForm = figures.nameForm, ratingForm = figures.ratingForm, chart = chart, cell = cellHeight,
 		height = measured and A.unitFigure(hostHeight) or nil }, "ui")
 	host.figures = figures
-
 
 
 	host.paintedHeight = measured and hostHeight or nil

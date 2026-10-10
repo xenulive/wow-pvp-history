@@ -8,47 +8,20 @@
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 local _, A = ...
 
 
 local GetNumBattlefieldScores = GetNumBattlefieldScores
 
 
-
 local SCREEN_UNITS = 768
-
 
 
 local TOP_DROP = SCREEN_UNITS / 6
 
 
-
-
 local RISE_SECONDS = 0.5
 local FALL_SECONDS = 0.5
-
-
-
-
-
-
 
 
 local BASE_SECONDS = 4
@@ -56,16 +29,7 @@ local LINE_SECONDS = 1
 
 
 
-
-
-
-
 local SECONDS_LINE_CEILING = 15
-
-
-
-
-
 
 
 
@@ -77,19 +41,13 @@ local SETTLE_READS = 3
 local MAX_ATTEMPTS = 20
 
 
-
 local firedFor
-
 
 
 local reported = false
 
 
 local banner
-
-
-
-
 
 
 
@@ -102,8 +60,6 @@ function A.announceEnabled()
 	db.ui = db.ui or {}
 	return db.ui.announce ~= false
 end
-
-
 
 
 
@@ -120,7 +76,6 @@ function A.setAnnounce(enabled)
 	end
 
 
-
 	if A.notifyAnnounceSetting then
 		A.notifyAnnounceSetting()
 	end
@@ -130,25 +85,16 @@ end
 
 
 
-
-
-
-
 local TIME_MIN, TIME_MAX, TIME_STEP, TIME_DEFAULT = 50, 300, 10, 100
-
 
 
 local SIZE_MIN, SIZE_MAX, SIZE_STEP, SIZE_DEFAULT = 75, 150, 5, 100
 
 
-
 local OPACITY_MIN, OPACITY_MAX, OPACITY_STEP, OPACITY_DEFAULT = 0, 100, 5, 85
 
 
-
 local FIT_FLOOR = 50
-
-
 
 
 
@@ -165,8 +111,6 @@ local function percentage(value, min, max, step)
 	end
 	return value
 end
-
-
 
 
 
@@ -190,13 +134,9 @@ function A.announceTime()
 end
 
 
-
-
-
 function A.announceTimeRange()
 	return TIME_MIN, TIME_MAX, TIME_STEP, TIME_DEFAULT
 end
-
 
 
 function A.setAnnounceTime(value)
@@ -218,8 +158,6 @@ function A.setAnnounceTime(value)
 end
 
 
-
-
 function A.announceSize()
 	local db = A.db()
 	if not db or type(db.ui) ~= "table" then
@@ -232,9 +170,6 @@ end
 function A.announceSizeRange()
 	return SIZE_MIN, SIZE_MAX, SIZE_STEP, SIZE_DEFAULT
 end
-
-
-
 
 
 function A.setAnnounceSize(value)
@@ -259,7 +194,6 @@ function A.setAnnounceSize(value)
 end
 
 
-
 function A.announceOpacity()
 	local db = A.db()
 	if not db or type(db.ui) ~= "table" then
@@ -272,9 +206,6 @@ end
 function A.announceOpacityRange()
 	return OPACITY_MIN, OPACITY_MAX, OPACITY_STEP, OPACITY_DEFAULT
 end
-
-
-
 
 
 function A.setAnnounceOpacity(value)
@@ -301,14 +232,10 @@ end
 
 
 
-
-
-
 local SHAPES = {
 	{ value = "split", label = "Side by side", said = "side by side" },
 	{ value = "stacked", label = "One column", said = "in one column" },
 }
-
 
 
 local SHAPE_DEFAULT = "split"
@@ -325,9 +252,7 @@ end
 
 
 
-
 local heldShape
-
 
 
 function A.announceShape()
@@ -336,8 +261,6 @@ function A.announceShape()
 	end
 	return A.announceStoredShape()
 end
-
-
 
 
 function A.announceStoredShape()
@@ -353,8 +276,6 @@ function A.announceStoredShape()
 end
 
 
-
-
 function A.announceShapeChoices()
 	local out = {}
 	for i = 1, #SHAPES do
@@ -362,8 +283,6 @@ function A.announceShapeChoices()
 	end
 	return out
 end
-
-
 
 
 function A.setAnnounceShape(value)
@@ -386,9 +305,6 @@ function A.setAnnounceShape(value)
 end
 
 
-
-
-
 function A.holdAnnounceShape(value)
 	if value ~= nil and not isShape(value) then
 		return false
@@ -397,7 +313,6 @@ function A.holdAnnounceShape(value)
 	if A.announcePreviewActive and A.announcePreviewActive() then
 		pcall(A.announcePreview)
 	end
-
 
 	A.trace("view", { source = "typed-shape", shape = A.announceShape(), state = A.announceStoredShape() },
 		"ui")
@@ -410,10 +325,7 @@ function A.announceHeldShape()
 end
 
 
-
-
 local heldLocked
-
 
 
 local reconsider
@@ -427,9 +339,6 @@ function A.announceLocked()
 end
 
 
-
-
-
 function A.announceStoredLocked()
 	local db = A.db()
 	if not db or type(db.ui) ~= "table" then
@@ -437,9 +346,6 @@ function A.announceStoredLocked()
 	end
 	return db.ui.announceUnlocked ~= true
 end
-
-
-
 
 
 
@@ -458,9 +364,6 @@ function A.setAnnounceLocked(on)
 	reconsider(on and "locked" or "unlocked")
 	return true
 end
-
-
-
 
 
 function A.holdAnnounceLocked(value)
@@ -483,7 +386,6 @@ function A.announceHeldLocked()
 end
 
 
-
 local function timedLines(composed)
 	local lines = 0
 	if type(composed) == "table" then
@@ -498,15 +400,10 @@ local function timedLines(composed)
 end
 
 
-
-
-
 function A.announceSeconds(composed)
 	local seconds = BASE_SECONDS + math.min(timedLines(composed), SECONDS_LINE_CEILING) * LINE_SECONDS
 	return seconds * A.announceTime() / 100
 end
-
-
 
 
 function A.announceFullSeconds()
@@ -516,13 +413,6 @@ function A.announceFullSeconds()
 	end
 	return A.announceSeconds({ names = names, tagLines = 0 })
 end
-
-
-
-
-
-
-
 
 
 
@@ -549,15 +439,9 @@ end
 
 
 
-
-
 local DEFAULT_POINT = "TOP"
 local DEFAULT_X = 0
 local DEFAULT_Y = -TOP_DROP
-
-
-
-
 
 
 local function whole(value)
@@ -566,9 +450,6 @@ local function whole(value)
 	end
 	return math.floor(value + 0.5)
 end
-
-
-
 
 
 function A.announcePosition()
@@ -586,8 +467,6 @@ function A.announcePosition()
 	end
 	return { point = held.point, x = x, y = y }
 end
-
-
 
 
 function A.setAnnouncePosition(geometry)
@@ -616,9 +495,6 @@ end
 
 
 
-
-
-
 local function contained(fn, ...)
 	local ok, err = pcall(fn, ...)
 	if ok then
@@ -639,22 +515,13 @@ end
 
 
 
-
-
-
-
-
-
-
 local SIDES = {
 	{ side = "against", label = "VS", tone = "loss" },
 	{ side = "with", label = "WITH", tone = "win" },
 }
 
 
-
 local NO_RECORD = "-"
-
 
 
 local RECORD_BUCKETS = {
@@ -662,16 +529,6 @@ local RECORD_BUCKETS = {
 	with = { "with" },
 	summed = { "against", "with" },
 }
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -696,12 +553,6 @@ local function recordText(held, side)
 	end
 	return A.winRecordText({ wins = wins, decided = decided, draws = draws }) or NO_RECORD
 end
-
-
-
-
-
-
 
 
 
@@ -735,7 +586,6 @@ local function isNoted(it)
 end
 
 
-
 local function notedFirst(a, b)
 	local na, nb = isNoted(a), isNoted(b)
 	if na ~= nb then
@@ -743,9 +593,6 @@ local function notedFirst(a, b)
 	end
 	return worstFirst(a, b)
 end
-
-
-
 
 
 
@@ -764,15 +611,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
 local function compose(found, selfFaction, everyoneWith)
 	if #found == 0 then
 		return nil
@@ -781,20 +619,12 @@ local function compose(found, selfFaction, everyoneWith)
 	table.sort(found, notedFirst)
 
 
-
 	local noted = 0
 	for i = 1, #found do
 		if found[i].text ~= nil or found[i].rating ~= nil then
 			noted = noted + 1
 		end
 	end
-
-
-
-
-
-
-
 
 
 
@@ -818,10 +648,6 @@ local function compose(found, selfFaction, everyoneWith)
 
 
 
-
-
-
-
 	local runs = {}
 	for s = 1, #SIDES + 1 do
 		local want = SIDES[s] and SIDES[s].side or nil
@@ -840,7 +666,6 @@ local function compose(found, selfFaction, everyoneWith)
 			}
 		end
 	end
-
 
 
 	local tagLines = 0
@@ -868,13 +693,6 @@ end
 
 
 
-
-
-
-
-
-
-
 function A.announceKnown(rows, selfName, selfQualified, nameIndex)
 	if type(rows) ~= "table" or #rows == 0 then
 		return nil
@@ -894,14 +712,12 @@ function A.announceKnown(rows, selfName, selfQualified, nameIndex)
 		then
 			local guid = A.playerByName(index, name)
 
-
 			if guid and not seen[guid] then
 				seen[guid] = true
 				local note = A.noteFor(guid)
 				local text = type(note) == "table" and note.text or nil
 				local rating = type(note) == "table" and note.rating or nil
 				local tags = type(note) == "table" and note.tags or nil
-
 
 				local held = players[guid]
 				local met = (type(held) == "table" and type(held.matches) == "number")
@@ -939,9 +755,6 @@ end
 
 
 
-
-
-
 local function classFor(guid)
 	local fn = GetPlayerInfoByGUID
 	if type(fn) ~= "function" then
@@ -953,17 +766,6 @@ local function classFor(guid)
 	end
 	return nil
 end
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -1021,12 +823,7 @@ end
 
 
 
-
-
 local previewUp = false
-
-
-
 
 
 
@@ -1037,16 +834,10 @@ local plateUp = false
 local PLATE_WORD = "Announcement"
 
 
-
 local FRAME_NAME = "WowPvpHistoryAnnounce"
 
 
-
-
-
 local drawnScale = 1
-
-
 
 
 
@@ -1055,7 +846,6 @@ local dragFrom
 
 
 local NOTHING_READ = {}
-
 
 
 local drawnPercent
@@ -1075,9 +865,6 @@ local ANCHOR_Y = {
 }
 
 
-
-
-
 local function screenWidth()
 	if type(UIParent) ~= "table" or type(UIParent.GetWidth) ~= "function" then
 		return nil
@@ -1088,11 +875,6 @@ local function screenWidth()
 	end
 	return width
 end
-
-
-
-
-
 
 
 
@@ -1127,10 +909,6 @@ local function screenRoom()
 end
 
 
-
-
-
-
 local function screenBelow()
 	local stored = A.announcePosition()
 	local point = stored and stored.point or DEFAULT_POINT
@@ -1157,11 +935,6 @@ end
 
 
 
-
-
-
-
-
 local function placeAt(frame, scale)
 	local stored = A.announcePosition()
 	local point = stored and stored.point or DEFAULT_POINT
@@ -1172,10 +945,6 @@ local function placeAt(frame, scale)
 end
 
 
-
-
-
-
 local function applyScale(frame, percent)
 	local scale = percent / 100
 	drawnScale = scale
@@ -1184,8 +953,6 @@ local function applyScale(frame, percent)
 	pcall(frame.SetSize, frame, SCREEN_UNITS / scale, (SCREEN_UNITS / 6) / scale)
 	placeAt(frame, scale)
 end
-
-
 
 
 
@@ -1209,9 +976,6 @@ end
 
 
 
-
-
-
 local function release(frame)
 	previewUp = false
 
@@ -1220,10 +984,8 @@ local function release(frame)
 		pcall(frame.word.Hide, frame.word)
 	end
 
-
 	dragFrom = nil
 	escapeList(false)
-
 
 	if type(A.refreshOptionsWindow) == "function" then
 		pcall(A.refreshOptionsWindow)
@@ -1234,9 +996,6 @@ local function release(frame)
 	pcall(frame.EnableMouse, frame, false)
 	pcall(frame.SetMovable, frame, false)
 end
-
-
-
 
 
 local function hold(frame)
@@ -1250,14 +1009,10 @@ local function hold(frame)
 	escapeList(true)
 	frame:Show()
 
-
 	if type(A.refreshOptionsWindow) == "function" then
 		pcall(A.refreshOptionsWindow)
 	end
 end
-
-
-
 
 
 
@@ -1277,7 +1032,6 @@ end
 
 
 
-
 local GROUND = { 0.055, 0.059, 0.071 }
 local GROUND_EDGE = { 1, 1, 1, 0.1 }
 
@@ -1286,9 +1040,7 @@ local TAG_EDGE = { 1, 1, 1, 0.2 }
 local SIDE_RULE = { 1, 1, 1, 0.25 }
 
 
-
 local NOTE_MARK = "N"
-
 
 
 local function edgeAlpha(opacity)
@@ -1301,8 +1053,6 @@ local function colourEdges(edges, r, g, b, a)
 		edges[i]:SetColorTexture(r, g, b, a)
 	end
 end
-
-
 
 
 
@@ -1325,10 +1075,6 @@ local function fourEdges(frame, layer)
 	end
 	return out
 end
-
-
-
-
 
 
 local function box(edges, origin, x, y, w, h)
@@ -1365,10 +1111,6 @@ end
 
 
 
-
-
-
-
 local function build()
 	if banner then
 		return banner
@@ -1376,9 +1118,6 @@ local function build()
 	if type(CreateFrame) ~= "function" then
 		return nil
 	end
-
-
-
 
 
 
@@ -1390,17 +1129,6 @@ local function build()
 
 	placeAt(frame, drawnScale)
 	frame:SetSize(SCREEN_UNITS, SCREEN_UNITS / 6)
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -1418,13 +1146,9 @@ local function build()
 	end)
 
 
-
 	frame:SetClampedToScreen(true)
 	frame:SetMovable(false)
 	frame:RegisterForDrag("LeftButton")
-
-
-
 
 	frame:SetScript("OnDragStart", function(self)
 		if not pcall(self.StartMoving, self) then
@@ -1438,8 +1162,6 @@ local function build()
 	frame:SetScript("OnDragStop", function(self)
 		pcall(self.StopMovingOrSizing, self)
 
-
-
 		local paused
 		if dragFrom ~= nil and fadeStarted ~= nil then
 			local now = GetTime()
@@ -1448,19 +1170,13 @@ local function build()
 		end
 		dragFrom = nil
 
-
-
 		local read = A.frameGeometry(self)
 		if read and read.point then
-
-
 
 			read.x = read.x * drawnScale
 			read.y = read.y * drawnScale
 			A.setAnnouncePosition(read)
 		end
-
-
 
 		local at = read or NOTHING_READ
 		A.trace("announce", {
@@ -1476,13 +1192,9 @@ local function build()
 	frame:Hide()
 
 
-
-
-
 	frame.plate = frame:CreateTexture(nil, "BACKGROUND")
 	frame.plate:SetPoint("TOP", frame, "TOP", 0, 0)
 	frame.plate:Hide()
-
 
 	frame.edges = fourEdges(frame, "BORDER")
 	frame.edges[1]:SetPoint("TOPLEFT", frame.plate, "TOPLEFT", 0, 0)
@@ -1498,7 +1210,6 @@ local function build()
 	frame.edges[4]:SetPoint("BOTTOMRIGHT", frame.plate, "BOTTOMRIGHT", 0, 0)
 	frame.edges[4]:SetWidth(1)
 	hideAll(frame.edges)
-
 
 
 	frame.labels = {}
@@ -1518,7 +1229,6 @@ local function build()
 	frame.pills = {}
 
 
-
 	frame.word = frame:CreateFontString(nil, "OVERLAY")
 	A.style(frame.word, "label", "text")
 	frame.word:SetJustifyH("CENTER")
@@ -1529,11 +1239,6 @@ local function build()
 	banner = frame
 	return banner
 end
-
-
-
-
-
 
 
 local function pillAt(frame, i)
@@ -1552,7 +1257,6 @@ local function pillAt(frame, i)
 	pill.markText = text(frame, "announceMark")
 	pill.markText:SetJustifyH("CENTER")
 	pill.markText:SetText(NOTE_MARK)
-
 
 	local r, g, b = A.color("panelDeep")
 	pill.markText:SetTextColor(r, g, b, 1)
@@ -1597,19 +1301,6 @@ local function pillName(name)
 	local bare = A.nameParts(name, name)
 	return bare
 end
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -1749,8 +1440,6 @@ local function paint(frame, composed, shape)
 		pill.bar:Show()
 
 
-
-
 		local after = partGap + item.recordWidth + (it.noted and (partGap + markSide) or 0)
 		local nameRoom = math.max(width - padLeft - padRight - after, 1)
 		local nameWidth = math.min(item.nameWidth, nameRoom)
@@ -1778,8 +1467,6 @@ local function paint(frame, composed, shape)
 			pill.mark:Hide()
 			pill.markText:Hide()
 		end
-
-
 
 
 		local tagTop = top + oneLine - padY + rowGap
@@ -1858,7 +1545,6 @@ local function paint(frame, composed, shape)
 	end
 
 
-
 	local indent = 0
 	if not shared then
 		for g = 1, #groups do
@@ -1904,7 +1590,6 @@ local function paint(frame, composed, shape)
 	end
 
 
-
 	origin:SetSize(width, tall)
 	origin:Hide()
 	hideAll(frame.edges)
@@ -1927,7 +1612,6 @@ local function paint(frame, composed, shape)
 end
 
 
-
 local function fitTo(width, tall)
 	local chosen = A.announceSize()
 	local room = screenRoom()
@@ -1939,18 +1623,10 @@ end
 
 
 
-
-
-
-
-
-
-
 local function fade(frame, total)
 	fadeStarted = (type(GetTime) == "function") and GetTime() or nil
 	dragFrom = nil
 	if fadeStarted == nil then
-
 
 		frame:SetAlpha(1)
 		frame:Show()
@@ -1990,21 +1666,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 function A.announceShow(composed, held)
 	if type(composed) ~= "table" or type(composed.names) ~= "table" or #composed.names == 0 then
 		return false
@@ -2013,8 +1674,6 @@ function A.announceShow(composed, held)
 	if not frame then
 		return false
 	end
-
-
 
 	local tookPlate = plateUp
 	plateUp = false
@@ -2037,8 +1696,6 @@ function A.announceShow(composed, held)
 		hold(frame)
 	else
 
-
-
 		unlocked = not A.announceLocked()
 		if unlocked then
 			frame:SetMovable(true)
@@ -2049,7 +1706,6 @@ function A.announceShow(composed, held)
 	if tookPlate then
 		A.trace("view", { source = "plate", state = "hidden", reason = held and "preview" or "banner" }, "ui")
 	end
-
 
 	return true, {
 		seconds = seconds,
@@ -2080,17 +1736,12 @@ end
 
 
 
-
-
-
 local NOTHING_DRAWN = {}
 
 
 function A.announceFrame()
 	return banner
 end
-
-
 
 
 function A.announceDrawnSize()
@@ -2103,10 +1754,7 @@ end
 
 
 
-
-
 local SAMPLE_SIZE = 8
-
 
 
 local SAMPLE_FULL = 15
@@ -2115,18 +1763,12 @@ local SAMPLE_FULL = 15
 local fullSample = false
 
 
-
 local SAMPLE_CLASS = { "PRIEST", "DRUID", "WARRIOR", "MAGE", "ROGUE", "HUNTER", "PALADIN", "WARLOCK" }
-
-
 
 
 
 local SAMPLE_RECORD = { { 0, 2 }, { 1, 1 }, { 1, 1 }, { 1, 0 }, { 2, 0 }, { 3, 4 }, { 0, 0 }, { 2, 1 } }
 local SAMPLE_WITH = { { 2, 1 }, { 0, 3 }, { 2, 2 }, { 0, 1 }, { 1, 1 }, { 1, 0 }, { 0, 0 }, { 3, 0 } }
-
-
-
 
 
 local SAMPLE_TAGS = {
@@ -2140,19 +1782,8 @@ local SAMPLE_NOTED = { [1] = true, [2] = true, [5] = true, [6] = true }
 
 
 
-
-
-
-
-
-
-
-
-
-
 function A.announceSample(count)
 	local total = type(count) == "number" and count or SAMPLE_SIZE
-
 
 	if type(A.fixtureNames) ~= "function" then
 		return nil
@@ -2161,7 +1792,6 @@ function A.announceSample(count)
 	if type(names) ~= "table" or #names < total then
 		return nil
 	end
-
 
 
 	local rating = { -2, -1, 0, 1, 2 }
@@ -2174,15 +1804,12 @@ function A.announceSample(count)
 			name = names[i],
 			classToken = SAMPLE_CLASS[((i - 1) % #SAMPLE_CLASS) + 1],
 
-
 			faction = (i % 2 == 0) and 1 or 0,
 			rating = rating[i],
 			mark = A.ratingMark(rating[i]),
 
-
 			text = SAMPLE_NOTED[i] and "a note the banner does not draw" or nil,
 			tags = SAMPLE_TAGS[i],
-
 
 			held = {
 				against = { wins = record[1], decided = record[1] + record[2] },
@@ -2198,14 +1825,6 @@ end
 function A.announcePreviewActive()
 	return previewUp
 end
-
-
-
-
-
-
-
-
 
 
 
@@ -2248,9 +1867,6 @@ function A.announcePreview()
 end
 
 
-
-
-
 function A.announcePreviewFull(on)
 	fullSample = on == true
 	return fullSample
@@ -2262,9 +1878,6 @@ function A.announcePreviewFullHeld()
 end
 
 
-
-
-
 function A.announcePreviewEnd()
 	if not previewUp or not banner then
 		return false
@@ -2272,9 +1885,6 @@ function A.announcePreviewEnd()
 	pcall(banner.Hide, banner)
 	return true
 end
-
-
-
 
 
 
@@ -2292,14 +1902,9 @@ end
 
 
 
-
 function A.announcePlateActive()
 	return plateUp
 end
-
-
-
-
 
 
 
@@ -2330,7 +1935,6 @@ local function drawPlate()
 	frame.word:Show()
 
 
-
 	frame:SetScript("OnUpdate", nil)
 	fadeStarted = nil
 	dragFrom = nil
@@ -2341,15 +1945,6 @@ local function drawPlate()
 	frame:Show()
 	return true
 end
-
-
-
-
-
-
-
-
-
 
 
 
@@ -2391,9 +1986,6 @@ end
 
 
 
-
-
-
 function A.resetAnnouncePosition()
 	local stored = A.setAnnouncePosition(nil)
 	if banner then
@@ -2405,10 +1997,6 @@ function A.resetAnnouncePosition()
 	reconsider("reset")
 	return stored
 end
-
-
-
-
 
 
 
@@ -2449,8 +2037,6 @@ local function readRows()
 end
 
 
-
-
 local function ownNames()
 	if type(UnitName) ~= "function" then
 		return nil, nil
@@ -2480,14 +2066,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
 local function attempt(ladder, n)
 	local record = ladder.record
 	if A.db() == nil or A.db().active ~= record then
@@ -2503,8 +2081,6 @@ local function attempt(ladder, n)
 
 	if #rows == 0 then
 		if n >= MAX_ATTEMPTS or not canWait then
-
-
 
 			A.trace("announce", { reason = "no-rows", attempt = n })
 			return
@@ -2522,10 +2098,8 @@ local function attempt(ladder, n)
 	end
 
 
-
 	local fillText = table.concat(fill, ",")
 	local own, qualified = ownNames()
-
 
 
 	local nameIndex = nil
@@ -2533,7 +2107,6 @@ local function attempt(ladder, n)
 		local built, made = pcall(A.playerNameIndex)
 		nameIndex = built and type(made) == "table" and made or nil
 	end
-
 
 
 	if A.alertGatesGroup then
@@ -2546,7 +2119,6 @@ local function attempt(ladder, n)
 	local composed = A.announceKnown(rows, own, qualified, nameIndex)
 	if composed == nil then
 
-
 		A.trace("announce", { reason = "nobody", n = #rows, attempt = n, state = state,
 			fill = fillText })
 		return
@@ -2554,16 +2126,6 @@ local function attempt(ladder, n)
 
 	local drawn, drawing = A.announceShow(composed)
 	local did = drawing or NOTHING_DRAWN
-
-
-
-
-
-
-
-
-
-
 
 
 	A.trace("announce", {
@@ -2606,17 +2168,7 @@ end
 
 
 
-
 local START_STATES = { StartUp = true, Engaged = true }
-
-
-
-
-
-
-
-
-
 
 
 
@@ -2636,9 +2188,6 @@ function A.announceRoster(record, state)
 			return false
 		end
 	end
-
-
-
 
 
 	local noted = A.notedCount()
@@ -2665,15 +2214,7 @@ end
 
 
 
-
-
-
-
 local groupSeen = {}
-
-
-
-
 
 
 
@@ -2742,14 +2283,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
 function A.announceGroupRoster(guids, selfGuid)
 	if type(guids) ~= "table" or not A.announceEnabled() then
 		return false
@@ -2760,10 +2293,6 @@ function A.announceGroupRoster(guids, selfGuid)
 	end)
 	return drawn
 end
-
-
-
-
 
 
 
@@ -2783,9 +2312,6 @@ function A.recordRows(record)
 	local own = record.character and participants[record.character]
 	return rows, type(own) == "table" and own.name or nil
 end
-
-
-
 
 
 
@@ -2828,7 +2354,6 @@ function A.announceFromRecord(record)
 	})
 	return drawn
 end
-
 
 
 function A.announceGroupLeft()

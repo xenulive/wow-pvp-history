@@ -3,20 +3,7 @@
 
 
 
-
-
-
-
-
-
-
-
 local _, A = ...
-
-
-
-
-
 
 
 
@@ -30,15 +17,10 @@ A.PLAYER_TAG_MAX = 24
 A.PLAYER_MAX_TAGS = 10
 
 
-
 A.PLAYER_COMMENT_MAX = 200
 
 
-
 A.PLAYER_MAX_COMMENTS = 50
-
-
-
 
 
 
@@ -57,9 +39,6 @@ local function store(create)
 	end
 	return db.notes
 end
-
-
-
 
 
 function A.noteFor(guid)
@@ -88,22 +67,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 local function traceNote(field, state, reason, text, bound)
 	local counted = type(text) == "string"
 	A.trace("authored", {
@@ -115,10 +78,6 @@ local function traceNote(field, state, reason, text, bound)
 end
 
 
-
-
-
-
 function A.letterCount(text)
 	if type(text) ~= "string" then
 		return 0
@@ -126,8 +85,6 @@ function A.letterCount(text)
 	local _, n = text:gsub("[^\128-\191]", "")
 	return n
 end
-
-
 
 
 function A.writtenAbout(note)
@@ -138,12 +95,6 @@ function A.writtenAbout(note)
 		or (type(note.tags) == "table" and #note.tags > 0)
 		or (type(note.comments) == "table" and #note.comments > 0)
 end
-
-
-
-
-
-
 
 
 
@@ -170,8 +121,6 @@ local function entryFor(guid, create)
 		entry = {}
 		notes[guid] = entry
 
-
-
 		if type(A.clientPlayerName) == "function" then
 			local ok, name = pcall(A.clientPlayerName, guid)
 			if ok and name then
@@ -181,11 +130,6 @@ local function entryFor(guid, create)
 	end
 	return entry, notes
 end
-
-
-
-
-
 
 
 
@@ -234,22 +178,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 function A.setPlayerName(guid, name)
 	if type(guid) ~= "string" or guid == "" then
 		return false
@@ -264,10 +192,8 @@ function A.setPlayerName(guid, name)
 	end
 
 
-
 	local index = db.players
 	if type(index) == "table" and type(index[guid]) == "table" then
-
 
 		return false
 	end
@@ -282,12 +208,6 @@ function A.setPlayerName(guid, name)
 	A.trace("authored", { source = "name", state = "filled", named = true }, "data")
 	return true
 end
-
-
-
-
-
-
 
 
 
@@ -310,14 +230,10 @@ end
 
 
 
-
-
-
 function A.playerKey(guid)
 	if type(guid) ~= "string" or guid == "" then
 		return false, "no-guid"
 	end
-
 
 	local read, _, stored = pcall(A.playerEntry, guid)
 	if read and stored then
@@ -330,14 +246,9 @@ function A.playerKey(guid)
 end
 
 
-
-
-
 function A.setPlayerRating(guid, value)
 	local usable, why = A.playerKey(guid)
 	if not usable then
-
-
 		traceNote("rating", "refused", why)
 		return false, nil, why
 	end
@@ -377,9 +288,6 @@ function A.setPlayerRating(guid, value)
 end
 
 
-
-
-
 local function normalize(tag)
 	if type(tag) ~= "string" then
 		return nil
@@ -390,12 +298,6 @@ local function normalize(tag)
 	end
 	return tag
 end
-
-
-
-
-
-
 
 
 
@@ -424,12 +326,6 @@ end
 
 
 
-
-
-
-
-
-
 local function addWanted(guid, wanted)
 	local entry, notes = entryFor(guid, true)
 	if not entry then
@@ -441,7 +337,6 @@ local function addWanted(guid, wanted)
 	for i = 1, #held do
 		seen[held[i]] = true
 	end
-
 
 
 	local added = {}
@@ -463,7 +358,6 @@ local function addWanted(guid, wanted)
 
 	if #added == 0 then
 
-
 		return true, {}
 	end
 
@@ -474,10 +368,6 @@ local function addWanted(guid, wanted)
 	touch(entry)
 	return true, added
 end
-
-
-
-
 
 
 
@@ -502,17 +392,6 @@ function A.addPlayerTags(guid, tags)
 	traceNote("tag", #added > 0 and "filled" or "unchanged")
 	return true, added
 end
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -585,15 +464,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
 function A.addPlayerComment(guid, text)
 	if type(guid) ~= "string" or guid == "" then
 		traceNote("comment", "refused", "no-guid")
@@ -641,9 +511,6 @@ end
 
 
 
-
-
-
 function A.removePlayerComment(guid, index, text)
 	if type(guid) ~= "string" or guid == "" then
 		traceNote("uncomment", "refused", "no-guid")
@@ -672,9 +539,6 @@ function A.removePlayerComment(guid, index, text)
 end
 
 
-
-
-
 function A.playerComments(guid)
 	local out = {}
 	local entry = A.noteFor(guid)
@@ -696,19 +560,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 local function rosterSubjects(record)
 	local items = A.matchRoster(record)
 	local out, bots = {}, 0
@@ -721,11 +572,6 @@ local function rosterSubjects(record)
 	end
 	return out, bots
 end
-
-
-
-
-
 
 
 
@@ -745,31 +591,12 @@ local function traceRoster(verb, state, summary, reason)
 end
 
 
-
-
-
-
 local function rosterSummary(addressed, bots)
 	return {
 		addressed = addressed, bots = bots,
 		tagged = 0, untagged = 0, unchanged = 0, atCap = 0, pruned = 0,
 	}
 end
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -799,7 +626,6 @@ function A.tagRoster(record, tags)
 		local ok, added, reason = addWanted(item.guid, wanted)
 		if not ok and reason ~= "too-many" then
 
-
 			traceRoster("tag", "refused", summary, reason)
 			return false, summary, reason
 		end
@@ -818,16 +644,11 @@ function A.tagRoster(record, tags)
 end
 
 
-
-
-
-
 function A.untagRoster(record, tags)
 	if type(record) ~= "table" then
 		traceRoster("untag", "refused", nil, "no-record")
 		return false, nil, "no-record"
 	end
-
 
 
 	local subjects, bots = rosterSubjects(record)
@@ -857,11 +678,6 @@ end
 
 
 
-
-
-
-
-
 local function repaintAfter(stored, ...)
 	if stored and type(A.refreshNotes) == "function" then
 		pcall(A.refreshNotes)
@@ -876,12 +692,6 @@ for _, name in ipairs({ "setPlayerNote", "setPlayerRating", "addPlayerTags", "re
 		return repaintAfter(write(...))
 	end
 end
-
-
-
-
-
-
 
 
 function A.rosterTagCounts(record)
@@ -916,15 +726,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
 function A.tagVocabulary(text)
 	local notes = store(false)
 	local counts, out = {}, {}
@@ -956,10 +757,6 @@ function A.tagVocabulary(text)
 	end)
 	return out
 end
-
-
-
-
 
 
 
@@ -1009,20 +806,11 @@ end
 
 
 
-
-
-
 local listing
 
 
 
-
-
 local CHOICE_LIMIT = 8
-
-
-
-
 
 
 
@@ -1064,8 +852,6 @@ end
 function A.playerListing()
 	return listing
 end
-
-
 
 
 function A.clearPlayerListing()

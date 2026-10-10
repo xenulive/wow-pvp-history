@@ -5,25 +5,7 @@
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 local _, A = ...
-
 
 
 
@@ -32,22 +14,14 @@ local STORE_DELAY = 1.0
 
 
 
-
 local REQUEST_STALE_SECONDS = 15 * 60
-
-
-
 
 
 
 local OUTCOME_STALE_SECONDS = 30
 
 
-
 local TOKENS = { "target", "mouseover", "focus" }
-
-
-
 
 
 
@@ -56,15 +30,10 @@ local outcome
 
 
 
-
 local reported = false
 
 
-
 local refusedLines = 0
-
-
-
 
 
 
@@ -83,8 +52,6 @@ end
 
 
 
-
-
 function A.setDuels(enabled)
 	local db = A.db()
 	if not db then
@@ -100,15 +67,11 @@ function A.setDuels(enabled)
 	end
 
 
-
 	if A.notifyDuelsSetting then
 		A.notifyDuelsSetting()
 	end
 	return true
 end
-
-
-
 
 
 
@@ -130,9 +93,6 @@ local function contained(fn, ...)
 end
 
 
-
-
-
 local function guarded(fn, ...)
 	if type(fn) ~= "function" then
 		return nil
@@ -143,7 +103,6 @@ local function guarded(fn, ...)
 	end
 	return res
 end
-
 
 
 local function restricted()
@@ -157,22 +116,11 @@ end
 
 
 
-
 local MAGIC = "([%^%$%(%)%%%.%[%]%*%+%-%?])"
 
 local function escape(text)
 	return (text:gsub(MAGIC, "%%%1"))
 end
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -207,11 +155,9 @@ local function build(text)
 	parts[#parts + 1] = escape(text:sub(pos))
 
 
-
 	local winner = (args[1] == 1) and 1 or 2
 	return { pattern = "^" .. table.concat(parts) .. "$", winner = winner, loser = 3 - winner }
 end
-
 
 
 local built
@@ -241,7 +187,6 @@ end
 
 
 
-
 local function isNamed(names, wanted)
 	for i = 1, #names do
 		if names[i] == wanted then
@@ -259,17 +204,12 @@ end
 
 
 
-
-
-
-
 local function tokenMatches(token, wanted)
 	if guarded(UnitIsPlayer, token) ~= true then
 		return false
 	end
 	return isNamed(A.unitNames(token), wanted)
 end
-
 
 
 
@@ -312,9 +252,6 @@ end
 
 
 
-
-
-
 local function storeDuel(opened, result, ended)
 	local db = A.db()
 	if not (db and A.duelsEnabled()) then
@@ -326,17 +263,10 @@ local function storeDuel(opened, result, ended)
 
 
 
-
-
-
-
-
-
 	if not result then
 		A.trace("duel", { state = "refused", reason = "no-winner-line" })
 		return
 	end
-
 
 
 
@@ -359,7 +289,6 @@ local function storeDuel(opened, result, ended)
 	local stamped, at = pcall(A.stamp)
 	if stamped then
 
-
 		record.completedAt = at
 	end
 
@@ -374,8 +303,6 @@ local function storeDuel(opened, result, ended)
 
 
 
-
-
 	record.outcome = result.kind
 	record.result = result.selfWon and "win" or "loss"
 	record.opponentName = result.opponent
@@ -384,7 +311,6 @@ local function storeDuel(opened, result, ended)
 	if map then
 		record.map = map
 	end
-
 
 
 
@@ -400,17 +326,9 @@ local function storeDuel(opened, result, ended)
 	if type(selfGuid) == "string" and A.canRead(selfGuid) then
 		record.character = selfGuid
 
-
 		participants[selfGuid] = { name = A.unitNames("player")[1], side = "with" }
 		kept = kept + 1
 	end
-
-
-
-
-
-
-
 
 
 
@@ -443,7 +361,6 @@ local function storeDuel(opened, result, ended)
 
 
 
-
 	A.trace("duel", {
 		id = record.id,
 		format = record.format,
@@ -454,7 +371,6 @@ local function storeDuel(opened, result, ended)
 	})
 
 
-
 	local indexed, folded = pcall(A.indexMatch, record)
 	if not indexed then
 		A.noteError(folded, "duel-index")
@@ -462,14 +378,12 @@ local function storeDuel(opened, result, ended)
 			.. ". /pvph rebuild")
 	end
 
-
 	if A.finderRecordStored then
 		local repainted, err = pcall(A.finderRecordStored)
 		if not repainted then
 			A.noteError(err, "duel-finder")
 		end
 	end
-
 	if A.overlayRecordStored then
 		local repainted, err = pcall(A.overlayRecordStored)
 		if not repainted then
@@ -481,20 +395,13 @@ local function storeDuel(opened, result, ended)
 
 
 
-
 	local folded2, why2 = pcall(A.mergeNamedPlayers, record)
 	if not folded2 then
 		A.noteError(why2, "duel-merge")
 	end
 
 
-
 	pcall(A.noteCanary)
-
-
-
-
-
 
 
 
@@ -506,7 +413,6 @@ local function storeDuel(opened, result, ended)
 		line = "recorded"
 		A.say(("recorded duel %d: %s, %s, %d %s"):format(record.id, record.outcome, record.result,
 			kept, kept == 1 and "participant" or "participants"))
-
 		line = "link"
 		local linkOk, linkLine = pcall(A.matchLinkLine, record)
 		if linkOk and linkLine then
@@ -523,10 +429,7 @@ end
 
 
 
-
-
 local function onRequested(event, playerName)
-
 
 	if not A.duelsEnabled() then
 		A.trace("duelrequest", { state = "refused", reason = "switch" })
@@ -548,10 +451,8 @@ local function onRequested(event, playerName)
 		toTheDeath = event == "DUEL_TO_THE_DEATH_REQUESTED",
 	}
 
-
 	A.trace("duelrequest", { state = name and "read" or "unread", source = event })
 end
-
 
 
 
@@ -560,16 +461,6 @@ local function onSystem(_, message)
 	if not A.duelsEnabled() then
 		return
 	end
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -607,14 +498,10 @@ local function onSystem(_, message)
 				}
 				A.trace("duelline", { state = entry.kind, source = selfWon and "won" or "lost" })
 			end
-
 			return
 		end
 	end
 end
-
-
-
 
 
 local function onFinished()
@@ -624,7 +511,6 @@ local function onFinished()
 	end
 
 	local ended = time()
-
 
 
 	local opened = request
@@ -652,7 +538,6 @@ local function onFinished()
 	local after = C_Timer and C_Timer.After
 	if type(after) ~= "function" then
 
-
 		run()
 		return
 	end
@@ -661,11 +546,6 @@ local function onFinished()
 		run()
 	end
 end
-
-
-
-
-
 
 
 
@@ -682,7 +562,6 @@ function A.duelState()
 		refused = refusedLines,
 	}
 end
-
 
 
 A.on("DUEL_REQUESTED", function(event, playerName)

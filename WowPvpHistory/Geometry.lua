@@ -15,34 +15,14 @@ local _, A = ...
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 local specs = {}
 local order = {}
-
-
-
 
 
 local placedWindows = {}
 
 
-
-
 local queued = {}
-
-
 
 
 
@@ -59,15 +39,9 @@ local buildFailed = {}
 
 
 
-
-
-
-
 function A.buildWindowOnce(kind, build, ...)
 	if buildFailed[kind] ~= nil then
 		buildFailed[kind] = buildFailed[kind] + 1
-
-
 
 		A.trace("build", { kind = kind, state = "held", n = buildFailed[kind] }, "ui")
 		return nil
@@ -81,12 +55,6 @@ function A.buildWindowOnce(kind, build, ...)
 	A.trace("build", { kind = kind, state = "failed", err = not ok and built or nil }, "ui")
 	return nil, not ok and tostring(built) or nil
 end
-
-
-
-
-
-
 
 
 
@@ -108,11 +76,7 @@ function A.registerWindowKind(kind, spec)
 		authored = spec.authored,
 		floor = spec.floor,
 
-
-
 		ceiling = type(spec.ceiling) == "function" and spec.ceiling or nil,
-
-
 
 		shares = type(spec.shares) == "string" and spec.shares ~= kind and spec.shares or nil,
 		point = type(spec.point) == "string" and spec.point or "CENTER",
@@ -131,9 +95,6 @@ function A.windowKinds()
 	end
 	return out
 end
-
-
-
 
 
 local function ownerOf(kind)
@@ -158,7 +119,6 @@ local function groupOf(kind)
 end
 
 
-
 function A.windowShares(kind)
 	local owner = ownerOf(kind)
 	if owner == kind then
@@ -175,17 +135,10 @@ end
 
 
 
-
-
-
 function A.windowFrameOf(kind)
 	local spec = specs[kind]
 	return spec and spec.frame or nil
 end
-
-
-
-
 
 
 
@@ -207,7 +160,6 @@ function A.authoredGeometry(kind)
 end
 
 
-
 local function ownFloor(kind)
 	local ok, width, height = pcall(specs[kind].floor)
 	if ok and type(width) == "number" and type(height) == "number" then
@@ -215,12 +167,6 @@ local function ownFloor(kind)
 	end
 	return A.authoredGeometry(kind)
 end
-
-
-
-
-
-
 
 
 
@@ -249,7 +195,6 @@ end
 
 
 
-
 local function ownCeiling(kind)
 	local spec = specs[kind]
 	if not spec.ceiling then
@@ -265,15 +210,6 @@ local function ownCeiling(kind)
 	end
 	return width
 end
-
-
-
-
-
-
-
-
-
 
 
 
@@ -297,15 +233,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
 function A.registerPlacedWindow(frame, point, x, y)
 	if type(frame) ~= "table" or type(point) ~= "string" or point == "" then
 		return false
@@ -315,8 +242,6 @@ function A.registerPlacedWindow(frame, point, x, y)
 			return false
 		end
 	end
-
-
 
 	local name
 	local okName, given = pcall(frame.GetName, frame)
@@ -335,10 +260,6 @@ function A.registerPlacedWindow(frame, point, x, y)
 end
 
 
-
-
-
-
 function A.placedWindows()
 	local out = {}
 	for i = 1, #placedWindows do
@@ -347,11 +268,6 @@ function A.placedWindows()
 	end
 	return out
 end
-
-
-
-
-
 
 
 
@@ -376,9 +292,6 @@ end
 
 
 
-
-
-
 local function screenSize()
 	local width, height
 	if type(GetScreenWidth) == "function" then
@@ -395,9 +308,6 @@ local function screenSize()
 	end
 	return width, height
 end
-
-
-
 
 
 
@@ -418,7 +328,6 @@ end
 
 
 
-
 function A.clampGeometry(kind, geometry)
 	local floorW, floorH = A.windowFloor(kind)
 	if type(floorW) ~= "number" or type(floorH) ~= "number" then
@@ -429,7 +338,6 @@ function A.clampGeometry(kind, geometry)
 	end
 
 	local screenW, screenH = screenSize()
-
 
 	local maxW = A.windowCeiling(kind)
 	if type(screenW) == "number" and (maxW == nil or screenW < maxW) then
@@ -466,13 +374,6 @@ end
 
 
 
-
-
-
-
-
-
-
 function A.storedGeometry(kind)
 	if not specs[kind] then
 		return nil
@@ -488,7 +389,6 @@ function A.storedGeometry(kind)
 
 	local out = { width = entry.width, height = entry.height }
 
-
 	if type(entry.point) == "string" then
 		out.point = entry.point
 		out.x = type(entry.x) == "number" and entry.x or 0
@@ -496,10 +396,6 @@ function A.storedGeometry(kind)
 	end
 	return out
 end
-
-
-
-
 
 
 local function isAuthored(kind, geometry)
@@ -520,8 +416,6 @@ end
 
 
 
-
-
 local function sizeState(geometry)
 	local width, height = A.unitFigure(geometry.width), A.unitFigure(geometry.height)
 	if width == nil or height == nil then
@@ -529,13 +423,6 @@ local function sizeState(geometry)
 	end
 	return A.ringNumber(width) .. "x" .. A.ringNumber(height)
 end
-
-
-
-
-
-
-
 
 
 
@@ -554,7 +441,6 @@ function A.setStoredGeometry(kind, geometry)
 		local held = store(false)
 		if type(held) == "table" then
 			held[key] = nil
-
 
 			if next(held) == nil then
 				db.ui.geometry = nil
@@ -581,12 +467,6 @@ function A.setStoredGeometry(kind, geometry)
 	}, "ui")
 	return true
 end
-
-
-
-
-
-
 
 
 
@@ -620,17 +500,11 @@ function A.retireSharedGeometry()
 end
 
 
-
-
 if type(A.on) == "function" then
 	A.on("PLAYER_LOGIN", function()
 		pcall(A.retireSharedGeometry)
 	end)
 end
-
-
-
-
 
 
 local ROOM_BRANCHES = {
@@ -641,22 +515,9 @@ local ROOM_BRANCHES = {
 }
 
 
-
-
-
 function A.roomBranchKnown(branch)
 	return type(branch) == "string" and ROOM_BRANCHES[branch] == true
 end
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -670,16 +531,6 @@ function A.rectUnresolved(frame)
 	local asked, valid = pcall(frame.IsRectValid, frame)
 	return asked and valid == false
 end
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -701,9 +552,6 @@ function A.roomBelow(region, host)
 		return nil, "no-value"
 	end
 
-
-
-
 	local room = A.unitFigure(lower - floor)
 	if room == nil then
 		return nil, "no-value"
@@ -713,20 +561,6 @@ function A.roomBelow(region, host)
 	end
 	return room, "read"
 end
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -748,12 +582,6 @@ end
 
 
 
-
-
-
-
-
-
 function A.roomsAgree(composed, rect)
 	if type(composed) ~= "number" or type(rect) ~= "number" then
 		return false
@@ -766,20 +594,7 @@ function A.roomsAgree(composed, rect)
 end
 
 
-
-
-
-
 local roomReads = {}
-
-
-
-
-
-
-
-
-
 
 
 
@@ -797,13 +612,6 @@ function A.noteRoomRead(name, branch, room, region, host, less)
 	}
 	return true
 end
-
-
-
-
-
-
-
 
 
 
@@ -834,10 +642,6 @@ function A.roomReadNow(name)
 end
 
 
-
-
-
-
 function A.lastRoomRead(name)
 	local held = type(name) == "string" and roomReads[name] or nil
 	if not held then
@@ -845,9 +649,6 @@ function A.lastRoomRead(name)
 	end
 	return held.branch, held.room, held.at
 end
-
-
-
 
 
 
@@ -875,9 +676,6 @@ function A.frameGeometry(frame)
 end
 
 
-
-
-
 local function place(frame, geometry)
 	local ok = pcall(frame.SetSize, frame, geometry.width, geometry.height)
 	if geometry.point then
@@ -886,10 +684,6 @@ local function place(frame, geometry)
 	end
 	return ok
 end
-
-
-
-
 
 
 function A.applyStoredGeometry(kind)
@@ -910,9 +704,6 @@ end
 
 
 
-
-
-
 function A.applyWindowGeometry()
 	for i = 1, #order do
 		local kind = order[i]
@@ -929,16 +720,11 @@ end
 
 
 
-
-
-
-
 function A.resetWindowGeometry()
 	local db = A.db()
 	if not db then
 		return false
 	end
-
 
 	for i = 1, #order do
 		if ownerOf(order[i]) == order[i] then
@@ -953,14 +739,8 @@ end
 
 
 
-
-
-
-
 function A.replaceOtherWindows()
 	local names, refused = A.replacePlacedWindows()
-
-
 
 	if type(A.overlayReplaced) == "function" then
 		pcall(A.overlayReplaced)
@@ -974,9 +754,7 @@ function A.replaceOtherWindows()
 	end
 
 
-
 	if type(A.trace) == "function" then
-
 
 
 		local anchors, keys = {}, {}
@@ -999,15 +777,7 @@ function A.replaceOtherWindows()
 end
 
 
-
-
-
-
-
-
 function A.resetGeometryLines()
-
-
 
 	local held = false
 	for i = 1, #order do
@@ -1027,11 +797,6 @@ function A.resetGeometryLines()
 	else
 		out[1] = "both windows are back at their authored size and nothing is stored for either"
 	end
-
-
-
-
-
 
 
 	local names, refused, records = A.replaceOtherWindows()
@@ -1062,18 +827,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
 local function anchorPoints(frame)
 	local okN, count = pcall(frame.GetNumPoints, frame)
 	if not okN or type(count) ~= "number" then
@@ -1085,20 +838,12 @@ local function anchorPoints(frame)
 	local names = {}
 	for i = 1, count do
 
-
 		local ok, point, _, _, x, y = pcall(frame.GetPoint, frame, i)
 		if ok and type(point) == "string" then
 			local atX, atY = A.unitFigure(x), A.unitFigure(y)
 			if atX and atY then
 				names[#names + 1] = point .. "@" .. A.ringNumber(atX) .. "," .. A.ringNumber(atY)
 			else
-
-
-
-
-
-
-
 
 
 
@@ -1113,10 +858,6 @@ local function anchorPoints(frame)
 end
 
 
-
-
-
-
 function A.anchorState(frame)
 	local names, count = anchorPoints(frame)
 	if not names then
@@ -1126,18 +867,6 @@ function A.anchorState(frame)
 end
 
 local anchorState = A.anchorState
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -1156,11 +885,6 @@ end
 
 
 
-
-
-
-
-
 local function givenState(frame)
 	local okW, width = pcall(frame.GetWidth, frame, true)
 	local okH, height = pcall(frame.GetHeight, frame, true)
@@ -1169,12 +893,6 @@ local function givenState(frame)
 	end
 	return sizeState({ width = width, height = height })
 end
-
-
-
-
-
-
 
 
 local function boundsState(frame)
@@ -1191,16 +909,10 @@ local function boundsState(frame)
 end
 
 
-
-
-
 local function screenState()
 	local width, height = screenSize()
 	return sizeState({ width = width, height = height })
 end
-
-
-
 
 
 local function cursorState()
@@ -1211,9 +923,6 @@ local function cursorState()
 	if not ok then
 		return nil
 	end
-
-
-
 
 
 	local scale = 1
@@ -1232,12 +941,6 @@ end
 
 
 
-
-
-
-
-
-
 local function placedState(frame)
 	if type(frame.IsUserPlaced) ~= "function" then
 		return nil
@@ -1248,10 +951,6 @@ local function placedState(frame)
 	end
 	return tostring(placed)
 end
-
-
-
-
 
 
 
@@ -1277,10 +976,6 @@ function A.attachResize(frame, kind, onResize)
 	local screenW, screenH = screenSize()
 
 
-
-
-
-
 	local maxW = A.windowCeiling(kind)
 	if type(screenW) == "number" and (maxW == nil or screenW < maxW) then
 		maxW = screenW
@@ -1292,19 +987,8 @@ function A.attachResize(frame, kind, onResize)
 	local ok = pcall(frame.SetResizable, frame, true)
 	if ok then
 
-
 		pcall(frame.SetResizeBounds, frame, floorW, floorH, maxW, screenH)
 	end
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -1358,11 +1042,6 @@ function A.attachResize(frame, kind, onResize)
 
 
 
-
-
-
-
-
 	frame:SetScript("OnSizeChanged", function()
 		if pressed and type(IsMouseButtonDown) == "function" then
 			local read, down = pcall(IsMouseButtonDown, "LeftButton")
@@ -1380,7 +1059,6 @@ function A.attachResize(frame, kind, onResize)
 		end
 		queueRepaint()
 	end)
-
 
 
 	local function remember()
@@ -1409,13 +1087,6 @@ function A.attachResize(frame, kind, onResize)
 		end
 
 
-
-
-
-
-
-
-
 		local function sizingStarted()
 			pcall(traceGrip, "grip-started")
 		end
@@ -1430,9 +1101,6 @@ function A.attachResize(frame, kind, onResize)
 	A.applyStoredGeometry(kind)
 	return true
 end
-
-
-
 
 
 
@@ -1451,7 +1119,6 @@ local function sizeFigure(kind, word, axis, current)
 		return current
 	elseif word == "max" then
 
-
 		local screenW, screenH = screenSize()
 		if axis == "height" then
 			return screenH
@@ -1460,13 +1127,6 @@ local function sizeFigure(kind, word, axis, current)
 	end
 	return nil
 end
-
-
-
-
-
-
-
 
 
 
@@ -1506,9 +1166,6 @@ function A.sizeWindow(kind, widthWord, heightWord)
 end
 
 
-
-
-
 function A.rememberWindow(kind)
 	local spec = specs[kind]
 	if not (spec and spec.remember) then
@@ -1524,13 +1181,6 @@ end
 
 
 
-
-
-
-
-
-
-
 local HALVES = { "matches", "players", "stats" }
 local RIGHT_HALVES = { "settings", "about" }
 local HALF_WORDS = { matches = "History", stats = "Stats", players = "Players", settings = "Settings",
@@ -1538,13 +1188,7 @@ local HALF_WORDS = { matches = "History", stats = "Stats", players = "Players", 
 local OTHER_HALF = { matches = "players", players = "matches" }
 
 
-
-
 local lastHalf = nil
-
-
-
-
 
 
 
@@ -1573,9 +1217,6 @@ end
 
 
 
-
-
-
 local function carryHidden(from, kind)
 	local source, target = A.windowFrameOf(from), A.windowFrameOf(kind)
 	if type(source) ~= "table" or type(target) ~= "table" then
@@ -1587,15 +1228,6 @@ local function carryHidden(from, kind)
 	end
 	return place(target, geometry)
 end
-
-
-
-
-
-
-
-
-
 
 
 
@@ -1631,16 +1263,10 @@ function A.takeHalf(kind)
 end
 
 
-
-
-
-
 function A.openHalf(kind)
 	if kind == "players" then
 		return A.showNotes and A.showNotes() or false
 	end
-
-
 
 	if kind == "settings" then
 		local where, why = A.openSettings()
@@ -1676,11 +1302,6 @@ end
 
 
 
-
-
-
-
-
 function A.halfTabs(frame, chosen)
 	local tabs = {}
 	local function build(kind)
@@ -1689,7 +1310,6 @@ function A.halfTabs(frame, chosen)
 		end)
 		tab.halfKind = kind
 		A.setPanelTabSelected(tab, kind == chosen)
-
 
 		tab:Show()
 		return tab
@@ -1722,10 +1342,6 @@ function A.halfTabs(frame, chosen)
 	end
 	return tabs
 end
-
-
-
-
 
 
 
@@ -1768,13 +1384,6 @@ end
 
 
 
-
-
-
-
-
-
-
 local function anchorClause(frame)
 
 	local names, count = anchorPoints(frame)
@@ -1797,12 +1406,6 @@ end
 
 
 
-
-
-
-
-
-
 function A.geometryLines()
 	local out = {}
 	for i = 1, #order do
@@ -1813,15 +1416,9 @@ function A.geometryLines()
 
 		local ceiling = A.windowCeiling(kind)
 
-
-
 		out[#out + 1] = ("%s  authored %sx%s, smallest %sx%s, largest %s")
 			:format(spec.label, whole(width), whole(height), whole(floorW), whole(floorH),
 				ceiling and (whole(ceiling) .. " wide, the screen tall") or "the screen")
-
-
-
-
 
 
 
@@ -1849,7 +1446,6 @@ function A.geometryLines()
 		end
 
 
-
 		local shares = A.windowShares(kind)
 		if shares then
 			out[#out + 1] = ("    one size and place with the %s, stored under its entry")
@@ -1867,11 +1463,8 @@ function A.geometryLines()
 		end
 
 
-
 		local live = spec.frame and A.frameGeometry(spec.frame) or nil
 		if live then
-
-
 
 
 			local okW, givenW = pcall(spec.frame.GetWidth, spec.frame, true)
@@ -1886,15 +1479,12 @@ function A.geometryLines()
 	end
 
 
-
-
 	local rows = A.placedWindows()
 	if #rows > 0 then
 		out[#out + 1] = ("%d window%s carry one authored place and store nothing")
 			:format(#rows, #rows == 1 and "" or "s")
 		for i = 1, #rows do
 			local row = rows[i]
-
 
 			local live = row.frame and A.frameGeometry(row.frame) or nil
 			local size = live and ("applied %sx%s"):format(whole(live.width), whole(live.height))

@@ -5,17 +5,6 @@
 
 
 
-
-
-
-
-
-
-
-
-
-
-
 local _, A = ...
 
 
@@ -23,11 +12,6 @@ A.MANUAL_NOTE_MAX = 200
 
 
 local RESULTS = { win = true, loss = true, draw = true }
-
-
-
-
-
 
 
 local REASONS = { "disconnect", "crash", "client-closed", "chose-to-leave", "kicked" }
@@ -50,8 +34,6 @@ end
 
 
 
-
-
 local function block(subject)
 	local manual = subject.manual
 	if type(manual) ~= "table" then
@@ -60,9 +42,6 @@ local function block(subject)
 	end
 	return manual
 end
-
-
-
 
 
 local function count(manual)
@@ -85,9 +64,6 @@ end
 
 
 
-
-
-
 local function traceEdit(source, subject, state, reason)
 	A.trace("edit", {
 		source = source,
@@ -98,7 +74,6 @@ local function traceEdit(source, subject, state, reason)
 			and subject.manual.edits or nil,
 	}, "data")
 end
-
 
 
 
@@ -134,8 +109,6 @@ end
 
 
 
-
-
 function A.editResult(record, value)
 	if type(record) ~= "table" then
 		traceEdit("result", record, "refused", "no-record")
@@ -146,14 +119,10 @@ function A.editResult(record, value)
 		return false, nil, "captured", record.result
 	end
 
-
 	if value ~= nil and type(A.carriesResult) == "function" and not A.carriesResult(record) then
 		traceEdit("result", record, "refused", "no-result")
 		return false, nil, "no-result"
 	end
-
-
-
 
 	if value ~= nil and type(A.resultCaptured) == "function" and A.resultCaptured(record) then
 		traceEdit("result", record, "refused", "captured")
@@ -173,20 +142,11 @@ function A.editResult(record, value)
 
 
 
-
-
-
-
-
 	pcall(A.rebuildIndex)
-
-
 
 	if type(A.overlayRepaint) == "function" then
 		A.overlayRepaint("stored", "result")
 	end
-
-
 
 	if type(A.dropFinderWalk) == "function" then
 		A.dropFinderWalk()
@@ -198,7 +158,6 @@ end
 function A.editNote(record, text)
 	return writeNote(record, text, "note")
 end
-
 
 
 
@@ -217,18 +176,6 @@ function A.roundTypedRefusal(record, index, value)
 	end
 	return nil
 end
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -286,14 +233,6 @@ end
 
 
 
-
-
-
-
-
-
-
-
 function A.incompleteById(id)
 	local db = A.db()
 	if not (db and type(db.incomplete) == "table" and type(id) == "number") then
@@ -313,8 +252,6 @@ end
 
 
 
-
-
 function A.currentEditSubject(held, isLeft)
 	if type(held) ~= "table" then
 		return nil
@@ -324,8 +261,6 @@ function A.currentEditSubject(held, isLeft)
 	end
 	return A.match(held.id)
 end
-
-
 
 
 
