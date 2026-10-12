@@ -97,10 +97,13 @@ function A.recordLadderPair(record)
 		return nil
 	end
 	local row = ownRow(record)
-	if row == nil or A.ladderSilent(row) or type(row.rating) ~= "number" then
+
+
+	if row == nil or A.ladderSilent(row) or type(row.rating) ~= "number"
+		or type(row.ratingChange) ~= "number" then
 		return nil
 	end
-	local change = type(row.ratingChange) == "number" and row.ratingChange or 0
+	local change = row.ratingChange
 	local out = row.rating + change
 	if out <= 0 then
 		return nil

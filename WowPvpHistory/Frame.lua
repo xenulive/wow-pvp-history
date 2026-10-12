@@ -113,7 +113,8 @@ local ROW_CELL_SLOTS = 11
 
 
 
-local darkList = { PIP_SLOTS = 6 }
+
+local darkList = { PIP_SLOTS = 6, GRIDHOVER_TRACES = 20, gridHoverN = 0 }
 
 
 
@@ -376,8 +377,14 @@ end
 
 
 
+
 function A.detailWindowBody(record)
-	local roster = A.rosterRowWidth()
+	local look = type(A.rosterLook) == "function" and A.rosterLook(record) or nil
+	local objectives = 0
+	if look == "team" and type(A.objectiveColumns) == "function" then
+		objectives = math.min(#A.objectiveColumns(record), A.metric("rowObjectiveMax"))
+	end
+	local roster = A.rosterRowWidth(look, objectives)
 	local set = nil
 	if record ~= nil and type(A.lobbyPaneDraws) == "function" and A.lobbyPaneDraws(record) then
 		set = A.lobbyPaneColumns(record)
@@ -399,13 +406,31 @@ end
 
 
 
+
 function A.detailWindowHeight()
+	local cards, strip = A.objectiveCardsHeight(), A.objectivesHeight()
 	return A.metric("headerHeight") + A.metric("margin")
 		+ A.headHeight() + A.headSubHeight()
-		+ A.objectivesHeight()
+		+ (cards > strip and cards or strip)
 		+ (A.metric("rosterHeadRow") + A.metric("rosterHeadGap")) * 2
 		+ A.metric("participantRow") * A.metric("detailRows")
 		+ A.metric("paneEditGap") + A.metric("editHeight") + A.metric("margin")
+end
+
+
+
+function A.detailWindowFloor()
+	return A.metric("headerHeight") + A.metric("margin")
+		+ A.headHeight() + A.headSubHeight()
+		+ A.metric("rosterHeadRow") + A.metric("rosterHeadGap")
+		+ A.metric("participantRow")
+		+ A.metric("paneEditGap") + A.metric("editHeight") + A.metric("margin")
+end
+
+
+function A.detailWindowBodyAt(width)
+	return width - A.metric("margin") * 2 - A.metric("paneRightPad")
+		- A.metric("detailTextInset") - A.metric("detailBarInset")
 end
 
 
@@ -1316,9 +1341,19 @@ function darkList.gridEnter(self)
 		end
 		GameTooltip:Show()
 	end)
-	if drew and type(A.trace) == "function" then
-		A.trace("gridhover", { line = lines[1], lines = #lines, format = self.format }, "ui")
+	if not drew or type(A.trace) ~= "function" then
+		return
 	end
+
+
+	darkList.gridHoverN = darkList.gridHoverN + 1
+	if darkList.gridHoverN > darkList.GRIDHOVER_TRACES then
+		return
+	end
+	A.trace("gridhover", {
+		line = lines[1], lines = #lines, format = self.format, n = darkList.gridHoverN,
+		capped = darkList.gridHoverN == darkList.GRIDHOVER_TRACES or nil,
+	}, "ui")
 end
 
 
@@ -1456,7 +1491,7 @@ function A.askCardLines()
 		if card:IsShown() then
 			local title = card.title and card.title:GetText() or tostring(card.askKey)
 			if card.overGap ~= nil then
-				out[#out + 1] = ("ask card %s  caption %s, %s clear of the figure under it, off the %s")
+				out[#out + 1] = ("ask card %s  caption %s, %s clear of the figure over it, off the %s")
 					:format(tostring(title), tostring(card.overDrawn), tostring(card.overGap),
 						tostring(card.overGapFrom))
 			else
@@ -1795,6 +1830,10 @@ local paintLineFace
 
 
 
+local metRowPaint, metRowTraced = 0, nil
+
+
+
 
 
 
@@ -2098,9 +2137,11 @@ end
 
 
 function rowSurface.updateTooltip(row)
-	local record = (not row.isSeparator and row.entryKind == "match" and row.matchId ~= nil)
+
+	local record = rowSurface.shiftHeld()
+		and (not row.isSeparator and row.entryKind == "match" and row.matchId ~= nil)
 		and A.match(row.matchId) or nil
-	if record and rowSurface.shiftHeld() then
+	if record then
 		if rowSurface.tooltipOn ~= row then
 			if rowSurface.paintTooltip(row, record, "row") then
 				rowSurface.tooltipOn = row
@@ -2480,6 +2521,16 @@ local function initRow(row, data, at)
 
 
 
+
+	if at == "askband" and type(data) == "table" and data.kind == "specMet" and type(data.look) == "table" then
+		local okWidth, width = pcall(row.GetWidth, row)
+		local room = okWidth and type(width) == "number" and width > 0
+			and (width - A.metric("rowNamePad") * 2 - A.metric("rowLabelPad")) or nil
+		return initRow(row, { detail = data, room = room }, at)
+	end
+
+
+
 	if type(data) == "table" and type(data.detail) == "table" then
 		initRow(row, { separator = true }, at)
 		row.dayRule:Hide()
@@ -2488,7 +2539,7 @@ local function initRow(row, data, at)
 		row.sessionCaret:Hide()
 		row.sessionSpan:Hide()
 		row.sessionGround:Hide()
-		paintLineFace(row, data.detail)
+		paintLineFace(row, data.detail, data.room)
 		return
 	end
 	if row.lineFace then
@@ -2761,13 +2812,37 @@ end
 
 
 
-local function initSpecLine(line, data)
+local function initSpecLine(line, data, room)
 	if not line.built then
 		line.built = true
 		line:RegisterForClicks("LeftButtonUp")
 
 		line.hover = line:CreateTexture(nil, "HIGHLIGHT")
 		line.hover:SetAllPoints(line)
+
+
+
+		line.edge = line:CreateTexture(nil, "ARTWORK")
+		line.edge:SetPoint("TOPLEFT", line, "TOPLEFT", 0, 0)
+		line.edge:SetPoint("BOTTOMLEFT", line, "BOTTOMLEFT", 0, 0)
+		line.edge:SetWidth(1)
+		line.squares = {}
+		for i = 1, 6 do
+			line.squares[i] = line:CreateTexture(nil, "ARTWORK")
+		end
+		line.cells = {}
+		for i = 1, 5 do
+			local cell = line:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+			cell:SetWordWrap(false)
+			line.cells[i] = cell
+		end
+		line.side = {}
+		for i = 1, 3 do
+			local name = line:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+			name:SetJustifyH("LEFT")
+			name:SetWordWrap(false)
+			line.side[i] = { icon = line:CreateTexture(nil, "ARTWORK"), name = name }
+		end
 
 		line.key = line:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
 		line.key:SetJustifyH("LEFT")
@@ -2811,6 +2886,131 @@ local function initSpecLine(line, data)
 	line.key:Hide()
 	line.sub:Hide()
 	line.text:SetWordWrap(false)
+	line.edge:Hide()
+	for i = 1, #line.squares do
+		line.squares[i]:Hide()
+	end
+	for i = 1, #line.cells do
+		line.cells[i]:ClearAllPoints()
+		line.cells[i]:Hide()
+	end
+	for i = 1, #line.side do
+		line.side[i].icon:ClearAllPoints()
+		line.side[i].icon:Hide()
+		line.side[i].name:Hide()
+	end
+	line.edgeTone = nil
+
+
+	local function cell(index, text, role, tone, width, justify)
+		local region = line.cells[index]
+		A.style(region, role, tone)
+		region:SetText(text or "")
+		region:SetWidth(math.max(1, width))
+		region:SetJustifyH(justify or "LEFT")
+		region:Show()
+		return region
+	end
+
+	if kind == "metGridHead" then
+
+		local widths = A.metGridWidths(room, data.byRound == true)
+		local gap = A.metric("rowCellGap")
+		local match = cell(1, "MATCH", "label", "dim", widths.match)
+		match:SetPoint("LEFT", line, "LEFT", widths.lead, 0)
+		local before = match
+		if data.byRound then
+			before = cell(2, "ROUND", "label", "dim", widths.round)
+			before:SetPoint("LEFT", match, "RIGHT", gap, 0)
+		end
+		local side = cell(3, "YOUR SIDE", "label", "dim", widths.side)
+		side:SetPoint("LEFT", before, "RIGHT", gap, 0)
+		cell(4, "RESULT", "label", "dim", widths.result):SetPoint("RIGHT", line, "RIGHT", 0, 0)
+		line.text:SetText("")
+		line.text:Hide()
+		return
+	elseif kind == "specMet" and type(data.grid) == "table" then
+
+
+		local grid = data.grid
+		local byRound = grid.round ~= nil
+		local widths = A.metGridWidths(room, byRound)
+		local gap = A.metric("rowCellGap")
+		local tone = grid.tone or "dim"
+		line.edge:SetColorTexture(A.color(tone))
+		line.edge:Show()
+		line.edgeTone = tone
+		local match = cell(1, grid.match, "numberSmall", "dim", widths.match)
+		match:SetPoint("LEFT", line, "LEFT", widths.lead, 0)
+		local before = match
+		if byRound then
+			before = cell(2, grid.round, "numberSmall", "dim", widths.round)
+			before:SetPoint("LEFT", match, "RIGHT", gap, 0)
+		end
+		line.side[1].icon:SetPoint("LEFT", before, "RIGHT", gap, 0)
+		A.drawComp(line.side, grid.side, widths.side, {})
+		cell(4, grid.result, "numberSmall", tone, widths.result):SetPoint("RIGHT", line, "RIGHT", 0, 0)
+		line.text:SetText("")
+		line.text:Hide()
+		return
+	elseif kind == "specMet" and type(data.look) == "table" then
+
+
+
+
+		local look = data.look
+		local tone = look.resultTone
+
+
+		A.style(line.cells[3], "numberSmall", tone or "dim")
+		local roundsNeed = A.clientTextWidth(line.cells[3], "6 of 6")
+		local widths = A.metRowWidths(room, roundsNeed)
+		if metRowTraced ~= metRowPaint then
+			metRowTraced = metRowPaint
+
+			A.trace("met-row", { roundsRoom = A.unitFigure(widths.rounds),
+				roundsNeed = roundsNeed and A.unitFigure(roundsNeed) or nil,
+				roundsMeasured = roundsNeed ~= nil }, "ui")
+		end
+		local gap = A.metric("rowCellGap")
+		line.edge:SetColorTexture(A.color(tone or "dim"))
+		line.edge:Show()
+		line.edgeTone = tone or "dim"
+		local cells = type(look.cells) == "table" and look.cells or {}
+
+		local rating = cell(5, cells.ratingOut or "-", "numberSmall", "bright", widths.rating, "RIGHT")
+		rating:SetPoint("RIGHT", line, "RIGHT", 0, 0)
+		local _, _, _, r, g, b = A.ratingColour(look.format, look.ratingOut)
+		if r ~= nil then
+			rating:SetTextColor(r, g, b)
+		elseif look.ratingOut == nil then
+			A.style(rating, "numberSmall", "dimmer")
+		end
+		local change = cell(4, cells.change or "", "numberSmall", look.changeTone or "dim", widths.change, "RIGHT")
+		change:SetPoint("RIGHT", rating, "LEFT", -gap, 0)
+		local counted = look.rounds ~= nil and cells.rounds or cells.result
+		local rounds = cell(3, counted or "-", "numberSmall", tone or "dim", widths.rounds)
+		rounds:SetPoint("RIGHT", change, "LEFT", -gap, 0)
+		if look.rounds ~= nil then
+			local pip, pipGap = A.metric("rowPip"), A.metric("rowPipGap")
+			for n = 1, math.min(look.rounds.played or 0, #line.squares) do
+				local square = line.squares[n]
+				square:ClearAllPoints()
+				square:SetPoint("LEFT", rounds, "LEFT", -(widths.squares + gap) + (n - 1) * (pip + pipGap), 0)
+				square:SetSize(pip, pip)
+				square:SetColorTexture(A.color(n <= (look.rounds.won or 0) and "win" or "faint"))
+				square:Show()
+			end
+		end
+		local id = cell(1, look.id, "numberSmall", "dim", widths.id)
+		id:SetPoint("LEFT", line, "LEFT", widths.lead, 0)
+		if widths.where > 0 then
+			cell(2, cells.where or "", "bodyText", "text", widths.where):SetPoint("LEFT", id, "RIGHT", gap, 0)
+		end
+		line.text:SetText("")
+		line.text:Hide()
+		return
+	end
 
 	if kind == "specHead" then
 		A.style(line.text, "bodyMedium", "text")
@@ -2877,7 +3077,7 @@ end
 
 
 
-paintLineFace = function(row, line)
+paintLineFace = function(row, line, room)
 	local face = row.lineFace
 	if not face then
 		face = CreateFrame("Button", nil, row)
@@ -2887,7 +3087,7 @@ paintLineFace = function(row, line)
 	face:SetPoint("TOPLEFT", row, "TOPLEFT", A.metric("rowNamePad") * 2, 0)
 	face:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", -A.metric("rowLabelPad"), 0)
 	face:Show()
-	initSpecLine(face, line)
+	initSpecLine(face, line, room)
 end
 
 
@@ -2964,7 +3164,292 @@ end
 
 
 
+
+local rowLook = {}
+
+
+function rowLook.place(region, anchor, width)
+	region:ClearAllPoints()
+	region:SetPoint("RIGHT", anchor, "LEFT", -A.metric("rowCellGap"), 0)
+	region:SetWidth(width)
+end
+
+
+
+
+
+
+function rowLook.layout(line, look, count, columns)
+	local gap = A.metric("rowCellGap")
+	line.disp:ClearAllPoints()
+	line.disp:SetPoint("RIGHT", line, "RIGHT", -gap, 0)
+	line.disp:SetWidth(A.metric("rowDispels"))
+	rowLook.place(line.kb, line.disp, A.metric("rowKb"))
+	rowLook.place(line.heal, line.kb, A.metric("rowHeal"))
+	rowLook.place(line.damage, line.heal, A.metric("rowDamageValue"))
+	line.track:ClearAllPoints()
+	line.fill:ClearAllPoints()
+	line.name:ClearAllPoints()
+	for i = 1, #line.objectives do
+		line.objectives[i]:ClearAllPoints()
+	end
+	if look == "team" then
+
+		rowLook.place(line.track, line.damage, A.metric("rowDamageBar"))
+		line.track:SetHeight(A.metric("rowIcon"))
+		line.fill:SetPoint("LEFT", line.track, "LEFT", 0, 0)
+		line.fill:SetHeight(A.metric("rowIcon"))
+
+		local left = line.track
+		for i = math.min(count or 0, #line.objectives), 1, -1 do
+			local column = type(columns) == "table" and columns[i] or nil
+			rowLook.place(line.objectives[i], left,
+				A.objectiveCellWidth(type(column) == "table" and column.short or nil))
+			left = line.objectives[i]
+		end
+		rowLook.place(line.role, left, A.metric("rowRole"))
+		line.icon:ClearAllPoints()
+		line.icon:SetPoint("LEFT", line, "LEFT", A.metric("classEdge") + A.metric("rowNamePad"), 0)
+		line.icon:SetSize(A.metric("rowIcon"), A.metric("rowIcon"))
+		line.name:SetPoint("LEFT", line, "LEFT", A.metric("classEdge") + A.metric("rowNamePad")
+			+ A.metric("rowIcon") + A.metric("headCrestGap"), 0)
+	else
+
+
+		line.track:SetPoint("TOPRIGHT", line.damage, "TOPLEFT", 0, 0)
+		line.track:SetPoint("BOTTOMRIGHT", line.damage, "BOTTOMLEFT", 0, 0)
+		line.track:SetWidth(A.trackBase())
+		line.fill:SetPoint("TOPLEFT", line.track, "TOPLEFT", 0, 0)
+		line.fill:SetPoint("BOTTOMLEFT", line.track, "BOTTOMLEFT", 0, 0)
+
+
+		for i = 1, #line.objectives do
+			rowLook.place(line.objectives[i], (i == 1) and line.kb or line.heal,
+				i == 1 and A.metric("rowHeal") or A.metric("rowBar"))
+		end
+		rowLook.place(line.role, line.track, A.metric("rowRole"))
+
+
+
+		line.name:SetPoint("LEFT", line, "LEFT", A.metric("classEdge") + A.metric("rowNamePad"), 0)
+	end
+	rowLook.place(line.spec, line.role, A.metric("rowSpec"))
+end
+
+
+function rowLook.headPlace(label, anchor, width)
+	label:ClearAllPoints()
+	label:SetPoint("BOTTOMRIGHT", anchor, "BOTTOMLEFT", -A.metric("rowCellGap"), 0)
+	label:SetWidth(width)
+end
+
+
+
+
+function rowLook.headLayout(line, look, count, columns)
+	local gap, base = A.metric("rowCellGap"), A.metric("rosterHeadGap")
+	line.rosterTitle:ClearAllPoints()
+	line.rosterTitle:SetPoint("BOTTOMLEFT", line, "BOTTOMLEFT", A.metric("classEdge") + A.metric("rowNamePad"), base)
+	line.rosterTitle:SetWidth(A.metric("rowName"))
+	line.rosterDisp:ClearAllPoints()
+	line.rosterDisp:SetPoint("BOTTOMRIGHT", line, "BOTTOMRIGHT", -gap, base)
+	line.rosterDisp:SetWidth(A.metric("rowDispels"))
+	rowLook.headPlace(line.rosterKb, line.rosterDisp, A.metric("rowKb"))
+	rowLook.headPlace(line.rosterHeal, line.rosterKb, A.metric("rowHeal"))
+	for i = 1, #line.rosterObjectives do
+		line.rosterObjectives[i]:ClearAllPoints()
+	end
+	local left = line.rosterDamage
+	if look == "team" then
+
+		rowLook.headPlace(line.rosterDamage, line.rosterHeal,
+			A.metric("rowDamageBar") + gap + A.metric("rowDamageValue"))
+		for i = math.min(count or 0, #line.rosterObjectives), 1, -1 do
+			local column = type(columns) == "table" and columns[i] or nil
+			rowLook.headPlace(line.rosterObjectives[i], left,
+				A.objectiveCellWidth(type(column) == "table" and column.short or nil))
+			left = line.rosterObjectives[i]
+		end
+	else
+		rowLook.headPlace(line.rosterDamage, line.rosterHeal, A.metric("rowBar"))
+	end
+	rowLook.headPlace(line.rosterRole, left, A.metric("rowRole"))
+	rowLook.headPlace(line.rosterSpec, line.rosterRole, A.metric("rowSpec"))
+
+
+	local pairGap, labelGap = A.metric("headGap"), A.metric("rowMarkGap")
+	line.teamWord:ClearAllPoints()
+	line.teamWord:SetPoint("BOTTOMRIGHT", line, "BOTTOMRIGHT", -gap, base)
+	local chain = { { line.teamHealLabel, pairGap }, { line.teamHeal, labelGap },
+		{ line.teamDamageLabel, pairGap }, { line.teamDamage, labelGap } }
+	local right = line.teamWord
+	for i = 1, #chain do
+		local label, space = chain[i][1], chain[i][2]
+		label:ClearAllPoints()
+		label:SetPoint("BOTTOMRIGHT", right, "BOTTOMLEFT", -space, 0)
+		right = label
+	end
+end
+
+
+
+function rowLook.foot(line, head)
+	local legend = head.teams and A.paintTeamLegend(line) or 0
+	local span = type(head.available) == "number" and head.available or A.detailWindowBody()
+	local text = line.lobbyFootText
+	text:ClearAllPoints()
+	text:SetPoint("RIGHT", line, "RIGHT", -A.metric("rowCellGap"), 0)
+	text:SetWidth(math.max(1, span - A.metric("rowCellGap") - legend))
+	text:SetJustifyH("RIGHT")
+	A.style(text, "note", "dim")
+	text:SetText(("sorted %s"):format(tostring(head.words or "")))
+	text:Show()
+end
+
+
+
+
+function rowLook.icon(line, c)
+	local kind, art = A.rosterIcon(c.classToken, c.spec)
+	local icon = line.icon
+	icon:SetVertexColor(1, 1, 1, 1)
+	if kind == "spec" then
+		local trim = A.metric("rowIconTrim")
+		icon:SetTexture(art)
+		icon:SetTexCoord(trim, 1 - trim, trim, 1 - trim)
+		icon:Show()
+	elseif kind == "class" then
+
+
+		icon:SetAtlas(art, false)
+		icon:Show()
+	elseif kind == "square" then
+		icon:SetTexCoord(0, 1, 0, 1)
+		icon:SetColorTexture(A.classColor(c.classToken))
+		icon:Show()
+	else
+		icon:Hide()
+	end
+	return kind
+end
+
+
+
+function rowLook.figure(cell, value, text, face)
+	local zero = type(value) == "number" and value == 0
+	A.style(cell, face or "numberSmall", (text == nil or zero) and "dim" or "text")
+	cell:SetText(text or "-")
+end
+
+
+
+
+function rowLook.paint(line, c)
+	local drawn = c.filled
+	local function column(key)
+		return drawn == nil or drawn[key] == true
+	end
+
+	local tone = (c.side == "yours" and "win") or (c.side == "theirs" and "loss") or nil
+
+	if tone then
+		line.spine:SetColorTexture(A.color(tone))
+	else
+		line.spine:SetColorTexture(A.classColor(c.classToken))
+	end
+
+
+
+	if c.self then
+		line.wash:SetColorTexture(A.color("selection"))
+		line.wash:Show()
+	else
+		line.wash:Hide()
+	end
+
+	rowLook.icon(line, c)
+
+
+	A.style(line.name, "nameMedium", "text")
+	line.name:SetTextColor(A.classColor(c.classToken))
+	line.name:SetText((rosterNameText(c)))
+
+	A.style(line.role, "bodyText", "dim")
+	line.role:SetText(column("role") and (c.roleWord or "") or "")
+	A.style(line.spec, "bodyText", c.spec and "text" or "dim")
+	line.spec:SetText(column("spec") and (c.specLabel or "-") or "")
+
+
+	local values = c.objectiveValues
+	local count = math.min(type(c.objectiveColumns) == "table" and #c.objectiveColumns or 0,
+		#line.objectives)
+	for i = 1, #line.objectives do
+		local cell = line.objectives[i]
+		if i <= count then
+			local value = type(values) == "table" and values[i] or nil
+			rowLook.figure(cell, value, value ~= nil and tostring(value) or nil)
+			cell:Show()
+		else
+			cell:SetText("")
+			cell:Hide()
+		end
+	end
+
+
+
+	rowLook.figure(line.damage, c.damage, A.figureText(c.damage))
+	line.damage:SetShown(column("damage"))
+	if not column("damage") then
+		line.damage:SetText("")
+	end
+	local tr, tg, tb = A.color("field")
+	local fr, fg, fb = A.color(tone or "dim")
+	line.track:SetColorTexture(tr, tg, tb, A.metric("rowShareAlpha"))
+	line.fill:SetColorTexture(fr, fg, fb, A.metric("rowShareAlpha"))
+	if type(c.share) == "number" and column("damage") then
+		line.track:Show()
+		if c.share > 0 then
+			line.fill:SetWidth(math.max(1, math.floor(A.metric("rowDamageBar") * math.min(1, c.share))))
+			line.fill:Show()
+		else
+			line.fill:Hide()
+		end
+	else
+		line.track:Hide()
+		line.fill:Hide()
+	end
+
+	rowLook.figure(line.heal, c.healing, A.figureText(c.healing))
+	line.heal:SetShown(column("healing"))
+	if not column("healing") then
+		line.heal:SetText("")
+	end
+
+	rowLook.figure(line.kb, c.kb, c.kb ~= nil and tostring(c.kb) or nil, "bodyText")
+	if not column("kb") then
+		line.kb:SetText("")
+	end
+
+	rowLook.figure(line.disp, c.dispels, c.dispels ~= nil and tostring(c.dispels) or nil)
+	if not column("dispels") then
+		line.disp:SetText("")
+	end
+end
+
+
+
 local function paintRow(line, c)
+	local columns = c.objectiveColumns
+	local team = c.look == "team"
+	rowLook.layout(line, c.look, team and math.min(type(columns) == "table" and #columns or 0,
+		#line.objectives) or 0, columns)
+	if team then
+		for i = 1, #line.rowRegions do
+			line.rowRegions[i]:Show()
+		end
+		rowLook.paint(line, c)
+		return
+	end
 	for i = 1, #line.rowRegions do
 		line.rowRegions[i]:Show()
 	end
@@ -3546,6 +4031,11 @@ local function paintRosterHead(line, h)
 		line.rosterRegions[i]:Show()
 	end
 
+	local team = h.look == "team"
+	local columns = h.columns
+	local count = team and math.min(type(columns) == "table" and #columns or 0, #line.rosterObjectives) or 0
+	rowLook.headLayout(line, h.look, count, columns)
+
 
 
 	local title
@@ -3560,12 +4050,65 @@ local function paintRosterHead(line, h)
 			title = title .. (bots == (h.count or 0) and "  ALL BOTS"
 				or ("  %d %s"):format(bots, bots == 1 and "BOT" or "BOTS"))
 		end
+	elseif team then
+
+
+		title = ("ROSTER %d"):format(h.count or 0)
+		local filled = h.filled
+		local function has(key)
+			return filled == nil or filled[key] == true
+		end
+		slots = { swapped = 0, spec = has("spec") and "SPEC" or nil, role = has("role") and "ROLE" or nil,
+			damage = has("damage") and "DAMAGE" or nil, heal = has("healing") and "HEALING" or nil,
+			kb = has("kb") and "KB" or nil, dispels = has("dispels") and "DISP" or nil, objectives = {} }
+		for i = 1, count do
+			slots.objectives[i] = columns[i].short
+		end
 	else
 
 		title = ("ROSTER %d"):format(h.count or 0)
 		slots = rosterSlots(h.columns, A.metric("rowObjectiveMax"), h.filled)
 	end
-	A.style(line.rosterTitle, "label", h.side and "accent" or "dim")
+
+
+
+	local targets = {}
+	if slots then
+		targets[1] = { label = line.rosterTitle, key = "name" }
+		if slots.damage then
+			targets[2] = slots.swapped >= 2 and { label = line.rosterDamage, key = "objective", index = 1 }
+				or { label = line.rosterDamage, key = "damage" }
+		end
+		if slots.heal then
+			targets[3] = slots.swapped >= 1
+				and { label = line.rosterHeal, key = "objective", index = slots.swapped }
+				or { label = line.rosterHeal, key = "healing" }
+		end
+		if slots.kb then
+			targets[4] = { label = line.rosterKb, key = "kb" }
+		end
+		if slots.dispels then
+			targets[5] = { label = line.rosterDisp, key = "dispels" }
+		end
+
+		for i = 1, #(slots.objectives or {}) do
+			targets[5 + i] = { label = line.rosterObjectives[i], key = "objective", index = i }
+		end
+	end
+	local lit = {}
+	for i = 1, 5 + #line.rosterObjectives do
+		local target = targets[i]
+		if target and h.sortKey ~= nil and target.key == h.sortKey
+			and (target.key ~= "objective" or target.index == h.sortIndex) then
+			lit[target.label] = true
+		end
+	end
+	local function tone(label, otherwise)
+		return lit[label] and "accent" or otherwise
+	end
+
+	local sideTone = h.side and ((team and (h.side == "yours" and "win" or "loss")) or "accent") or nil
+	A.style(line.rosterTitle, "label", sideTone or tone(line.rosterTitle, "dim"))
 	line.rosterTitle:SetText(title)
 
 
@@ -3573,16 +4116,67 @@ local function paintRosterHead(line, h)
 	line.rosterSpec:SetText(slots and slots.spec or "")
 	A.style(line.rosterRole, "label", "dimmer")
 	line.rosterRole:SetText(slots and slots.role or "")
-	A.style(line.rosterDamage, "label", slots and slots.swapped >= 2 and "dim" or "dimmer")
+	A.style(line.rosterDamage, "label", tone(line.rosterDamage, slots and slots.swapped >= 2 and "dim" or "dimmer"))
 	line.rosterDamage:SetText(slots and slots.damage or "")
-	A.style(line.rosterHeal, "label", slots and slots.swapped >= 1 and "dim" or "dimmer")
+	A.style(line.rosterHeal, "label", tone(line.rosterHeal, slots and slots.swapped >= 1 and "dim" or "dimmer"))
 	line.rosterHeal:SetText(slots and slots.heal or "")
-	A.style(line.rosterKb, "label", "dimmer")
+	A.style(line.rosterKb, "label", tone(line.rosterKb, "dimmer"))
 	line.rosterKb:SetText(slots and slots.kb or "")
-	A.style(line.rosterDisp, "label", "dimmer")
+	A.style(line.rosterDisp, "label", tone(line.rosterDisp, "dimmer"))
 	line.rosterDisp:SetText(slots and slots.dispels or "")
+	for i = 1, #line.rosterObjectives do
+		local label = line.rosterObjectives[i]
+		local name = slots and slots.objectives and slots.objectives[i] or nil
+		A.style(label, "label", tone(label, "dim"))
+		label:SetText(name or "")
+		label:SetShown(name ~= nil)
+	end
+
+
+
+	local totals = team and h.side ~= nil
+	local function total(figure, label, value, word)
+		if not totals then
+			figure:SetText("")
+			label:SetText("")
+			figure:Hide()
+			label:Hide()
+			return
+		end
+		local text = A.figureText(value)
+		A.style(figure, "numberSmall", text ~= nil and "text" or "dim")
+		figure:SetText(text or "-")
+		A.style(label, "label", "dim")
+		label:SetText(word)
+	end
+	total(line.teamDamage, line.teamDamageLabel, h.damage, "dmg")
+	total(line.teamHeal, line.teamHealLabel, h.healing, "heal")
+
+	if totals and h.word ~= nil then
+		A.style(line.teamWord, "label", h.word == "DRAW" and "dim" or sideTone)
+		line.teamWord:SetText(h.word)
+		line.teamWord:Show()
+	else
+		line.teamWord:SetText("")
+		line.teamWord:Hide()
+	end
 
 	line.rosterRule:SetColorTexture(A.color("hairline"))
+
+
+
+	for i = 1, #line.rosterSorts do
+		local button = line.rosterSorts[i]
+		local target = targets[i]
+		if target then
+			button.sortKey, button.sortIndex = target.key, target.index
+			button.sortUp = nil
+			if lit[target.label] and type(h.sortUp) == "boolean" then
+				button.sortUp = h.sortUp
+			end
+			button:Show()
+		end
+	end
 end
 
 
@@ -3638,8 +4232,6 @@ local function initLine(line, data)
 
 
 		line.disp = line:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-		line.disp:SetPoint("RIGHT", line, "RIGHT", -A.metric("rowCellGap"), 0)
-		line.disp:SetWidth(A.metric("rowDispels"))
 		line.disp:SetJustifyH("RIGHT")
 		line.disp:SetWordWrap(false)
 
@@ -3649,7 +4241,7 @@ local function initLine(line, data)
 			hover:SetAllPoints(cell)
 			hover:SetScript("OnEnter", function(self)
 				if type(self.words) == "table" then
-					A.keyedTooltip(self, self.words, "ANCHOR_BOTTOM")
+					A.keyedTooltip(self, self.words, "ANCHOR_BOTTOM", "meter")
 				end
 			end)
 			hover:SetScript("OnLeave", A.hideTooltip)
@@ -3658,75 +4250,59 @@ local function initLine(line, data)
 		end
 
 		line.kb = line:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-		line.kb:SetPoint("RIGHT", line.disp, "LEFT", -A.metric("rowCellGap"), 0)
-		line.kb:SetWidth(A.metric("rowKb"))
 		line.kb:SetJustifyH("RIGHT")
 
 
 
 		line.heal = line:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-		line.heal:SetPoint("RIGHT", line.kb, "LEFT", -A.metric("rowCellGap"), 0)
-		line.heal:SetWidth(A.metric("rowHeal"))
 		line.heal:SetJustifyH("RIGHT")
 		line.heal:SetWordWrap(false)
 
 
+
 		line.damage = line:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-		line.damage:SetPoint("RIGHT", line.heal, "LEFT", -A.metric("rowCellGap"), 0)
-		line.damage:SetWidth(A.metric("rowDamageValue"))
 		line.damage:SetJustifyH("RIGHT")
 		line.damage:SetWordWrap(false)
 
 
-
 		line.track = line:CreateTexture(nil, "BACKGROUND")
-
-		line.track:SetPoint("TOPRIGHT", line.damage, "TOPLEFT", 0, 0)
-		line.track:SetPoint("BOTTOMRIGHT", line.damage, "BOTTOMLEFT", 0, 0)
-		line.track:SetWidth(A.trackBase())
 
 
 
 		line.objectives = {}
 		for i = 1, A.metric("rowObjectiveMax") do
 			local cell = line:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-			cell:SetWidth(i == 1 and A.metric("rowHeal") or A.metric("rowBar"))
 			cell:SetJustifyH("RIGHT")
 			cell:SetWordWrap(false)
-			local anchorTo = (i == 1) and line.kb or line.heal
-			cell:SetPoint("RIGHT", anchorTo, "LEFT", -A.metric("rowCellGap"), 0)
 			line.objectives[i] = cell
 		end
 
 
 		line.fill = line:CreateTexture(nil, "OVERLAY")
-		line.fill:SetPoint("TOPLEFT", line.track, "TOPLEFT", 0, 0)
-		line.fill:SetPoint("BOTTOMLEFT", line.track, "BOTTOMLEFT", 0, 0)
 
 		line.role = line:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-		line.role:SetPoint("RIGHT", line.track, "LEFT", -A.metric("rowCellGap"), 0)
-		line.role:SetWidth(A.metric("rowRole"))
 		line.role:SetJustifyH("LEFT")
 
 		line.role:SetWordWrap(false)
 
-
 		line.spec = line:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-		line.spec:SetPoint("RIGHT", line.role, "LEFT", -A.metric("rowCellGap"), 0)
-		line.spec:SetWidth(A.metric("rowSpec"))
 		line.spec:SetJustifyH("LEFT")
 		line.spec:SetWordWrap(false)
 
 
-
-
-
 		line.name = line:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-		line.name:SetPoint("LEFT", line, "LEFT",
-			A.metric("classEdge") + A.metric("rowNamePad"), 0)
 		line.name:SetWidth(A.metric("rowName"))
 		line.name:SetJustifyH("LEFT")
 		line.name:SetWordWrap(false)
+
+
+
+		line.icon = line:CreateTexture(nil, "ARTWORK")
+		line.wash = line:CreateTexture(nil, "BACKGROUND")
+		line.wash:SetAllPoints(line)
+		line.teamRowRegions = { line.icon, line.wash }
+
+		rowLook.layout(line, nil, 0, nil)
 
 
 
@@ -3939,7 +4515,7 @@ local function initLine(line, data)
 							lines[#lines + 1] = self.meterWords[w]
 						end
 					end
-					A.keyedTooltip(self, lines, "ANCHOR_BOTTOM")
+					A.keyedTooltip(self, lines, "ANCHOR_BOTTOM", "round")
 				end)
 				button:SetScript("OnLeave", A.hideTooltip)
 				button:Hide()
@@ -3955,7 +4531,7 @@ local function initLine(line, data)
 				local hover = CreateFrame("Button", nil, line)
 				hover:SetScript("OnEnter", function(self)
 					if type(self.words) == "table" then
-						A.keyedTooltip(self, self.words, "ANCHOR_BOTTOM")
+						A.keyedTooltip(self, self.words, "ANCHOR_BOTTOM", "lobbyround")
 					end
 				end)
 				hover:SetScript("OnLeave", A.hideTooltip)
@@ -3971,7 +4547,7 @@ local function initLine(line, data)
 			local hover = CreateFrame("Button", nil, line)
 			hover:SetScript("OnEnter", function(self)
 				if type(self.words) == "table" then
-					A.keyedTooltip(self, self.words, "ANCHOR_BOTTOM")
+					A.keyedTooltip(self, self.words, "ANCHOR_BOTTOM", "lobbygroup")
 				end
 			end)
 			hover:SetScript("OnLeave", A.hideTooltip)
@@ -4017,55 +4593,33 @@ local function initLine(line, data)
 
 
 
-		line.rosterTitle = line:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
-		line.rosterTitle:SetPoint("BOTTOMLEFT", line, "BOTTOMLEFT",
-			A.metric("classEdge") + A.metric("rowNamePad"), A.metric("rosterHeadGap"))
-		line.rosterTitle:SetWidth(A.metric("rowName"))
-		line.rosterTitle:SetJustifyH("LEFT")
-		line.rosterTitle:SetWordWrap(false)
+		local function headLabel(justify)
+			local label = line:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+			label:SetJustifyH(justify)
+			label:SetWordWrap(false)
+			return label
+		end
+		line.rosterTitle = headLabel("LEFT")
+		line.rosterDisp = headLabel("RIGHT")
+		line.rosterKb = headLabel("RIGHT")
+		line.rosterHeal = headLabel("RIGHT")
 
-		line.rosterDisp = line:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
-		line.rosterDisp:SetPoint("BOTTOMRIGHT", line, "BOTTOMRIGHT",
-			-A.metric("rowCellGap"), A.metric("rosterHeadGap"))
-		line.rosterDisp:SetWidth(A.metric("rowDispels"))
-		line.rosterDisp:SetJustifyH("RIGHT")
-		line.rosterDisp:SetWordWrap(false)
+		line.rosterDamage = headLabel("LEFT")
+		line.rosterRole = headLabel("LEFT")
+		line.rosterSpec = headLabel("LEFT")
 
-		line.rosterKb = line:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
-		line.rosterKb:SetPoint("BOTTOMRIGHT", line.rosterDisp, "BOTTOMLEFT",
-			-A.metric("rowCellGap"), 0)
-		line.rosterKb:SetWidth(A.metric("rowKb"))
-		line.rosterKb:SetJustifyH("RIGHT")
-		line.rosterKb:SetWordWrap(false)
+		line.rosterObjectives = {}
+		for i = 1, A.metric("rowObjectiveMax") do
+			line.rosterObjectives[i] = headLabel("RIGHT")
+		end
 
-		line.rosterHeal = line:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
-		line.rosterHeal:SetPoint("BOTTOMRIGHT", line.rosterKb, "BOTTOMLEFT",
-			-A.metric("rowCellGap"), 0)
-		line.rosterHeal:SetWidth(A.metric("rowHeal"))
-		line.rosterHeal:SetJustifyH("RIGHT")
-		line.rosterHeal:SetWordWrap(false)
 
-		line.rosterDamage = line:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
-		line.rosterDamage:SetPoint("BOTTOMRIGHT", line.rosterHeal, "BOTTOMLEFT",
-			-A.metric("rowCellGap"), 0)
-		line.rosterDamage:SetWidth(A.metric("rowBar"))
 
-		line.rosterDamage:SetJustifyH("LEFT")
-		line.rosterDamage:SetWordWrap(false)
-
-		line.rosterRole = line:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
-		line.rosterRole:SetPoint("BOTTOMRIGHT", line.rosterDamage, "BOTTOMLEFT",
-			-A.metric("rowCellGap"), 0)
-		line.rosterRole:SetWidth(A.metric("rowRole"))
-		line.rosterRole:SetJustifyH("LEFT")
-		line.rosterRole:SetWordWrap(false)
-
-		line.rosterSpec = line:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
-		line.rosterSpec:SetPoint("BOTTOMRIGHT", line.rosterRole, "BOTTOMLEFT",
-			-A.metric("rowCellGap"), 0)
-		line.rosterSpec:SetWidth(A.metric("rowSpec"))
-		line.rosterSpec:SetJustifyH("LEFT")
-		line.rosterSpec:SetWordWrap(false)
+		line.teamWord = headLabel("RIGHT")
+		line.teamHealLabel = headLabel("RIGHT")
+		line.teamHeal = headLabel("RIGHT")
+		line.teamDamageLabel = headLabel("RIGHT")
+		line.teamDamage = headLabel("RIGHT")
 
 		line.rosterRule = line:CreateTexture(nil, "ARTWORK")
 		line.rosterRule:SetPoint("BOTTOMLEFT", line, "BOTTOMLEFT", 0, 0)
@@ -4074,7 +4628,36 @@ local function initLine(line, data)
 
 		line.rosterRegions = { line.rosterTitle, line.rosterSpec, line.rosterRole,
 			line.rosterDamage, line.rosterHeal, line.rosterKb, line.rosterDisp,
-			line.rosterRule }
+			line.rosterRule, line.teamWord, line.teamHealLabel, line.teamHeal,
+			line.teamDamageLabel, line.teamDamage }
+		for i = 1, #line.rosterObjectives do
+			line.rosterRegions[#line.rosterRegions + 1] = line.rosterObjectives[i]
+		end
+		rowLook.headLayout(line, nil, 0, nil)
+
+
+
+		line.rosterSorts = {}
+		local sortable = { line.rosterTitle, line.rosterDamage, line.rosterHeal, line.rosterKb,
+			line.rosterDisp }
+		for i = 1, #line.rosterObjectives do
+			sortable[#sortable + 1] = line.rosterObjectives[i]
+		end
+		for _, label in ipairs(sortable) do
+			local sort = CreateFrame("Button", nil, line)
+			sort:SetPoint("TOP", line, "TOP", 0, 0)
+			sort:SetPoint("BOTTOM", line, "BOTTOM", 0, 0)
+			sort:SetPoint("LEFT", label, "LEFT", 0, 0)
+			sort:SetPoint("RIGHT", label, "RIGHT", 0, 0)
+			sort:RegisterForClicks("LeftButtonUp")
+			sort:SetScript("OnClick", function(button)
+				if type(button.sortKey) == "string" then
+					A.clickScoreSort(button.sortKey, button.sortIndex, button.sortUp)
+				end
+			end)
+			sort:Hide()
+			line.rosterSorts[#line.rosterSorts + 1] = sort
+		end
 
 
 
@@ -4096,12 +4679,13 @@ local function initLine(line, data)
 		lobbyRow = paintLobbyRow,
 		lobbyYou = paintLobbyYou,
 		lobbyFoot = paintLobbyFoot,
+		rosterFoot = rowLook.foot,
 	}
 	local lobby = head and lobbyPaint[head.kind] or nil
 
 
 	for _, regions in ipairs({ line.rowRegions, line.headRegions, line.objRegions,
-		line.rosterRegions, line.paceRegions, line.lobbyRegions }) do
+		line.rosterRegions, line.paceRegions, line.lobbyRegions, line.teamRowRegions }) do
 		hideAll(regions)
 	end
 
@@ -4109,6 +4693,11 @@ local function initLine(line, data)
 	for i = 1, #line.lobbySorts do
 		line.lobbySorts[i]:Hide()
 		line.lobbySorts[i].sortKey = nil
+	end
+	for i = 1, #line.rosterSorts do
+		line.rosterSorts[i]:Hide()
+		line.rosterSorts[i].sortKey, line.rosterSorts[i].sortIndex = nil, nil
+		line.rosterSorts[i].sortUp = nil
 	end
 	for _, button in pairs(line.lobbyRoundButtons) do
 		button:Hide()
@@ -4134,11 +4723,17 @@ local function initLine(line, data)
 	if row then
 		line.label:SetText("")
 		line.label:Hide()
+
+		line.name:SetWidth(type(data.nameWidth) == "number" and data.nameWidth or A.metric("rowName"))
 		paintRow(line, row)
 	elseif totals then
 		line.label:SetText("")
 		line.label:Hide()
-		paintObjectives(line, totals)
+		if head.look == "team" then
+			A.paintTeamCards(line, head)
+		else
+			paintObjectives(line, totals)
+		end
 	elseif pacing then
 		line.label:SetText("")
 		line.label:Hide()
@@ -4256,12 +4851,14 @@ function A.compChipsForm(rowWidth, labels)
 	if type(rowWidth) ~= "number" or rowWidth <= 0 then
 		return "unmeasured"
 	end
-	local figures = A.metric("compLength") + A.metric("compDelta") + A.metric("compPct")
-		+ A.metric("compRecord") + A.metric("compGames") + A.metric("rowCellGap") * 5
+	local figures = 0
+	for _, column in ipairs(A.compColumns(nil)) do
+		figures = figures + column.width + A.metric("rowCellGap")
+	end
 	local bound = rowWidth - figures - A.metric("compChipGap")
 	local need = A.metric("rowNamePad")
 	for i = 1, #(labels or {}) do
-		need = need + A.metric("compSwatch") + 4 + (labels[i] or 0)
+		need = need + A.metric("compSwatch") + A.metric("compChipInner") + (labels[i] or 0)
 		if i > 1 then
 			need = need + A.metric("compChipGap")
 		end
@@ -4311,31 +4908,19 @@ local function initComp(row, data)
 		end)
 
 
-		row.length = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-		row.length:SetPoint("RIGHT", row, "RIGHT", -A.metric("rowCellGap"), 0)
-		row.length:SetWidth(A.metric("compLength"))
-		row.length:SetJustifyH("RIGHT")
-
-		row.delta = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-		row.delta:SetPoint("RIGHT", row.length, "LEFT", -A.metric("rowCellGap"), 0)
-		row.delta:SetWidth(A.metric("compDelta"))
-		row.delta:SetJustifyH("RIGHT")
-
-		row.pct = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-		row.pct:SetPoint("RIGHT", row.delta, "LEFT", -A.metric("rowCellGap"), 0)
-		row.pct:SetWidth(A.metric("compPct"))
-		row.pct:SetJustifyH("RIGHT")
 
 
-		row.record = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-		row.record:SetPoint("RIGHT", row.pct, "LEFT", -A.metric("rowCellGap"), 0)
-		row.record:SetWidth(A.metric("compRecord"))
-		row.record:SetJustifyH("RIGHT")
-
-		row.games = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-		row.games:SetPoint("RIGHT", row.record, "LEFT", -A.metric("rowCellGap"), 0)
-		row.games:SetWidth(A.metric("compGames"))
-		row.games:SetJustifyH("RIGHT")
+		local cellFor = { games = "games", record = "record", rate = "pct", delta = "delta", length = "length" }
+		local columns = A.compColumns(nil)
+		local anchor, point = row, "RIGHT"
+		for c = #columns, 1, -1 do
+			local cell = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+			cell:SetPoint("RIGHT", anchor, point, -A.metric("rowCellGap"), 0)
+			cell:SetWidth(columns[c].width)
+			cell:SetJustifyH("RIGHT")
+			row[cellFor[columns[c].key]] = cell
+			anchor, point = cell, "LEFT"
+		end
 
 
 		row.chips = {}
@@ -4383,7 +4968,7 @@ local function initComp(row, data)
 			row.chips[i].label:Hide()
 			row.chips[i].share:Hide()
 		end
-		paintLineFace(row, data.detail)
+		paintLineFace(row, data.detail, data.room)
 		return
 	end
 	if row.lineFace then
@@ -4434,6 +5019,9 @@ local function initComp(row, data)
 		row.compRegions[i]:Show()
 	end
 
+
+
+	local form = data.chips == "icons" and "icons" or "names"
 	local members = tally.members or {}
 	for i = 1, #row.chips do
 		local chip = row.chips[i]
@@ -4445,20 +5033,10 @@ local function initComp(row, data)
 		else
 
 
-			local icon = type(A.specIcon) == "function" and A.specIcon(m.classToken, m.spec) or nil
-			if icon ~= nil then
-				chip.swatch:SetTexture(icon)
-				chip.swatch:SetVertexColor(1, 1, 1, data.faint and 0.4 or 1)
-			else
-				chip.swatch:SetVertexColor(1, 1, 1, 1)
-				chip.swatch:SetColorTexture(A.classColor(m.classToken))
-			end
-			chip.swatch:Show()
 
-
-			A.style(chip.label, "bodyText", data.faint and "underText" or "text")
-			chip.label:SetText(A.chipText(m))
-			chip.label:Show()
+			A.drawSpec({ icon = chip.swatch, name = chip.label }, m.classToken, m.spec,
+				form == "icons" and 0 or nil,
+				{ faint = data.faint == true, class = m.class, gap = A.metric("compChipInner") })
 
 
 
@@ -4475,15 +5053,6 @@ local function initComp(row, data)
 	end
 
 
-
-
-	local form = data.chips == "icons" and "icons" or "names"
-	if form == "icons" then
-		for i = 1, #row.chips do
-			row.chips[i].label:SetText("")
-			row.chips[i].label:Hide()
-		end
-	end
 	row.chipsForm = form
 
 
@@ -5220,7 +5789,9 @@ function A.checkListExpansion()
 		return false
 	end
 	local reserved = data.height - A.metric("rowListRow") - A.metric("rowExpandPad")
-	local over = drawn - reserved
+
+
+	local over = A.unitFigure(drawn) - A.unitFigure(reserved)
 	local corrected = over > 0.5
 	if corrected then
 		data.height = data.height + over
@@ -5708,8 +6279,7 @@ function A.mapsShowing()
 	if activeBody ~= "stats" or type(A.mapsViewShown) ~= "function" or not A.mapsViewShown() then
 		return false
 	end
-	local _, season, bound = A.windowScope()
-	return type(A.mapsViewOffered) ~= "function" or A.mapsViewOffered(activeFormat, season, bound)
+	return A.windowMapsOffered()
 end
 
 
@@ -6135,7 +6705,12 @@ function A.toggleSpecSort(key)
 end
 
 
+
 function A.lobbySort()
+	local heldKey, heldUp = A.lobbySessionSort()
+	if heldKey ~= nil then
+		return heldKey, heldUp
+	end
 	local db = A.db()
 	local key, ascending = A.lobbySortDefault()
 	if not (db and type(db.ui) == "table") then
@@ -6171,11 +6746,13 @@ function A.toggleLobbySort(key)
 		return A.lobbySort()
 	end
 	local held, ascending = A.lobbySort()
+	A.setLobbySessionSort(nil)
 	if held == key then
 		A.setLobbySort(key, not ascending)
 	else
 		A.setLobbySort(key, A.lobbySortOpens(key))
 	end
+	A.noteScoreSortChange("lobby")
 	return A.lobbySort()
 end
 
@@ -6188,6 +6765,18 @@ function A.clickLobbySort(key)
 		pcall(A.refreshWindow)
 	end
 	return A.lobbySort()
+end
+
+
+
+
+
+function A.clickScoreSort(key, index, drawnUp)
+	A.toggleScoreSort(key, index, drawnUp)
+	if type(A.refreshWindow) == "function" then
+		pcall(A.refreshWindow)
+	end
+	return A.scoreSort()
 end
 
 
@@ -6293,6 +6882,26 @@ function A.windowScope()
 		pinned.choice, pinned.season, pinned.bound = choice, season, bound
 	end
 	return choice, season, bound
+end
+
+
+
+
+
+function A.windowMapsOffered()
+	if type(A.mapsViewOffered) ~= "function" then
+		return true
+	end
+	local pinned = pins.scope
+	if pinned ~= nil and pinned.mapsFormat == activeFormat and pinned.mapsOffered ~= nil then
+		return pinned.mapsOffered
+	end
+	local _, season, bound = A.windowScope()
+	local offered = A.mapsViewOffered(activeFormat, season, bound) and true or false
+	if pinned ~= nil then
+		pinned.mapsFormat, pinned.mapsOffered = activeFormat, offered
+	end
+	return offered
 end
 
 
@@ -7480,26 +8089,30 @@ local function buildWindow()
 	end
 
 
-	local headLength = compHeadName("AVG LEN", A.metric("compLength"))
-	headLength:SetPoint("RIGHT", frame.compHead, "RIGHT", -A.metric("rowCellGap"), 0)
-	local headDelta = compHeadName("RATING", A.metric("compDelta"))
-	headDelta:SetPoint("RIGHT", headLength, "LEFT", -A.metric("rowCellGap"), 0)
 
-	local headPct = compHeadName("WIN RATE", A.metric("compPct"))
-	headPct:SetPoint("RIGHT", headDelta, "LEFT", -A.metric("rowCellGap"), 0)
-	local headRecord = compHeadName("RECORD", A.metric("compRecord"))
-	headRecord:SetPoint("RIGHT", headPct, "LEFT", -A.metric("rowCellGap"), 0)
+	local compColumns = A.compColumns(nil)
+	local headAnchor, headPoint = frame.compHead, "RIGHT"
+	local sortHeads = {}
+	frame.compHeadByKey = {}
+	for c = #compColumns, 1, -1 do
+		local column = compColumns[c]
+		local label = compHeadName(column.name, column.width)
+		label:SetPoint("RIGHT", headAnchor, headPoint, -A.metric("rowCellGap"), 0)
+		frame.compHeadByKey[column.key] = label
+		if column.sort ~= nil then
+			table.insert(sortHeads, 1, { label, column.sort })
+		end
+		headAnchor, headPoint = label, "LEFT"
+	end
 
-	local headGames = compHeadName("GAMES", A.metric("compGames"))
-	headGames:SetPoint("RIGHT", headRecord, "LEFT", -A.metric("rowCellGap"), 0)
-	frame.compHeadGames = headGames
+	frame.compHeadGames = frame.compHeadByKey.games
 	local headComp = compHeadName("ENEMY COMP", nil, "LEFT")
 	headComp:SetPoint("LEFT", frame.compHead, "LEFT", A.metric("rowNamePad"), 0)
 
 
 
 	frame.compHeadSorts = {}
-	for _, pair in ipairs({ { headGames, "met" }, { headPct, "rate" } }) do
+	for _, pair in ipairs(sortHeads) do
 		local sort = CreateFrame("Button", nil, frame.compHead)
 		sort:SetAllPoints(pair[1])
 		sort:RegisterForClicks("LeftButtonUp")
@@ -7653,24 +8266,6 @@ local function buildWindow()
 	frame.compColumn:SetWidth(A.compPaneWidth())
 
 
-	frame.specHost = CreateFrame("Frame", nil, frame.compHost)
-	frame.specHost:SetPoint("TOPLEFT", frame.compColumn, "TOPRIGHT", A.metric("paneSplitGap"), 0)
-	frame.specHost:SetPoint("BOTTOMRIGHT", frame.compHost, "BOTTOMRIGHT", 0, 0)
-	frame.specHost:Hide()
-
-	local function specExtent(_, data)
-		if type(data) == "table" and type(data.height) == "number" and data.height >= 1 then
-			return data.height
-		end
-		return A.metric("lineHeight")
-	end
-	frame.specPane = A.buildScroller(FRAME_NAME .. "SpecPane", frame.specHost, "Button",
-		initSpecLine, specExtent, "the spec pane")
-	frame.specPane.box:SetAllPoints(frame.specHost)
-	frame.specPane.bar:SetPoint("TOPLEFT", frame.specHost, "TOPRIGHT", 4, 0)
-	frame.specPane.bar:SetPoint("BOTTOMLEFT", frame.specHost, "BOTTOMRIGHT", 4, 0)
-
-
 	frame.specEndsRow = CreateFrame("Frame", nil, frame.compHost)
 	frame.specEndsRow:SetPoint("TOPLEFT", frame.compHost, "TOPLEFT", 0, -2)
 	frame.specEndsRow:SetPoint("TOPRIGHT", frame.compHost, "TOPRIGHT", 0, -2)
@@ -7774,6 +8369,26 @@ local function buildWindow()
 		card.icon:SetPoint("BOTTOMLEFT", card, "BOTTOMLEFT", cardPad, cardPad)
 		card.icon:SetSize(A.metric("compSwatch"), A.metric("compSwatch"))
 		card.icon:Hide()
+
+
+
+		card.specCells = { { icon = card.icon, name = card.name } }
+		for m = 2, 3 do
+			local icon = card:CreateTexture(nil, "ARTWORK")
+			icon:Hide()
+			local name = card:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+			name:SetJustifyH("LEFT")
+			name:SetWordWrap(false)
+			name:Hide()
+			card.specCells[m] = { icon = icon, name = name }
+		end
+
+
+		card.edge = card:CreateTexture(nil, "ARTWORK")
+		card.edge:SetPoint("TOPLEFT", card, "TOPLEFT", 0, 0)
+		card.edge:SetPoint("BOTTOMLEFT", card, "BOTTOMLEFT", 0, 0)
+		card.edge:SetWidth(1)
+		card.edge:Hide()
 
 		card.over = card:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
 		card.over:SetJustifyH("RIGHT")
@@ -8080,12 +8695,32 @@ end
 
 
 
+function darkList.incompleteFallback(entry)
+	local parts = {}
+	if type(entry) == "table" then
+		if type(entry.id) == "number" or type(entry.id) == "string" then
+			parts[#parts + 1] = ("#%s"):format(tostring(entry.id))
+		end
+		if type(entry.openedAt) == "string" then
+			parts[#parts + 1] = ("opened %s"):format(entry.openedAt)
+		end
+	end
+	return table.concat(parts, "  ")
+end
+
+
+
 function darkList.recordRow(entry, columns, room, scale)
 	local subject, kind = entry.subject, entry.kind
 	local text
 	if kind == "incomplete" then
 		local ok, line = pcall(A.incompleteRowText, subject)
-		text = ok and line or "an entry that could not be read"
+		if ok and type(line) == "string" then
+			text = line
+		else
+			A.noteError(line, "incomplete-row")
+			text = darkList.incompleteFallback(subject)
+		end
 	else
 		text = table.concat(A.rowCells(subject, room), "  ")
 	end
@@ -8537,7 +9172,14 @@ function A.listEntries(format, character, season, bound)
 			if a.kind ~= b.kind then
 				return a.kind < b.kind
 			end
-			return (a.subject.id or 0) > (b.subject.id or 0)
+
+
+			local ak, an = A.matchIdRank(a.subject.id)
+			local bk, bn = A.matchIdRank(b.subject.id)
+			if ak ~= bk then
+				return ak > bk
+			end
+			return an > bn
 		end)
 	end
 	return entries, #matches, left
@@ -8862,7 +9504,7 @@ local function paintListFoot(listing, rows, total, leftCount, scopedMatches, emp
 		local _, countSeason, countBound = A.windowScope()
 		local shape = window.listShape or {}
 		A.trace("listCount", { matched = matched, unfinished = leftCount or 0, shown = shown,
-			rows = #rows, format = activeFormat, season = countSeason, bound = countBound,
+			rows = #rows, format = activeFormat, season = countSeason, scopeFrom = countBound,
 			listHead = window.listHead and window.listHead:IsShown() and "fixed" or "hidden",
 			seasonBreaks = shape.seasonBreaks, icons = shape.icons, squares = shape.squares }, "ui")
 	end
@@ -8892,14 +9534,15 @@ local function paintSearchedList()
 end
 
 
+
 function filterBand.canonical(text)
 	local played = A.playedSpecs(nil, nil, nil)
 	for i = 1, #played do
 		if played[i].spec:lower() == text:lower() then
-			return played[i].spec
+			return played[i].spec, true
 		end
 	end
-	return text
+	return text, false
 end
 
 
@@ -8923,6 +9566,7 @@ function A.setMatchFilter(filter, choice, via)
 	elseif choice ~= nil then
 		choice = nil
 	end
+	local traced
 	if filter == "result" then
 		if choice ~= nil then
 			choice = choice:lower()
@@ -8937,9 +9581,13 @@ function A.setMatchFilter(filter, choice, via)
 			end
 		end
 		filterBand.result = choice
+		traced = choice
 	else
 		if choice ~= nil then
-			choice = filterBand.canonical(choice)
+			local matched
+			choice, matched = filterBand.canonical(choice)
+
+			traced = matched and choice or "typed"
 		end
 		filterBand.spec = choice
 	end
@@ -8947,7 +9595,7 @@ function A.setMatchFilter(filter, choice, via)
 
 		pcall(listRows)
 	end
-	pcall(filterBand.trace, filter, choice, via)
+	pcall(filterBand.trace, filter, traced, via)
 	return searchShown, searchScoped
 end
 
@@ -9038,7 +9686,7 @@ function A.searchAddParticipant(guid, owner, mods, source)
 	local exclude = mods.alt == true
 
 	local function refuse(reason)
-		A.trace("search-click", { source = source, held = held, kind = kind, state = "refused",
+		A.trace("search-click", { source = source, modifiers = held, kind = kind, state = "refused",
 			reason = reason, terms = #searchTerms }, "ui")
 		return "refused", searchTerms, searchShown, searchScoped
 	end
@@ -9059,7 +9707,7 @@ function A.searchAddParticipant(guid, owner, mods, source)
 		local spec = type(participant.spec) == "string" and participant.spec ~= "" and participant.spec or nil
 		local class = type(participant.class) == "string" and participant.class ~= "" and participant.class or nil
 		if not spec then
-			A.trace("search-click", { source = source, held = held, kind = kind, state = "nospec",
+			A.trace("search-click", { source = source, modifiers = held, kind = kind, state = "nospec",
 				terms = #searchTerms }, "ui")
 			return "nospec", searchTerms, searchShown, searchScoped
 		end
@@ -9103,7 +9751,7 @@ function A.searchAddParticipant(guid, owner, mods, source)
 	if not (window and window:IsShown()) then
 		pcall(A.showWindow)
 	end
-	A.trace("search-click", { source = source, held = held, kind = kind, state = outcome,
+	A.trace("search-click", { source = source, modifiers = held, kind = kind, state = outcome,
 		terms = #terms }, "ui")
 	return outcome, terms, shown, scoped
 end
@@ -9114,12 +9762,15 @@ function A.matchSearch()
 end
 
 
-local function detailRows(record, isLeft)
+
+
+local function detailRows(record, isLeft, available)
 	if record and isLeft then
 
 		local ok, lines = pcall(A.incompleteDetailLines, record)
 		if not ok or type(lines) ~= "table" then
-			return { { text = "That entry could not be read.", height = A.metric("lineHeight") } }
+			A.noteError(lines, "incomplete-detail")
+			return { { text = darkList.incompleteFallback(record), height = A.metric("lineHeight") } }
 		end
 		local rows = {}
 		for i = 1, #lines do
@@ -9139,7 +9790,12 @@ local function detailRows(record, isLeft)
 
 	local lines, guids, cells, heads = A.detailLines(record, true)
 
-	local body = A.detailWindowBody(record)
+	local needed = A.detailWindowBody(record)
+	local body = needed
+	if type(available) == "number" and available > needed then
+		body = available
+	end
+	local nameWidth = A.metric("rowName") + (body - needed)
 	local rows = {}
 	for i = 1, #lines do
 		local c = cells and cells[i] or nil
@@ -9148,10 +9804,17 @@ local function detailRows(record, isLeft)
 			h.table.available = body
 		end
 		if c then
-			rows[i] = { cells = c, guid = c.guid, height = A.metric("participantRow") }
+			rows[i] = { cells = c, guid = c.guid, height = A.metric("participantRow"), nameWidth = nameWidth }
 		elseif h and h.kind == "objectives" then
 
-			rows[i] = { head = h, text = lines[i], height = A.objectivesHeight() }
+
+			h.available = body
+			rows[i] = { head = h, text = lines[i],
+				height = h.look == "team" and A.objectiveCardsHeight() or A.objectivesHeight() }
+		elseif h and h.kind == "rosterFoot" then
+
+			h.available = body
+			rows[i] = { head = h, text = lines[i], height = A.metric("rowHeight") }
 		elseif h and h.kind == "pacing" then
 
 			local drawn = #(h.pacing and h.pacing.rounds or {})
@@ -9304,24 +9967,39 @@ local function paintAsk()
 
 	local ladder = { rate = true, record = true, over = false }
 	local iconRoom = A.metric("compSwatch") + A.metric("chipGap")
+
+	local function subjectRoom(region, face)
+		if type(face.members) == "table" and #face.members > 0 then
+			local need = 0
+			for m = 1, #face.members do
+				local member = face.members[m]
+				need = need + iconRoom + A.textRoom(region, A.chipText(member))
+					+ (m > 1 and A.metric("compChipGap") or 0)
+			end
+			return need
+		end
+		return A.textRoom(region, face.name) + (face.classToken ~= nil and iconRoom or 0)
+	end
+	local rowPlan = nil
 	for i = 1, #window.askCards do
 		local face = cards[i]
 		if answers[i] ~= nil and face and face.name ~= nil then
 			A.style(window.askCards[i].name, "nameMedium", "text")
 			local shares = A.askCardRow({
-				name = A.textRoom(window.askCards[i].name, face.name)
-					+ (face.classToken ~= nil and iconRoom or 0),
+				name = subjectRoom(window.askCards[i].name, face),
 				rate = A.labelRoom(face.rate),
 				record = A.labelRoom(face.record),
 				over = 0,
 			}, cardRoom)
 			shares.over = false
+			rowPlan = rowPlan or shares
 			for part in pairs(ladder) do
 				ladder[part] = ladder[part] and shares[part] == true
 			end
 		end
 	end
 	window.askLadder = ladder
+	rowPlan = rowPlan or A.askCardRow({}, cardRoom)
 
 	local held, drawn, at = nil, 0, 0
 	for i = 1, #window.askCards do
@@ -9337,60 +10015,82 @@ local function paintAsk()
 			end
 			card.askKey = answer.key
 			card.title:SetText(face.title)
-			A.style(card.title, "label", chosen and "accent" or "dim")
 
 
 			local subject = face.name ~= nil
-			local faint = face.faint == true or face.empty == true
-			card.name:SetText(face.name or (face.empty and "none yet") or "")
-			A.style(card.name, "nameMedium", faint and "dimmer" or "text")
-			card.name:SetShown(subject or face.empty == true)
+			local faint = face.faint == true
+			A.style(card.title, "label", faint and "underText" or (chosen and "accent" or "dim"))
 			card:EnableMouse(hasRows(answer) == true)
-
-			if subject and not faint and face.classToken ~= nil and type(A.classColor) == "function" then
-				local read, r, g, b = pcall(A.classColor, face.classToken)
-				if read and type(r) == "number" then
-					card.name:SetTextColor(r, g, b)
-				end
-			end
-			card.name:ClearAllPoints()
-			if subject and face.classToken ~= nil then
-				local icon = type(A.specIcon) == "function" and A.specIcon(face.classToken, face.spec) or nil
-				if icon ~= nil then
-					card.icon:SetVertexColor(1, 1, 1, 1)
-					card.icon:SetTexture(icon)
-				else
-					card.icon:SetVertexColor(1, 1, 1, 1)
-					card.icon:SetColorTexture(A.classColor(face.classToken))
-				end
-				card.icon:Show()
-				card.name:SetPoint("LEFT", card.icon, "RIGHT", A.metric("chipGap"), 0)
-			else
-				card.icon:Hide()
-				card.name:SetPoint("BOTTOMLEFT", card, "BOTTOMLEFT", cardPad, cardPad)
-			end
-
-
 
 
 			local shares = ladder
+			local cluster, shown = 0, 0
+			for _, part in ipairs({ "rate", "record" }) do
+				if subject and shares[part] then
+					cluster = cluster + A.labelRoom(face[part])
+					shown = shown + 1
+				end
+			end
+			if shown > 1 then
+				cluster = cluster + gap
+			end
+			local subjectWidth = cardRoom - cluster - (shown > 0 and gap or 0)
+
+
+
+			for m = 2, #card.specCells do
+				card.specCells[m].icon:Hide()
+				card.specCells[m].name:Hide()
+			end
+			card.icon:ClearAllPoints()
+			card.icon:SetPoint("LEFT", card, "TOPLEFT", cardPad,
+				-(rowPlan.drop + A.fontSize("nameMedium") / 2))
+			card.name:ClearAllPoints()
+			if subject and type(face.members) == "table" and #face.members > 0 then
+				A.drawComp(card.specCells, face.members, subjectWidth, { faint = faint, role = "nameMedium" })
+			elseif subject and face.classToken ~= nil then
+				A.drawSpec({ icon = card.icon, name = card.name }, face.classToken, face.spec, subjectWidth,
+					{ faint = faint, role = "nameMedium", class = face.class, fallback = face.name })
+			else
+				card.icon:Hide()
+				card.name:SetPoint("TOPLEFT", card, "TOPLEFT", cardPad, -rowPlan.drop)
+				card.name:SetText(face.name or (face.empty and "none yet") or "")
+				A.style(card.name, "nameMedium", (faint and "underText") or (face.empty and "dimmer") or "text")
+				card.name:SetWidth(math.max(1, subjectWidth))
+				card.name:SetShown(subject or face.empty == true)
+			end
+
+
+
+
+
 			local edge, edgeOffset = card, -cardPad
+			local lineFoot = nil
 			for _, part in ipairs({ "record", "rate" }) do
 				local region = card[part]
 				region:ClearAllPoints()
 				if subject and shares[part] then
-					region:SetPoint("BOTTOMRIGHT", edge,
-						edge == card and "BOTTOMRIGHT" or "BOTTOMLEFT", edgeOffset, edge == card and cardPad or 0)
+					if edge == card then
+						region:SetPoint("TOPRIGHT", card, "TOPRIGHT", edgeOffset, -rowPlan.drop)
+						lineFoot = region
+					else
+						region:SetPoint("BOTTOMRIGHT", edge, "BOTTOMLEFT", edgeOffset, 0)
+					end
 					edge, edgeOffset = region, -gap
 				end
 				region:SetShown(subject and shares[part] == true)
 			end
 
 
+
 			card.over:ClearAllPoints()
-			card.over:SetPoint("TOPRIGHT", card, "TOPRIGHT", -cardPad,
-				-(cardPad + A.fontSize("label") + A.metric("cardLabelGap")))
-			A.style(card.over, "note", "dimmer")
+			if lineFoot ~= nil then
+				card.over:SetPoint("TOPRIGHT", lineFoot, "BOTTOMRIGHT", 0, -rowPlan.under)
+			else
+				card.over:SetPoint("TOPRIGHT", card, "TOPRIGHT", -cardPad,
+					-(rowPlan.drop + A.fontSize("numberSmall") + rowPlan.under))
+			end
+			A.style(card.over, "note", faint and "underText" or "dimmer")
 			local overRoom = A.askCardOverRoom(cardRoom)
 			local over = subject and face.over ~= nil
 				and A.fittedForm(card.over, overRoom, face.overForms or { face.over }) or nil
@@ -9398,12 +10098,17 @@ local function paintAsk()
 			card.over:SetText(over or "")
 			card.over:SetShown(over ~= nil)
 			card.overDrawn = subject and face.over ~= nil and (over or "none") or nil
+			card.overFrom = lineFoot
 			local height = A.askCardHeight(over ~= nil)
 			card.record:SetText(face.record or "")
-			A.style(card.record, "numberSmall", faint and "dimmer" or "text")
+			A.style(card.record, "numberSmall", faint and "underText" or "text")
 			card.rate:SetText(face.rate or "")
 
-			A.style(card.rate, "numberSmall", face.tone or "dim")
+			local tone = face.tone or "dim"
+			A.style(card.rate, "numberSmall", tone)
+			card.edge:SetColorTexture(A.color(tone))
+			card.edge:Show()
+			card.edgeTone = tone
 
 
 			card.ground:SetColorTexture(A.color("cardGround"))
@@ -9433,28 +10138,20 @@ local function paintAsk()
 		if not (card and card:IsShown() and card.over:IsShown()) then
 			return nil, nil
 		end
-		local target = card.rate:IsShown() and card.rate or (card.record:IsShown() and card.record) or nil
-		if target == nil then
+		local target = card.overFrom
+		if target == nil or not target:IsShown() then
 			return nil, nil
 		end
-		local okB, bottom = pcall(card.over.GetBottom, card.over)
-		local okT, top = pcall(target.GetTop, target)
+		local okB, bottom = pcall(target.GetBottom, target)
+		local okT, top = pcall(card.over.GetTop, card.over)
 		if okB and okT and type(bottom) == "number" and type(top) == "number" then
 			return A.unitFigure(bottom - top), "rect"
 		end
-		local _, _, _, _, overY = card.over:GetPoint(1)
-		local up, region = 0, target
-		while region ~= nil and region ~= card do
-			local _, relative, _, _, y = region:GetPoint(1)
-			if relative == nil then
-				return nil, nil
-			end
-			up = up + (y or 0)
-			region = relative
+		local point, relative, relativePoint, _, y = card.over:GetPoint(1)
+		if relative ~= target or point ~= "TOPRIGHT" or relativePoint ~= "BOTTOMRIGHT" then
+			return nil, nil
 		end
-		local captionBottom = -(overY or 0) + A.fontSize("note")
-		local targetTop = card:GetHeight() - up - A.fontSize("numberSmall")
-		return A.unitFigure(targetTop - captionBottom), "anchors"
+		return A.unitFigure(-(y or 0)), "anchors"
 	end
 
 
@@ -9492,8 +10189,16 @@ local function paintAsk()
 
 	if mapsMode then
 		held = A.mapsAnswer(activeFormat, season, character, bound)
+
+
+		local rateCell, rated = A.askFillers().rate, 0
+		for i = 1, #held.rows do
+			if rateCell(held.rows[i]) ~= "-" then
+				rated = rated + 1
+			end
+		end
 		A.trace("stats-maps", { statsView = "maps", format = activeFormat, rows = #held.rows,
-			ranked = held.ranked or 0, under = held.underCount or 0, floor = held.floor }, "ui")
+			ranked = held.ranked or 0, under = held.underCount or 0, floor = held.floor, ratedRows = rated }, "ui")
 	end
 	if held == nil then
 		return nil, nil
@@ -9593,14 +10298,22 @@ local function paintAsk()
 
 
 
+
+
+
 	local bandLines = answered and A.askRowLines(held, shownAskRow) or {}
+	local metLook = answered and A.askRowOpensKey(held) == "MET IN"
 	local bandIds = {}
 	for i = 1, #bandLines do
-		if bandLines[i].kind == "specMet" and bandLines[i].id ~= nil then
+		if bandLines[i].kind == "specMet" and bandLines[i].id ~= nil
+			and (not metLook or type(bandLines[i].look) == "table") then
 			bandIds[#bandIds + 1] = bandLines[i].id
 		end
 	end
-	local bandTop = A.metric("rowHeight") + A.metric("rowHeadRow")
+
+	local bandHeadRow = metLook and 1 or A.metric("rowHeadRow")
+	window.askBandHead:SetHeight(bandHeadRow)
+	local bandTop = A.metric("rowHeight") + bandHeadRow
 	local cardsFoot = 2 + (drawn > 0 and (at - A.metric("cardGap")) or 0)
 	local wideNote = compTextHeight(noteText, "note", A.listHostWidth(false) - A.metric("rowLabelPad"))
 	if noteRoom > 0 then
@@ -9652,7 +10365,15 @@ local function paintAsk()
 
 	local bandColumns = A.playedOnColumns()
 	local bandRows = {}
-	if bandRoom > 0 then
+	if bandRoom > 0 and metLook then
+		for i = 1, #bandLines do
+			local line = bandLines[i]
+			if line.kind == "specMet" and line.id ~= nil and type(line.look) == "table" then
+				bandRows[#bandRows + 1] = { kind = "specMet", id = line.id, look = line.look, text = line.text,
+					stay = true }
+			end
+		end
+	elseif bandRoom > 0 then
 		for i = 1, #bandIds do
 			local record = type(A.match) == "function" and A.match(bandIds[i]) or nil
 			if type(record) == "table" then
@@ -9680,9 +10401,20 @@ local function paintAsk()
 	end
 	window.askBandCount:SetText(bandLines[1] and (bandLines[1].text
 		.. (picked and picked.name and (", " .. tostring(picked.name)) or "")) or "")
-	window.askBandSpan = bandRoom > 0 and paintColumnHead(window.askBandHead, window.askBandHeadNames,
-		window.askBandHeadRule, bandColumns) or nil
-	window.askBandHeadRule:SetColorTexture(A.color("hairline"))
+	if metLook then
+
+		for i = 1, #window.askBandHeadNames do
+			window.askBandHeadNames[i]:Hide()
+		end
+		window.askBandHeadRule:Hide()
+		window.askBandSpan = nil
+	else
+		window.askBandSpan = bandRoom > 0 and paintColumnHead(window.askBandHead, window.askBandHeadNames,
+			window.askBandHeadRule, bandColumns) or nil
+		window.askBandHeadRule:SetColorTexture(A.color("hairline"))
+		window.askBandHeadRule:Show()
+	end
+	metRowPaint = metRowPaint + 1
 	A.setRows(window.askMatches, bandRows)
 	if bandRoom > 0 and type(A.noteViewport) == "function" then
 		local _, bandWhy = A.bandHeight(window.askMatches.box)
@@ -9769,6 +10501,7 @@ end
 
 local function detailElements(lines, width)
 	local out = {}
+	metRowPaint = metRowPaint + 1
 	local room = type(width) == "number"
 		and (width - A.metric("rowNamePad") * 2 - A.metric("rowLabelPad")) or nil
 	for i = 1, #lines do
@@ -9781,7 +10514,7 @@ local function detailElements(lines, width)
 		else
 			height = A.metric("readingRow")
 		end
-		out[#out + 1] = { detail = line, height = height }
+		out[#out + 1] = { detail = line, height = height, room = room }
 	end
 	return out
 end
@@ -9813,27 +10546,16 @@ function A.paintSpecEnds(frame, merged, elements)
 		local subject = face.name ~= nil
 		card.name:ClearAllPoints()
 		if subject then
-			local icon = type(A.specIcon) == "function" and A.specIcon(face.classToken, face.spec) or nil
-			if icon ~= nil then
-				card.icon:SetTexture(icon)
-			else
-				card.icon:SetColorTexture(A.classColor(face.classToken))
-			end
-			card.icon:Show()
-			card.name:SetPoint("LEFT", card.icon, "RIGHT", A.metric("chipGap"), 0)
-			card.name:SetPoint("RIGHT", card.rate, "LEFT", -A.metric("cardHeadGap"), 0)
-			card.name:SetText(face.name)
-			A.style(card.name, "nameMedium", "text")
-			local read, r, g, b = pcall(A.classColor, face.classToken)
-			if read and type(r) == "number" then
-				card.name:SetTextColor(r, g, b)
-			end
+
+			local room = share - pad * 2 - A.textRoom(card.rate, face.rate or "") - A.metric("cardHeadGap")
+			A.drawSpec({ icon = card.icon, name = card.name }, face.classToken, face.spec, room,
+				{ role = "nameMedium", class = face.class, fallback = face.name })
 		else
 			card.icon:Hide()
 			card.name:SetPoint("BOTTOMLEFT", card, "BOTTOMLEFT", pad, pad)
 			card.name:SetText("")
+			card.name:Hide()
 		end
-		card.name:SetShown(subject)
 		card.rate:SetText(face.rate or "")
 		A.style(card.rate, "numberSmall", face.tone or "dim")
 		card.rate:SetShown(subject)
@@ -9909,7 +10631,6 @@ local function paintViewChoice(_, _, _, columns, rowCount)
 	end
 
 	if kind == nil or kind == "overview" then
-		window.specHost:Hide()
 		window.specNote:Hide()
 		shownSpec = nil
 		return
@@ -9950,7 +10671,7 @@ local function paintViewChoice(_, _, _, columns, rowCount)
 		end
 		local chips, need, bound = A.compTableChipsForm(A.askPaneWidth(), measured)
 		A.trace("comp-chips", { chips = chips, n = #sorted, format = activeFormat,
-			need = need and A.unitFigure(need) or nil, bound = bound and A.unitFigure(bound) or nil }, "ui")
+			need = need and A.unitFigure(need) or nil, chipRoom = bound and A.unitFigure(bound) or nil }, "ui")
 		for i = 1, #sorted do
 			if i == ranks + 1 then
 				elements[#elements + 1] = { divider = true }
@@ -9979,16 +10700,14 @@ local function paintViewChoice(_, _, _, columns, rowCount)
 		window.compHeadGames:SetText(A.compCountName(activeFormat))
 	end
 
-	local compSortColumn = compsView and A.askSort("comp") or nil
-	local sortedName = {}
+
 	for i = 1, #(window.compHeadSorts or {}) do
-		local button = window.compHeadSorts[i]
-		sortedName[button.name] = button.sortKey == compSortColumn
-		button:SetShown(compsView)
+		window.compHeadSorts[i]:SetShown(compsView)
 	end
 	for i = 1, #window.compHeadNames do
-		A.style(window.compHeadNames[i], "label", sortedName[window.compHeadNames[i]] and "accent" or "dim")
-		window.compHeadNames[i]:Show()
+		local label = window.compHeadNames[i]
+		A.style(label, "label", (compsView and label == window.compHeadByKey.rate) and "accent" or "dim")
+		label:Show()
 	end
 	window.compHeadRule:SetColorTexture(A.color("hairline"))
 	window.compHeadRule:Show()
@@ -10264,15 +10983,11 @@ local function paintViewChoice(_, _, _, columns, rowCount)
 	end
 
 
-	window.specHost:Hide()
-	A.setRows(window.specPane, {})
-	window.specLines = {}
-
-
 	window.compHeading:SetText(type(held) == "table" and held.group or "")
 	window.compHeading:Show()
 	window.specCount = specCount
 end
+
 
 
 
@@ -10300,7 +11015,9 @@ end
 
 
 
-local function traceMatchWindow(state, kind, id, source)
+
+
+local function traceMatchWindow(state, kind, id, source, frame)
 	if type(A.trace) ~= "function" then
 		return false
 	end
@@ -10310,9 +11027,14 @@ local function traceMatchWindow(state, kind, id, source)
 			open = open + 1
 		end
 	end
+	local size = frame and A.frameGeometry(frame) or nil
 	A.trace("match-window", {
 		state = state, kind = kind, id = id,
 		source = source or "select", windows = open,
+		width = size and A.unitFigure(size.width) or nil,
+		height = size and A.unitFigure(size.height) or nil,
+		sizeFrom = frame and frame.sizeFrom or nil,
+		widthFrom = frame and frame.widthFrom or nil,
 	}, "ui")
 	return true
 end
@@ -10364,7 +11086,8 @@ end
 
 
 
-function A.matchWindowFit(rows)
+
+function A.matchWindowFit(rows, ceiling)
 	local content = 0
 	for i = 1, type(rows) == "table" and #rows or 0 do
 		local height = type(rows[i]) == "table" and rows[i].height or nil
@@ -10372,7 +11095,9 @@ function A.matchWindowFit(rows)
 	end
 	local fitted = A.metric("headerHeight") + A.metric("margin")
 		+ A.metric("paneEditGap") + A.metric("editHeight") + content
-	local ceiling = A.detailWindowHeight()
+	if type(ceiling) ~= "number" or ceiling <= 0 then
+		ceiling = A.detailWindowHeight()
+	end
 	if fitted >= ceiling then
 		return ceiling, true
 	end
@@ -10429,7 +11154,23 @@ local function paintMatchWindow(frame)
 	frame.record = record
 
 
-	pcall(frame.SetWidth, frame, A.detailWindowWidth(not isLeft and record or nil))
+
+	local recordWidth = A.detailWindowWidth(not isLeft and record or nil)
+	local screenW, screenH
+	if type(A.screenSize) == "function" then
+		screenW, screenH = A.screenSize()
+	end
+	local width, widthFrom = recordWidth, "record"
+	if type(frame.wantWidth) == "number" and frame.wantWidth > recordWidth then
+		width, widthFrom = frame.wantWidth, frame.wantFrom or "stored"
+		if type(screenW) == "number" and width > screenW then
+			width = screenW > recordWidth and screenW or recordWidth
+		end
+	end
+	frame.recordWidth = recordWidth
+	frame.widthFrom = widthFrom
+	pcall(frame.SetWidth, frame, width)
+	local body = A.detailWindowBodyAt(width)
 
 	pcall(function()
 		frame.heading:SetText(A.matchWindowTitle(record, frame.recordKind))
@@ -10437,12 +11178,17 @@ local function paintMatchWindow(frame)
 
 	pcall(applyMeasureWidth, frame)
 
-	local rows = detailRows(record, isLeft)
+	local rows = detailRows(record, isLeft, body)
 	local function fit()
-		local height, capped = A.matchWindowFit(rows)
+		local height, capped = A.matchWindowFit(rows, frame.ceiling)
 		pcall(frame.SetHeight, frame, height)
 		pcall(layoutMatchWindow, frame, height, capped)
 		frame.fittedHeight = height
+		frame.sizeFrom = capped and (frame.ceilingFrom or "authored") or "fit"
+
+
+		local floor = A.detailWindowFloor()
+		pcall(frame.SetResizeBounds, frame, recordWidth, height < floor and height or floor, screenW, screenH)
 	end
 	fit()
 	A.setRows(frame.detail, rows)
@@ -10451,7 +11197,7 @@ local function paintMatchWindow(frame)
 
 	pcall(function()
 		if applyMeasureWidth(frame) then
-			rows = detailRows(record, isLeft)
+			rows = detailRows(record, isLeft, body)
 			fit()
 			A.setRows(frame.detail, rows)
 		end
@@ -10564,14 +11310,15 @@ local function flushCost()
 	if entry then
 
 		A.trace("cost", {
-			route = entry.route, from = entry.from, to = entry.to, via = entry.via, mode = entry.mode,
+			route = entry.route, tabFrom = entry.from, to = entry.to, via = entry.via, mode = entry.mode,
 			choices = entry.choices, tally = entry.tally, summary = entry.summary, list = entry.list,
 			page = entry.page, options = entry.options, windows = entry.windows, total = entry.total,
 			frame1 = entry.frame1, frame2 = entry.frame2, frame3 = entry.frame3,
 			summaryCached = entry.summaryCached, windowsSkipped = entry.windowsSkipped,
 			stylesSkipped = entry.stylesSkipped, stylesApplied = entry.stylesApplied,
 			filters = entry.filters, region = entry.region, view = entry.view, foot = entry.foot,
-			size = entry.size, unbracketed = entry.unbracketed, tallyCached = entry.tallyCached,
+			size = entry.size, hero = entry.hero, unbracketed = entry.unbracketed,
+			tallyCached = entry.tallyCached,
 		}, "ui")
 	end
 end
@@ -10834,6 +11581,38 @@ local function buildMatchWindow(index)
 		forgetMatchWindow(self)
 	end)
 
+
+
+	if type(A.attachPooledResize) == "function" then
+		pcall(A.attachPooledResize, frame, "match", {
+			release = function(self, before)
+				local after = A.frameGeometry(self)
+				if not (after and before) then
+					return A.storedGeometry("match") ~= nil
+				end
+				if math.abs(after.width - before.width) > 1 then
+					self.wantWidth, self.wantFrom = after.width, "drag"
+				end
+				if math.abs(after.height - before.height) > 1 then
+					self.ceiling, self.ceilingFrom = after.height, "drag"
+				end
+
+
+				local width = A.detailWindowWidth()
+				if type(self.wantWidth) == "number" and self.wantWidth > (self.recordWidth or width) + 1 then
+					width = self.wantWidth
+				end
+				A.setStoredGeometry("match", { width = width, height = self.ceiling or A.detailWindowHeight() })
+				return A.storedGeometry("match") ~= nil
+			end,
+			repaint = function(self)
+				if self.recordKey then
+					pcall(paintMatchWindow, self)
+				end
+			end,
+		})
+	end
+
 	return frame
 end
 
@@ -10946,10 +11725,18 @@ local function openMatchWindow(kind, id, source)
 	matchOrder[#matchOrder + 1] = key
 
 
+
+	local held = type(A.pooledOpenSize) == "function" and A.pooledOpenSize("match") or nil
+	frame.wantWidth = held and held.width or nil
+	frame.ceiling = held and held.height or nil
+	frame.wantFrom = held and "stored" or nil
+	frame.ceilingFrom = held and "stored" or nil
+	frame.sizeFrom, frame.widthFrom = nil, nil
+
+
 	pcall(frame.Show, frame)
 	placeMatchWindow(frame)
 	pcall(frame.Raise, frame)
-	traceMatchWindow("opened", kind, id, source)
 	return frame, "opened"
 end
 
@@ -10958,8 +11745,10 @@ end
 
 function A.showMatchWindow(kind, id, source)
 	local frame, outcome = openMatchWindow(kind, id, source)
-	if outcome == "opened" then
+	if outcome == "opened" and frame then
 		A.refreshWindow()
+
+		traceMatchWindow("opened", frame.recordKind, frame.recordId, source, frame)
 	end
 	return frame, outcome
 end
@@ -11070,6 +11859,31 @@ function A.closeMatchWindows()
 		pcall(held[i].frame.Hide, held[i].frame)
 	end
 	return #held
+end
+
+
+
+if type(A.registerWindowKind) == "function" then
+	A.registerWindowKind("match", {
+		label = "match window",
+		authored = function()
+			return A.detailWindowWidth(), A.detailWindowHeight()
+		end,
+		floor = function()
+			return A.detailWindowWidth(), A.detailWindowFloor()
+		end,
+		pooled = true,
+		newest = function()
+			local open = A.matchWindowsOpen()
+			return open[#open] and open[#open].frame or nil
+		end,
+
+		sized = function(frame, geometry)
+			frame.wantWidth, frame.wantFrom = geometry.width, "typed"
+			frame.ceiling, frame.ceilingFrom = geometry.height, "typed"
+			paintMatchWindow(frame)
+		end,
+	})
 end
 
 
@@ -11279,8 +12093,17 @@ local function refreshWindowPinned()
 
 
 	local viewStarted = A.switchClock()
+	A.clearSpecDraws()
 	pcall(paintViewChoice, compTally, compSkipped, compConsidered,
 		listColumns, #rows, compRanked)
+
+
+	if activeBody == "stats" then
+		local icons, squares = A.specDrawCounts()
+		local shown = (A.mapsShowing() and "maps") or (A.specsShowing() and "specs")
+			or (A.askAcross() and "overview") or (window.tableShowing == "comp" and "comp") or "cards"
+		A.trace("specdraw", { icons = icons, squares = squares, statsView = shown }, "ui")
+	end
 	A.switchPhase("view", viewStarted)
 
 	pcall(darkList.traceSessions, window)
@@ -11590,11 +12413,14 @@ function A.selectEntry(kind, id)
 	pcall(applyStoredTab)
 
 
-	pcall(openMatchWindow, selectedKind, id, "select")
+	local _, opened, outcome = pcall(openMatchWindow, selectedKind, id, "select")
 
 	window.opening = true
 	local painted, err = pcall(A.refreshWindow)
 	window.opening = nil
+	if outcome == "opened" and type(opened) == "table" then
+		traceMatchWindow("opened", opened.recordKind, opened.recordId, "select", opened)
+	end
 	if not painted then
 		error(err, 0)
 	end

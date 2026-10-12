@@ -959,7 +959,8 @@ function A.fixtureRefusal(adding)
 
 	if type(GetInstanceInfo) == "function" then
 		local ok, _, instanceType = pcall(GetInstanceInfo)
-		if ok and (instanceType == "pvp" or instanceType == "arena") then
+
+		if ok and A.canRead(instanceType) and (instanceType == "pvp" or instanceType == "arena") then
 			return "in-instance"
 		end
 	end
@@ -1038,12 +1039,12 @@ function A.fixtureReadings(records)
 	for i = 1, #ordered do
 		local r = ordered[i]
 		local own = type(r.participants) == "table" and r.participants[r.character] or nil
-		if type(own) == "table" and type(own.rating) == "number" then
+		if type(own) == "table" and type(own.rating) == "number" and type(own.ratingChange) == "number" then
 			local key = ("%s/%s"):format(tostring(r.format), tostring(r.season))
 			if out[key] ~= nil and out[key] ~= own.rating then
 				breaks = breaks + 1
 			end
-			out[key] = own.rating + (own.ratingChange or 0)
+			out[key] = own.rating + own.ratingChange
 		end
 	end
 	return rounded, breaks
@@ -1141,19 +1142,7 @@ function A.generateFixture(n, options)
 	pcall(A.notePrune, "fixture", storedBefore)
 
 
-	if A.finderRecordStored then
-		local repainted, err = pcall(A.finderRecordStored)
-		if not repainted then
-			A.noteError(err, "fixture.finder")
-		end
-	end
-
-	if A.overlayRecordStored then
-		local repainted, err = pcall(A.overlayRecordStored)
-		if not repainted then
-			A.noteError(err, "fixture.overlay")
-		end
-	end
+	A.recordStored("fixture")
 	if A.refreshWindow then
 		local repainted, err = pcall(A.refreshWindow)
 		if not repainted then
@@ -1228,6 +1217,8 @@ function A.clearFixture()
 
 	pcall(A.rebuildIndex)
 	pcall(A.notePrune, "fixture-clear", storedBefore)
+
+
 
 	A.storeReplaced()
 

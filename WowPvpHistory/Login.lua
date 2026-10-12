@@ -121,10 +121,17 @@ function A.rememberCharacter()
 	end
 
 	db.characters = db.characters or {}
-	local known = db.characters[guid] ~= nil
+	local held = db.characters[guid]
+	local known = held ~= nil
+
+
+	local realm = A.ownRealm()
+	if type(realm) ~= "string" or realm == "" then
+		realm = type(held) == "table" and held.realm or nil
+	end
 	db.characters[guid] = {
 		name = name,
-		realm = A.ownRealm(),
+		realm = realm,
 		at = A.stamp(),
 	}
 

@@ -11,8 +11,10 @@ a match went, how your rating moved, and who you've played with and against.
 Everything stays in the game's own addon files on your computer. It needs no account, website or
 companion app.
 
-[Download the latest release](https://github.com/xenulive/wow-pvp-history/releases), read
-[the guide](https://github.com/xenulive/wow-pvp-history/wiki), or
+[Download the latest release](https://github.com/xenulive/wow-pvp-history/releases) or get it
+[on CurseForge](https://www.curseforge.com/wow/addons/wow-pvp-history), read
+[the guide](https://github.com/xenulive/wow-pvp-history/wiki), visit
+[the website](https://pvphistory.xenu.live), or
 [report a problem](https://github.com/xenulive/wow-pvp-history/issues).
 
 ![The match history window](https://raw.githubusercontent.com/wiki/xenulive/wow-pvp-history/images/history-window.png)
@@ -46,6 +48,16 @@ companion app.
 3. Unzip it into `World of Warcraft\_retail_\Interface\AddOns`, so a `WowPvpHistory` folder sits there.
 4. Log in. Recording starts on its own; there's nothing to set up.
 
+To check it worked, click **AddOns** on the character select screen: **WoW PvP History** should be in
+the list. If it isn't, look for `WowPvpHistory.toc` one folder too deep, such as
+`AddOns\WowPvpHistory-<version>\WowPvpHistory`, and move the inner `WowPvpHistory` folder up into
+`AddOns`. [Getting started](https://github.com/xenulive/wow-pvp-history/wiki/Getting-Started) walks
+through it step by step.
+
+Every release is also on CurseForge as the same zip, on the
+[WoW PvP History](https://www.curseforge.com/wow/addons/wow-pvp-history) page: install it from there
+with the CurseForge app to keep it up to date. A release candidate shows on CurseForge as a beta file.
+
 Built for Retail WoW. Releases marked **Pre-release** are release candidates.
 
 **Updating:** exit the game, delete the old `WowPvpHistory` folder, and unzip the new one in its place.
@@ -70,6 +82,7 @@ The commands you'll use most:
 | `/pvph options` | Opens the settings |
 | `/pvph backup` | Backs up your history now |
 | `/pvph status` | Shows the version and what's stored |
+| `/pvph window reset` | Puts every window back on screen at its normal size |
 | `/pvph help` | Lists every command |
 
 The full list is on the [Commands](https://github.com/xenulive/wow-pvp-history/wiki/Commands) page.
@@ -78,6 +91,10 @@ The full list is on the [Commands](https://github.com/xenulive/wow-pvp-history/w
 
 The [wiki](https://github.com/xenulive/wow-pvp-history/wiki) covers every window and setting:
 
+- [Getting started](https://github.com/xenulive/wow-pvp-history/wiki/Getting-Started), from installing
+  it to your first saved match
+- [Questions](https://github.com/xenulive/wow-pvp-history/wiki/Questions), short answers to what people
+  ask most
 - [Match history window](https://github.com/xenulive/wow-pvp-history/wiki/Match-History-Window)
 - [Summary and rating graph](https://github.com/xenulive/wow-pvp-history/wiki/Summary-and-Rating-Graph)
 - [Solo Shuffle](https://github.com/xenulive/wow-pvp-history/wiki/Solo-Shuffle)
@@ -89,6 +106,10 @@ The [wiki](https://github.com/xenulive/wow-pvp-history/wiki) covers every window
 - [Duels and unfinished matches](https://github.com/xenulive/wow-pvp-history/wiki/Duels-and-Unfinished-Matches)
 - [World PvP](https://github.com/xenulive/wow-pvp-history/wiki/World-PvP)
 - [Settings and storage](https://github.com/xenulive/wow-pvp-history/wiki/Settings-and-Storage)
+- [Commands](https://github.com/xenulive/wow-pvp-history/wiki/Commands)
+- [Troubleshooting](https://github.com/xenulive/wow-pvp-history/wiki/Troubleshooting)
+- [Words used here](https://github.com/xenulive/wow-pvp-history/wiki/Words-Used-Here), for MMR, comp,
+  spec and the rest
 
 ## Limits
 

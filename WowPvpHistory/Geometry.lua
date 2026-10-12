@@ -15,6 +15,9 @@ local _, A = ...
 
 
 
+
+
+
 local specs = {}
 local order = {}
 
@@ -75,6 +78,13 @@ function A.registerWindowKind(kind, spec)
 		label = type(spec.label) == "string" and spec.label or kind,
 		authored = spec.authored,
 		floor = spec.floor,
+
+
+		pooled = spec.pooled == true or nil,
+
+		newest = type(spec.newest) == "function" and spec.newest or nil,
+
+		sized = type(spec.sized) == "function" and spec.sized or nil,
 
 		ceiling = type(spec.ceiling) == "function" and spec.ceiling or nil,
 
@@ -137,7 +147,23 @@ end
 
 function A.windowFrameOf(kind)
 	local spec = specs[kind]
-	return spec and spec.frame or nil
+	if not spec then
+		return nil
+	end
+	if spec.pooled then
+		if not spec.newest then
+			return nil
+		end
+		local ok, frame = pcall(spec.newest)
+		return ok and type(frame) == "table" and frame or nil
+	end
+	return spec.frame
+end
+
+
+function A.windowPooled(kind)
+	local spec = specs[kind]
+	return spec ~= nil and spec.pooled == true
 end
 
 
@@ -310,6 +336,9 @@ local function screenSize()
 end
 
 
+A.screenSize = screenSize
+
+
 
 local function fit(value, floor, ceiling)
 	if type(value) ~= "number" then
@@ -463,7 +492,7 @@ function A.setStoredGeometry(kind, geometry)
 	A.trace("view", {
 		source = "geometry",
 		state = cleared and "cleared" or sizeState(geometry),
-		format = kind,
+		kind = kind,
 	}, "ui")
 	return true
 end
@@ -486,7 +515,7 @@ function A.retireSharedGeometry()
 			if type(entry) == "table" and type(entry.width) == "number" and type(entry.height) == "number" then
 				size = sizeState(entry)
 			end
-			A.trace("window/retire", { format = kind, state = size or "unsized" }, "ui")
+			A.trace("window/retire", { kind = kind, state = size or "unsized" }, "ui")
 		end
 	end
 
@@ -708,6 +737,8 @@ function A.applyWindowGeometry()
 	for i = 1, #order do
 		local kind = order[i]
 		local spec = specs[kind]
+
+
 		if spec and spec.frame then
 			local width, height, point, x, y = A.authoredGeometry(kind)
 			if type(width) == "number" then
@@ -955,6 +986,31 @@ end
 
 
 
+local function traceGrip(frame, kind, source, step, total, repaint, stored)
+	local live = A.frameGeometry(frame)
+	local names, count = anchorState(frame)
+	A.trace("view", {
+		source = source,
+		state = live and sizeState(live) or nil,
+		n = count,
+		anchors = names,
+		rect = rectState(frame),
+		given = givenState(frame),
+		bounds = boundsState(frame),
+		screen = screenState(),
+		placed = placedState(frame),
+		cursor = cursorState(),
+		step = step,
+		total = total,
+		repaint = repaint,
+		stored = stored,
+		kind = kind,
+	}, "ui")
+end
+
+
+
+
 
 
 
@@ -995,26 +1051,6 @@ function A.attachResize(frame, kind, onResize)
 
 
 	local pressed, steps, resizedInPress = false, 0, false
-	local function traceGrip(source, step)
-		local live = A.frameGeometry(frame)
-		local names, count = anchorState(frame)
-		A.trace("view", {
-			source = source,
-			state = live and sizeState(live) or nil,
-			n = count,
-			anchors = names,
-			rect = rectState(frame),
-			given = givenState(frame),
-			bounds = boundsState(frame),
-			screen = screenState(),
-			placed = placedState(frame),
-			cursor = cursorState(),
-			step = step,
-			total = (source == "grip-release") and steps or nil,
-			repaint = (source == "grip-release") and tostring(resizedInPress) or nil,
-			format = kind,
-		}, "ui")
-	end
 
 
 	local function queueRepaint()
@@ -1052,7 +1088,7 @@ function A.attachResize(frame, kind, onResize)
 		if pressed then
 			steps = steps + 1
 			if steps <= SIZE_STEPS then
-				pcall(traceGrip, "grip-size", steps)
+				pcall(traceGrip, frame, kind, "grip-size", steps)
 			end
 			resizedInPress = true
 			return
@@ -1072,7 +1108,7 @@ function A.attachResize(frame, kind, onResize)
 	if type(A.grip) == "function" then
 		local function released()
 			pressed = false
-			pcall(traceGrip, "grip-release")
+			pcall(traceGrip, frame, kind, "grip-release", nil, steps, tostring(resizedInPress))
 			remember()
 			if resizedInPress then
 				resizedInPress = false
@@ -1082,13 +1118,13 @@ function A.attachResize(frame, kind, onResize)
 		local function pressedDown()
 			steps = 0
 			resizedInPress = false
-			pcall(traceGrip, "grip-press")
+			pcall(traceGrip, frame, kind, "grip-press")
 			pressed = true
 		end
 
 
 		local function sizingStarted()
-			pcall(traceGrip, "grip-started")
+			pcall(traceGrip, frame, kind, "grip-started")
 		end
 		local built, grip = pcall(A.grip, frame, released, pressedDown, sizingStarted)
 		if built and grip then
@@ -1100,6 +1136,111 @@ function A.attachResize(frame, kind, onResize)
 
 	A.applyStoredGeometry(kind)
 	return true
+end
+
+
+
+
+
+
+
+
+
+
+function A.attachPooledResize(frame, kind, hooks)
+	local spec = specs[kind]
+	if not (spec and spec.pooled and type(frame) == "table" and type(hooks) == "table") then
+		return false
+	end
+	local floorW, floorH = A.windowFloor(kind)
+	if type(floorW) ~= "number" then
+		return false
+	end
+	local screenW, screenH = screenSize()
+
+
+
+	if not pcall(frame.SetResizable, frame, true) then
+		return false
+	end
+	pcall(frame.SetResizeBounds, frame, floorW, floorH, screenW, screenH)
+
+	local pressed, steps, resized, before = false, 0, false, nil
+	frame:SetScript("OnSizeChanged", function()
+		if pressed and type(IsMouseButtonDown) == "function" then
+			local read, down = pcall(IsMouseButtonDown, "LeftButton")
+			if read and down == false then
+				pressed = false
+			end
+		end
+		if not pressed then
+			return
+		end
+		steps = steps + 1
+		if steps <= SIZE_STEPS then
+			pcall(traceGrip, frame, kind, "grip-size", steps)
+		end
+		resized = true
+	end)
+
+	local function repaint()
+		if type(hooks.repaint) ~= "function" then
+			return
+		end
+		local after = C_Timer and C_Timer.After
+		if type(after) ~= "function" then
+			pcall(hooks.repaint, frame)
+			return
+		end
+		after(0, function()
+			pcall(hooks.repaint, frame)
+		end)
+	end
+
+	local function released()
+		pressed = false
+		local stored
+		if type(hooks.release) == "function" then
+			local ok, held = pcall(hooks.release, frame, before)
+			stored = ok and tostring(held == true) or "unread"
+		end
+		pcall(traceGrip, frame, kind, "grip-release", nil, steps, tostring(resized), stored)
+		if resized then
+			resized = false
+			repaint()
+		end
+	end
+	local function pressedDown()
+		steps = 0
+		resized = false
+		before = A.frameGeometry(frame)
+		pcall(traceGrip, frame, kind, "grip-press")
+		pressed = true
+	end
+	local function sizingStarted()
+		pcall(traceGrip, frame, kind, "grip-started")
+	end
+
+	if type(A.grip) ~= "function" then
+		return false
+	end
+	local built, grip = pcall(A.grip, frame, released, pressedDown, sizingStarted)
+	if not (built and grip) then
+		return false
+	end
+	frame.grip = grip
+	grip:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -A.metric("gripInset"), A.metric("gripInset"))
+	return true
+end
+
+
+
+function A.pooledOpenSize(kind)
+	local stored = A.storedGeometry(kind)
+	if not stored then
+		return nil
+	end
+	return A.clampGeometry(kind, { width = stored.width, height = stored.height })
 end
 
 
@@ -1130,15 +1271,17 @@ end
 
 
 
+
 function A.sizeWindow(kind, widthWord, heightWord)
 	local spec = specs[kind]
 	if not spec then
 		return nil, "kind"
 	end
-	if not spec.frame then
+	local target = A.windowFrameOf(kind)
+	if not target then
 		return nil, "not built"
 	end
-	local live = A.frameGeometry(spec.frame)
+	local live = A.frameGeometry(target)
 	if not live then
 		return nil, "unread"
 	end
@@ -1154,13 +1297,17 @@ function A.sizeWindow(kind, widthWord, heightWord)
 	if not clamped then
 		return nil, "unread"
 	end
-	pcall(spec.frame.SetSize, spec.frame, clamped.width, clamped.height)
-	local applied = A.frameGeometry(spec.frame)
+	if spec.pooled and spec.sized then
+		pcall(spec.sized, target, clamped)
+	else
+		pcall(target.SetSize, target, clamped.width, clamped.height)
+	end
+	local applied = A.frameGeometry(target)
 
 	A.trace("view", {
 		source = "typed-size",
 		state = applied and sizeState(applied) or nil,
-		format = kind,
+		kind = kind,
 	}, "ui")
 	return applied
 end
@@ -1463,16 +1610,20 @@ function A.geometryLines()
 		end
 
 
-		local live = spec.frame and A.frameGeometry(spec.frame) or nil
-		if live then
+
+		local shown = A.windowFrameOf(kind)
+		local live = shown and A.frameGeometry(shown) or nil
+		if shown and live then
 
 
-			local okW, givenW = pcall(spec.frame.GetWidth, spec.frame, true)
-			local okH, givenH = pcall(spec.frame.GetHeight, spec.frame, true)
+			local okW, givenW = pcall(shown.GetWidth, shown, true)
+			local okH, givenH = pcall(shown.GetHeight, shown, true)
 			local given = (okW and okH and type(givenW) == "number" and type(givenH) == "number")
 				and (", given %sx%s"):format(whole(givenW), whole(givenH)) or ", given size unread"
-			out[#out + 1] = ("    applied %sx%s %s%s"):format(whole(live.width), whole(live.height),
-				anchorClause(spec.frame), given)
+			out[#out + 1] = ("    applied %sx%s %s%s%s"):format(whole(live.width), whole(live.height),
+				anchorClause(shown), given, spec.pooled and ", on the newest one open" or "")
+		elseif spec.pooled then
+			out[#out + 1] = ("    applied nothing, no %s being open"):format(spec.label)
 		else
 			out[#out + 1] = "    applied nothing, the window not having been built this session"
 		end

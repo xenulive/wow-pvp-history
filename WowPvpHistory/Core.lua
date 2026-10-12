@@ -159,6 +159,34 @@ end
 
 
 
+
+
+function A.recordStored(source)
+	source = tostring(source or "store")
+	if type(A.finderRecordStored) == "function" then
+		local repainted, err = pcall(A.finderRecordStored)
+		if not repainted then
+			A.noteError(err, source .. ".finder")
+		end
+	end
+	if type(A.overlayRecordStored) == "function" then
+		local repainted, err = pcall(A.overlayRecordStored)
+		if not repainted then
+			A.noteError(err, source .. ".overlay")
+		end
+	end
+
+	if type(A.storeWindowShown) == "function" and A.storeWindowShown() then
+		local repainted, err = pcall(A.refreshStoreWindow)
+		if not repainted then
+			A.noteError(err, source .. ".store")
+		end
+	end
+end
+
+
+
+
 function A.startSandbox()
 	local ui = deepCopy(type(db) == "table" and type(db.ui) == "table" and db.ui or {})
 	sandbox = {
@@ -262,14 +290,24 @@ local MAX_DROP_EVENTS = 50
 
 
 
+function A.roundList(record)
+	if type(record) ~= "table" or type(record.rounds) ~= "table" then
+		return nil
+	end
+	return record.rounds
+end
+
+
+
 function A.dropContext(record, extra)
 	local context = {}
 
 
 	if type(record) == "table" then
 		context.openedState = record.openedState
-		if record.rounds then
-			context.rounds = #record.rounds
+		local rounds = A.roundList(record)
+		if rounds then
+			context.rounds = #rounds
 		end
 		if record.surface then
 			context.format = record.surface.format
@@ -372,7 +410,8 @@ function A.noteIncomplete(reason, record)
 
 	entry.openedAt = record.openedAt
 	entry.openedState = record.openedState
-	entry.rounds = record.rounds and #record.rounds or 0
+	local rounds = A.roundList(record)
+	entry.rounds = rounds and #rounds or 0
 
 
 	local guid = A.ownGuid()
@@ -444,6 +483,86 @@ function A.assignIncompleteIds(list)
 	return nextId
 end
 
+
+local loadRepairs = {}
+
+
+function A.loadRepairs()
+	return loadRepairs
+end
+
+
+
+local function repairField(store, repairs, field, wanted, fresh)
+	local held = store[field]
+	if held == nil or type(held) == wanted then
+		return
+	end
+	if type(store.repaired) ~= "table" then
+		store.repaired = {}
+	end
+
+	if store.repaired[field] == nil then
+		store.repaired[field] = held
+	end
+	store[field] = fresh
+	repairs[#repairs + 1] = { field = field, foundType = type(held) }
+end
+
+
+
+local function repairEntries(store, repairs, field)
+	local list = store[field]
+	if type(list) ~= "table" then
+		return
+	end
+
+	for i = #list, 1, -1 do
+		local entry = list[i]
+		if entry ~= nil and type(entry) ~= "table" then
+			if type(store.repaired) ~= "table" then
+				store.repaired = {}
+			end
+			if type(store.repaired.entries) ~= "table" then
+				store.repaired.entries = {}
+			end
+			local kept = store.repaired.entries
+			kept[#kept + 1] = { field = field, position = i, value = entry }
+			table.remove(list, i)
+			repairs[#repairs + 1] = { field = field, foundType = type(entry), position = i }
+		end
+	end
+end
+
+
+
+
+
+function A.repairStore(store)
+	local repairs = {}
+	if type(store) ~= "table" then
+		return repairs
+	end
+
+	repairField(store, repairs, "matches", "table", {})
+	repairEntries(store, repairs, "matches")
+
+
+	repairField(store, repairs, "incomplete", "table", {})
+	repairEntries(store, repairs, "incomplete")
+	repairField(store, repairs, "dropped", "table", {})
+	repairField(store, repairs, "dropEvents", "table", {})
+	repairField(store, repairs, "players", "table", {})
+	repairField(store, repairs, "ui", "table", {})
+	for i = 1, #repairs do
+
+		if repairs[i].field == "players" and repairs[i].position == nil then
+			store.playerIndexVersion = nil
+		end
+	end
+	return repairs
+end
+
 local function initDB()
 	WowPvpHistoryDB = WowPvpHistoryDB or {}
 	db = WowPvpHistoryDB
@@ -452,6 +571,18 @@ local function initDB()
 
 	if type(db.schema) ~= "number" or db.schema < A.schema then
 		db.schema = A.schema
+	end
+	loadRepairs = A.repairStore(db)
+	if db.nextMatchId ~= nil and type(db.nextMatchId) ~= "number" then
+
+
+		local largest = 0
+		for _, match in ipairs(db.matches or {}) do
+			if type(match) == "table" and type(match.id) == "number" and match.id > largest then
+				largest = match.id
+			end
+		end
+		repairField(db, loadRepairs, "nextMatchId", "number", largest + 1)
 	end
 	db.matches = db.matches or {}
 
@@ -478,6 +609,25 @@ local function initDB()
 
 
 	db.ui = db.ui or {}
+end
+
+
+
+
+function A.byteCut(text, bound)
+	if #text <= bound then
+		return text
+	end
+	local stop = bound
+
+	while stop > 0 do
+		local following = text:byte(stop + 1)
+		if following == nil or following < 128 or following > 191 then
+			break
+		end
+		stop = stop - 1
+	end
+	return text:sub(1, stop)
 end
 
 
@@ -776,8 +926,13 @@ function A.stateName(value)
 end
 
 
+
 function A.matchState()
-	return A.pvpCall("GetActiveMatchState")
+	local state = A.pvpCall("GetActiveMatchState")
+	if not A.canRead(state) then
+		return nil
+	end
+	return state
 end
 
 
@@ -913,6 +1068,11 @@ end
 
 function A.pvpRestricted()
 	local state = A.pvpRestriction()
+
+
+	if not A.canRead(state) then
+		return false, nil
+	end
 	if type(state) ~= "number" then
 		return false, state
 	end

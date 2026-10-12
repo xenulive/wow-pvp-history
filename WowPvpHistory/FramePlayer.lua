@@ -234,15 +234,18 @@ local function commitTags(frame)
 	if #tags == 0 then
 		return
 	end
+
+
+	pcall(box.SetText, box, "")
 	local stored, added, why, offender, bound = A.addPlayerTags(frame.guid, tags)
 	if not stored then
+		pcall(box.SetText, box, text)
 		tagRefusal(why, offender, bound)
 		return
 	end
 	if type(added) == "table" and #added == 0 then
 		A.say("every one of those tags was already there. Nothing written")
 	end
-	pcall(box.SetText, box, "")
 	pcall(box.ClearFocus, box)
 end
 
@@ -262,12 +265,14 @@ local function suggestClicked(button)
 	if not (frame and button.tagValue) then
 		return
 	end
+	local box = frame.tagRow.box
+	local read, typed = pcall(box.GetText, box)
+	pcall(box.SetText, box, "")
 	local stored, _, why, offender, bound = A.addPlayerTags(frame.guid, { button.tagValue })
 	if not stored then
+		pcall(box.SetText, box, read and typed or "")
 		tagRefusal(why, offender, bound)
-		return
 	end
-	pcall(frame.tagRow.box.SetText, frame.tagRow.box, "")
 end
 
 
@@ -492,8 +497,15 @@ local function buildMatchStrip(frame, body)
 end
 
 local function buildHead(frame, body)
+
+	frame.headIcon = body:CreateTexture(nil, "ARTWORK")
+	frame.headIcon:SetPoint("TOPLEFT", frame.matchStrip, "BOTTOMLEFT", 0, -A.metric("paneGap"))
+	frame.headIcon:Hide()
+
 	frame.name = body:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-	hang(frame.name, body, frame.matchStrip, A.metric("paneGap"))
+	frame.name:SetPoint("TOPLEFT", frame.matchStrip, "BOTTOMLEFT", A.fontSize("dossierName") + A.metric("chipGap"),
+		-A.metric("paneGap"))
+	frame.name:SetPoint("RIGHT", body, "RIGHT", 0, 0)
 	frame.name:SetJustifyH("LEFT")
 	frame.name:SetWordWrap(false)
 
@@ -731,18 +743,21 @@ local function buildWindow(index)
 	frame.footState:SetWordWrap(false)
 
 
-	if pcall(frame.SetResizable, frame, true) then
-		local width = A.playerWindowWidth(frame.stripFloor)
-		pcall(frame.SetResizeBounds, frame, width, A.playerWindowFloor(), width, nil)
-		if type(A.grip) == "function" then
-			local built, grip = pcall(A.grip, frame, function() end)
-			if built and grip then
-				frame.grip = grip
-				grip:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT",
-					-A.metric("gripInset"), A.metric("gripInset"))
-			end
-		end
+
+	if type(A.attachPooledResize) == "function" then
+		pcall(A.attachPooledResize, frame, "player", {
+			release = function(self, before)
+				local after = A.frameGeometry(self)
+				if after and before and math.abs(after.height - before.height) > 1 then
+					A.setStoredGeometry("player", { width = A.playerWindowWidth(), height = after.height })
+				end
+				return A.storedGeometry("player") ~= nil
+			end,
+		})
 	end
+
+	local width = A.playerWindowWidth(frame.stripFloor)
+	pcall(frame.SetResizeBounds, frame, width, A.playerWindowFloor(), width, nil)
 
 	if type(UISpecialFrames) == "table" then
 		local seen = false
@@ -886,6 +901,9 @@ end
 
 local function paintHead(frame, dossier)
 	local identity = dossier.identity
+
+	A.drawSpec({ icon = frame.headIcon }, identity.classToken, identity.spec, nil,
+		{ size = A.fontSize("dossierName") })
 	A.style(frame.name, "dossierName")
 	frame.name:SetTextColor(A.classColor(identity.classToken))
 	A.style(frame.sub, "bodyText", "dim")
@@ -1137,7 +1155,9 @@ local function trace(state, source, reason, drafts, frame, beside)
 		id = frame and frame.fromMatch or nil,
 		bottom = bottom, height = height, srcBottom = srcBottom,
 		stripFloor = frame and frame.stripFloor and A.unitFigure(frame.stripFloor) or nil,
-		widthFrom = frame and frame.widthFrom or nil }, "ui")
+		widthFrom = frame and frame.widthFrom or nil,
+
+		sizeFrom = placed and placed.sizeFrom or nil }, "ui")
 end
 
 forget = function(frame)
@@ -1305,6 +1325,15 @@ function A.openPlayer(guid, forWriting, source, beside)
 		open[guid] = frame
 		order[#order + 1] = guid
 		outcome = "opened"
+
+
+		local held = type(A.pooledOpenSize) == "function" and A.pooledOpenSize("player") or nil
+		local height = held and held.height or A.playerWindowHeight()
+		if height < A.playerWindowFloor() then
+			height = A.playerWindowFloor()
+		end
+		pcall(frame.SetHeight, frame, height)
+		frame.sizeFrom = held and "stored" or "authored"
 		pcall(frame.Show, frame)
 	end
 
@@ -1378,6 +1407,30 @@ function A.playerWindowsOpen()
 		end
 	end
 	return out
+end
+
+
+
+if type(A.registerWindowKind) == "function" then
+	A.registerWindowKind("player", {
+		label = "player window",
+		authored = function()
+			return A.playerWindowWidth(), A.playerWindowHeight()
+		end,
+		floor = function()
+			return A.playerWindowWidth(), A.playerWindowFloor()
+		end,
+		pooled = true,
+		newest = function()
+			local held = A.playerWindowsOpen()
+			return held[#held] and held[#held].frame or nil
+		end,
+
+		sized = function(frame, geometry)
+			pcall(frame.SetHeight, frame, geometry.height)
+			frame.sizeFrom = "typed"
+		end,
+	})
 end
 
 

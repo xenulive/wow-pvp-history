@@ -390,6 +390,7 @@ end
 
 
 
+
 function A.recordLevel(record, outcome, derived)
 	if outcome == "draw" then
 		return true
@@ -400,7 +401,6 @@ function A.recordLevel(record, outcome, derived)
 	local ok, face = pcall(A.roundsVerdict, record)
 	return ok and face == "draw"
 end
-
 
 
 
@@ -417,6 +417,7 @@ function A.roundsOutcome(record)
 	end
 	return "loss", won, played
 end
+
 
 
 
@@ -529,6 +530,9 @@ end
 
 
 
+
+
+
 function A.lastMatch(format, season, character, bound, outcome)
 	local db = A.db()
 	if not (db and type(db.matches) == "table") then
@@ -553,6 +557,7 @@ function A.lastMatch(format, season, character, bound, outcome)
 	end
 	return held
 end
+
 
 
 
@@ -902,8 +907,10 @@ function A.summarize(format, season, character, bound)
 
 			local mmrAfter = type(row) == "table" and type(row.mmrPost) == "number" and row.mmrPost or 0
 			local silent = A.ladderSilent(row)
-			if row and type(rating) == "number" and not silent then
-				local out = rating + (change or 0)
+
+
+			if row and type(rating) == "number" and change ~= nil and not silent then
+				local out = rating + change
 
 
 				local mmr = mmrAfter ~= 0 and mmrAfter or nil
@@ -1013,6 +1020,7 @@ function A.summarize(format, season, character, bound)
 					}
 				end
 			elseif onLadder then
+
 
 				summary.skipped = summary.skipped + 1
 			end
@@ -1625,6 +1633,7 @@ local ROUND_ENEMIES = 3
 
 
 
+
 local function keyMembers(members)
 	if type(members) ~= "table" or #members == 0 then
 		return nil
@@ -1769,8 +1778,9 @@ function A.compRounds(format)
 end
 
 
+
 function A.compCountName(format)
-	return A.compRounds(format) and "ROUNDS" or "GAMES"
+	return A.compRounds(format) and "RDS" or "GAMES"
 end
 
 
@@ -2571,73 +2581,6 @@ local CARD_TITLES = {
 
 
 
-
-local CARD_KEYS = {
-	hardest = { key = "HARDEST",
-		clause = "your lowest against any spec met %d times or more" },
-	best = { key = "BEST",
-		clause = "your highest alongside" },
-	swing = { key = "WORTH HAVING",
-		clause = "the largest gap between the two" },
-}
-
-
-
-
-function A.keptOffLines(entries)
-	local perName, order = {}, {}
-	if type(entries) ~= "table" then
-		return {}
-	end
-	for i = 1, #entries do
-		local entry = entries[i]
-		if type(entry) == "table" and type(entry.name) == "string" and type(entry.part) == "string" then
-			if perName[entry.name] == nil then
-				perName[entry.name] = {}
-				order[#order + 1] = entry.name
-			end
-			local parts = perName[entry.name]
-			local seen = false
-			for p = 1, #parts do
-				if parts[p] == entry.part then
-					seen = true
-				end
-			end
-			if not seen then
-				parts[#parts + 1] = entry.part
-			end
-		end
-	end
-	local out = {}
-	for n = 1, #order do
-		out[#out + 1] = order[n] .. " " .. table.concat(perName[order[n]], " and ")
-	end
-	return out
-end
-
-
-function A.cardKey(kind, floor)
-	local held = type(kind) == "string" and CARD_KEYS[kind] or nil
-	if held == nil then
-		return nil
-	end
-	local clause = held.clause
-
-	if type(floor) == "number" and clause:find("%%d", 1) ~= nil then
-		clause = clause:format(floor)
-	end
-	return held.key, clause
-end
-
-
-local CARD_NEEDS = {
-	hardest = "against you",
-	best = "alongside you",
-	swing = "on both sides",
-}
-
-
-
 local MERGED_TITLES = {
 	["hardest+best"] = "HARDEST OPPONENT AND BEST TEAMMATE",
 	["hardest+swing"] = "HARDEST OPPONENT AND WORTH HAVING",
@@ -2704,40 +2647,12 @@ end
 
 
 
-local function cardExcluded(kind, row)
-	local name = A.chipText(row)
-	if kind == "hardest" or kind == "best" then
-		local side = kind == "hardest" and row.against or row.alongside
-		local rate, rounds = A.percentText(side.winRate), side.rounds
-		local part = ("%s from %d %s"):format(rate, rounds,
-			kind == "hardest" and "against" or "alongside")
-		return ("%s is %s from %d and is not counted"):format(name, rate, rounds),
-			("%s %s from %d"):format(name, rate, rounds), name, part
-	end
-	local points = A.gapPoints(row.alongside.winRate - row.against.winRate)
-	local part = ("swings %d points from %d and %d"):format(math.abs(points),
-		row.against.rounds, row.alongside.rounds)
-	return ("%s swings %d points from %d rounds against and %d alongside and is not counted")
-		:format(name, math.abs(points), row.against.rounds, row.alongside.rounds),
-		("%s %s"):format(name, part), name, part
-end
-
-
-
 
 function A.mergedCardTitle(kinds)
 	if type(kinds) ~= "table" or #kinds < 2 then
 		return nil
 	end
 	return MERGED_TITLES[table.concat(kinds, "+")]
-end
-
-
-local function bothSidesEvidence(against, alongside)
-	if against == alongside then
-		return ("%d rounds each way"):format(against)
-	end
-	return ("%d against, %d alongside"):format(against, alongside)
 end
 
 
@@ -2781,87 +2696,9 @@ local function collapseCards(cards)
 				alongRounds = lead.alongRounds,
 
 				rounds = math.min(lead.againstRounds or 0, lead.alongRounds or 0),
-				evidence = bothSidesEvidence(lead.againstRounds or 0, lead.alongRounds or 0),
-
-				figure = nil,
 
 				folded = group,
 			}
-
-
-
-
-
-			local extremes = false
-			local held = {}
-			for g = 1, #kinds do
-				held[kinds[g]] = true
-			end
-			if held.hardest and held.best then
-				extremes = true
-			end
-
-			local against, along = lead.againstRounds or 0, lead.alongRounds or 0
-			local shared
-			if against == along then
-				shared = ("Every figure is your own win rate over the %d %s this spec was on that "
-					.. "side, not the spec's own."):format(against,
-					against == 1 and "round" or "rounds")
-			else
-
-				shared = ("Every figure is your own win rate over the rounds this spec was on that "
-					.. "side, %d against and %d alongside, not the spec's own."):format(
-					against, along)
-			end
-
-			card.tooltip = {
-				("One spec tops %s readings"):format(#kinds == 2 and "both" or "all three"),
-				shared,
-				{ gap = true },
-			}
-
-			for _, kind in ipairs(CARD_KINDS) do
-				if held[kind] then
-					local key, clause = A.cardKey(kind, lead.floor)
-					local rate = nil
-					for g = 1, #group do
-						if group[g].kind == kind then
-							rate = group[g].rate
-						end
-					end
-					if key ~= nil and rate ~= nil then
-						card.tooltip[#card.tooltip + 1] =
-							{ key = key, text = ("%s, %s"):format(rate, clause) }
-					end
-				end
-			end
-
-			card.tooltip[#card.tooltip + 1] = { gap = true }
-			if extremes then
-				card.tooltip[#card.tooltip + 1] =
-					"Losing most to the spec you win most with is what a large swing is."
-			end
-
-
-			local keptOff = {}
-			for _, kind in ipairs(CARD_KINDS) do
-				if held[kind] then
-					for g = 1, #group do
-						if group[g].kind == kind and group[g].excludedName ~= nil
-							and group[g].excludedPart ~= nil then
-							keptOff[#keptOff + 1] = { name = group[g].excludedName,
-								part = group[g].excludedPart }
-						end
-					end
-				end
-			end
-			local said = A.keptOffLines(keptOff)
-
-			local floorLine = ("A spec needs %d rounds on a side."):format(lead.floor)
-			if #said > 0 then
-				floorLine = floorLine .. " " .. table.concat(said, ", ") .. "."
-			end
-			card.tooltip[#card.tooltip + 1] = { key = "NOT COUNTED YET", text = floorLine }
 
 			out[#out + 1] = card
 		end
@@ -2872,28 +2709,16 @@ end
 
 
 
-local function noneCard(kind, floor, held)
-	local card = {
+local function noneCard(kind, floor)
+	return {
 		kind = "none",
 
 		kinds = { kind },
 		title = CARD_TITLES[kind],
 		name = CARD_NONE_NAME,
-		figure = "",
 		floor = floor,
 		rounds = 0,
-		evidence = ("no spec has %d rounds %s"):format(floor, CARD_NEEDS[kind]),
 	}
-	card.tooltip = {
-		"Nothing has topped this reading yet.",
-		("A spec needs %d rounds %s to be considered."):format(floor, CARD_NEEDS[kind]),
-	}
-	if held ~= nil then
-		card.excluded, card.excludedShort, card.excludedName, card.excludedPart =
-					cardExcluded(kind, held)
-		card.tooltip[#card.tooltip] = card.tooltip[#card.tooltip] .. " " .. card.excluded .. "."
-	end
-	return card
 end
 
 
@@ -2938,18 +2763,11 @@ function A.specCards(format, season, character, bound, comp)
 
 	for _, kind in ipairs(CARD_KINDS) do
 		local best, bestScore = nil, nil
-		local held, heldScore = nil, nil
 		for i = 1, #rows do
 			local row = rows[i]
 			local score, qualified = cardScore(kind, row, floor)
-			if score ~= nil then
-				if qualified then
-					if cardTops(kind, row, score, best, bestScore) then
-						best, bestScore = row, score
-					end
-				elseif cardTops(kind, row, score, held, heldScore) then
-					held, heldScore = row, score
-				end
+			if score ~= nil and qualified and cardTops(kind, row, score, best, bestScore) then
+				best, bestScore = row, score
 			end
 		end
 
@@ -2971,64 +2789,20 @@ function A.specCards(format, season, character, bound, comp)
 				alongRounds = best.alongside and best.alongside.rounds or nil,
 			}
 
+
 			if kind == "hardest" then
-				local side = best.against
-
-				card.rate = A.percentText(side.winRate)
-				card.figure = ("%s  %d-%d"):format(card.rate, side.wins, side.losses)
-				card.evidence = ("over %d %s against you"):format(side.rounds,
-					side.rounds == 1 and "round" or "rounds")
-				card.tooltip = {
-					"Hardest opponent",
-					("%s is your own win rate over the %d %s %s was on the enemy side, "
-						.. "not that spec's own rate."):format(A.percentText(side.winRate),
-						side.rounds, side.rounds == 1 and "round" or "rounds", card.name),
-				}
+				card.rate = A.percentText(best.against.winRate)
 			elseif kind == "best" then
-				local side = best.alongside
-				card.rate = A.percentText(side.winRate)
-				card.figure = ("%s  %d-%d"):format(card.rate, side.wins, side.losses)
-				card.evidence = ("over %d %s alongside you"):format(side.rounds,
-					side.rounds == 1 and "round" or "rounds")
-				card.tooltip = {
-					"Best teammate",
-					("%s is your own win rate over the %d %s %s was on your side."):format(
-						A.percentText(side.winRate), side.rounds,
-						side.rounds == 1 and "round" or "rounds", card.name),
-				}
+				card.rate = A.percentText(best.alongside.winRate)
 			else
-				local against, alongside = best.against, best.alongside
 
-				local points = A.gapPoints(bestScore)
-				card.rate = A.signedText(points)
-				card.figure = ("%s  %s to %s"):format(card.rate,
-					A.percentText(against.winRate), A.percentText(alongside.winRate))
-				card.evidence = bothSidesEvidence(against.rounds, alongside.rounds)
-				card.tooltip = {
-					"Worth having",
-					("Both figures are your own win rate: %s of the %d rounds you played "
-						.. "against %s, and %s of the %d you played with one."):format(
-						A.percentText(against.winRate), against.rounds, card.name,
-						A.percentText(alongside.winRate), alongside.rounds),
-					("The %d points between them is how much better your rounds go with this "
-						.. "spec on your side rather than the other."):format(math.abs(points)),
-				}
+				card.rate = A.signedText(A.swingPoints(best.against, best.alongside))
 			end
-
-
-			local sentence = ("A spec needs %d rounds %s to be considered."):format(floor,
-				CARD_NEEDS[kind])
-			if held ~= nil and heldScore >= bestScore then
-				card.excluded, card.excludedShort, card.excludedName, card.excludedPart =
-					cardExcluded(kind, held)
-				sentence = sentence .. " " .. card.excluded .. "."
-			end
-			card.tooltip[#card.tooltip + 1] = sentence
 
 			out[#out + 1] = card
 		else
 
-			missing[kind] = noneCard(kind, floor, held)
+			missing[kind] = noneCard(kind, floor)
 		end
 	end
 
@@ -3057,6 +2831,7 @@ function A.specEnds(rows)
 			card.key = top.key
 			card.name = A.chipText(top)
 			card.spec = top.spec
+			card.class = top.class
 			card.classToken = top.classToken
 			card.winRate = side.winRate
 			card.rate = A.percentText(side.winRate)
@@ -3066,24 +2841,6 @@ function A.specEnds(rows)
 		out[i] = card
 	end
 	return out
-end
-
-
-function A.specPaneDefault(cards)
-	if type(cards) ~= "table" then
-		return nil
-	end
-	for i = 1, #cards do
-		local kinds = cards[i].kinds
-		if cards[i].kind ~= "none" and type(kinds) == "table" and cards[i].key ~= nil then
-			for k = 1, #kinds do
-				if kinds[k] == "hardest" then
-					return cards[i].key
-				end
-			end
-		end
-	end
-	return nil
 end
 
 
@@ -3107,7 +2864,7 @@ function A.specPaneSentence(row)
 	if against and alongside and against.winRate ~= nil and alongside.winRate ~= nil then
 		if against.rounds >= floor and alongside.rounds >= floor then
 
-			local points = A.gapPoints(alongside.winRate - against.winRate)
+			local points = A.swingPoints(against, alongside)
 			if points > 0 then
 				said = ("Your rounds go %d %s better with it on your side than with it against you.")
 					:format(points, points == 1 and "point" or "points")
@@ -3120,6 +2877,40 @@ function A.specPaneSentence(row)
 		end
 	end
 	return said
+end
+
+
+
+
+
+
+
+function A.matchRowLook(id)
+	local record = type(A.match) == "function" and A.match(id) or nil
+	if type(record) ~= "table" then
+		return nil
+	end
+	local columns = A.flatRowColumns(record.format, { record })
+	local cells = type(columns) == "table" and A.rowColumnCells(record, record.format, nil, columns) or nil
+	local held = {}
+	if type(cells) == "table" then
+		for c = 1, #columns do
+			held[columns[c].key] = cells[c]
+		end
+	end
+	local verdict, won, played = A.roundsVerdict(record)
+	local _, changeTone = A.ratingDelta(record)
+	local _, out = A.recordLadderPair(record)
+	return {
+		cells = held,
+		id = ("#%s"):format(tostring(record.id)),
+		rounds = (verdict ~= nil and verdict ~= "unsummed" and type(played) == "number" and played > 0)
+			and { won = won, played = played } or nil,
+		resultTone = A.resultTone(record),
+		changeTone = changeTone,
+		ratingOut = out,
+		format = record.format,
+	}
 end
 
 
@@ -3170,7 +2961,8 @@ function A.specPaneLines(row, picked)
 	for i = #ids, 1, -1 do
 		local text = A.matchLineText(ids[i])
 		if text then
-			met[#met + 1] = { kind = "specMet", id = ids[i], text = text }
+
+			met[#met + 1] = { kind = "specMet", id = ids[i], text = text, look = A.matchRowLook(ids[i]) }
 		end
 	end
 	lines[#lines + 1] = { kind = "specMetHead", key = "MET IN",
@@ -3463,11 +3255,51 @@ end
 
 
 
+
 local LOBBY_SORTS = {
 	withRate = { side = "with", field = "winRate", column = "WITH WON" },
 	againstRate = { side = "against", field = "winRate", column = "AGAINST WON" },
 	swing = { field = "swing", column = "SWING" },
+	damage = { cell = "damage", column = "DAMAGE" },
+	wins = { objective = 1, column = "WINS" },
+	kb = { cell = "kb", column = "KB" },
+	dispels = { cell = "dispels", column = "DISP" },
 }
+
+
+
+
+local function lobbyReading(row, sort)
+	if type(row) ~= "table" then
+		return nil
+	end
+	local value
+	if sort.cell ~= nil or sort.objective ~= nil then
+		local cells = type(row.joined) == "table" and type(row.joined.cells) == "table" and row.joined.cells or nil
+		if cells == nil then
+			return nil
+		end
+		if sort.cell ~= nil then
+			value = cells[sort.cell]
+		else
+			value = type(cells.objectiveValues) == "table" and cells.objectiveValues[sort.objective] or nil
+		end
+	elseif sort.side == nil then
+		value = row[sort.field]
+	else
+		local side = row[sort.side]
+		value = side and side[sort.field] or nil
+	end
+	if type(value) ~= "number" or value ~= value then
+		return nil
+	end
+	return value
+end
+
+
+function A.lobbySortValue(row, key)
+	return lobbyReading(row, LOBBY_SORTS[key] or LOBBY_SORTS.swing)
+end
 
 
 local LOBBY_SORT_DEFAULT = "swing"
@@ -3490,11 +3322,13 @@ end
 
 
 function A.lobbySortOpens(key)
-	local columns = A.rowColumns("lobby")
-	if type(columns) == "table" then
-		for i = 1, #columns do
-			if columns[i].sort == key then
-				return columns[i].first ~= "descending"
+	for _, which in ipairs({ "lobby", "lobbyPane" }) do
+		local columns = A.rowColumns(which)
+		if type(columns) == "table" then
+			for i = 1, #columns do
+				if columns[i].sort == key then
+					return columns[i].first ~= "descending"
+				end
 			end
 		end
 	end
@@ -3517,14 +3351,13 @@ function A.lobbySorted(rows, key, ascending)
 	end
 
 	local function reading(row)
-		if sort.side == nil then
-			return row[sort.field]
-		end
-		local side = row[sort.side]
-		return side and side[sort.field] or nil
+		return lobbyReading(row, sort)
 	end
 
 	local function evidence(row)
+		if sort.cell ~= nil or sort.objective ~= nil then
+			return 0
+		end
 		if sort.side == nil then
 
 			local with = row.with and row.with.rounds or 0
@@ -3728,6 +3561,11 @@ end
 
 function A.lobbyRows(record, sort, ascending, columns, joined)
 	local tally, read, total, typed = A.lobbyTally(record)
+
+	for i = 1, type(tally) == "table" and #tally or 0 do
+		local row = tally[i]
+		row.joined = type(joined) == "table" and type(row.guid) == "string" and joined[row.guid] or nil
+	end
 	local rows = A.lobbySorted(tally, sort, ascending)
 	if type(columns) ~= "table" then
 		columns = A.lobbyColumns(record)
@@ -3739,7 +3577,6 @@ function A.lobbyRows(record, sort, ascending, columns, joined)
 
 	for i = 1, #rows do
 		local row = rows[i]
-		row.joined = type(joined) == "table" and type(row.guid) == "string" and joined[row.guid] or nil
 		local cells = A.columnCells(row, columns, LOBBY_CELL)
 
 		local tint = nil
@@ -4096,8 +3933,9 @@ function A.compHeading(format, drawn, sort, ascending, count)
 end
 
 
+
 function A.compDivider(format)
-	return ("UNDER %d %s"):format(A.rankFloor("comps"), A.compCountName(format)),
+	return ("UNDER %d %s"):format(A.rankFloor("comps"), A.compRounds(format) and "ROUNDS" or "GAMES"),
 		"not ranked, most met first"
 end
 
@@ -4216,13 +4054,11 @@ end
 
 
 
-function A.gapPoints(gap)
-	local points = math.floor(math.abs(gap) * 100 + 0.5)
-	if gap < 0 then
-		return -points
-	end
-	return points
+function A.swingPoints(against, alongside)
+	return A.percentPoints(alongside.winRate) - A.percentPoints(against.winRate)
 end
+
+
 
 
 
@@ -4256,6 +4092,9 @@ end
 
 
 local PLOT_STEPS = { 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000, 2500, 5000 }
+
+
+
 
 
 

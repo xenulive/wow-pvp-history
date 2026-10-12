@@ -205,7 +205,9 @@ end
 
 
 local function tokenMatches(token, wanted)
-	if guarded(UnitIsPlayer, token) ~= true then
+
+	local isPlayer = guarded(UnitIsPlayer, token)
+	if not (A.canRead(isPlayer) and isPlayer == true) then
 		return false
 	end
 	return isNamed(A.unitNames(token), wanted)
@@ -378,18 +380,7 @@ local function storeDuel(opened, result, ended)
 			.. ". /pvph rebuild")
 	end
 
-	if A.finderRecordStored then
-		local repainted, err = pcall(A.finderRecordStored)
-		if not repainted then
-			A.noteError(err, "duel-finder")
-		end
-	end
-	if A.overlayRecordStored then
-		local repainted, err = pcall(A.overlayRecordStored)
-		if not repainted then
-			A.noteError(err, "duel-overlay")
-		end
-	end
+	A.recordStored("duel")
 	A.trace("index", { n = indexed and folded or nil, id = record.id })
 
 

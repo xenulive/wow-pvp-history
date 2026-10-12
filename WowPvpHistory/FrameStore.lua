@@ -143,8 +143,13 @@ local function buildRow(frame, parent, index)
 	row.dot:SetPoint("TOPLEFT", parent, "TOPLEFT", 0,
 		-(y + (A.metric("storeRow") - A.metric("storeDot")) / 2))
 	row.name:SetPoint("TOPLEFT", parent, "TOPLEFT", A.metric("storeNameInset"), -y)
-	row.reading:SetPoint("TOPLEFT", parent, "TOPLEFT", A.metric("storeReadingInset"), -y)
 	row.action:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, -y)
+
+
+
+
+	row.reading:SetPoint("TOPLEFT", parent, "TOPLEFT", A.metric("storeReadingInset"), -y)
+	row.reading:SetPoint("TOPRIGHT", row.action, "TOPLEFT", -A.metric("paneGap"), 0)
 
 	frame.rows[index] = row
 	return row
@@ -194,7 +199,7 @@ local function buildWindow()
 	frame.sectionHeading:SetPoint("TOPLEFT", frame.body, "TOPLEFT", 0, 0)
 	frame.sectionHeading:SetJustifyH("LEFT")
 	frame.sectionHeading:SetWordWrap(false)
-	frame.sectionHeading:SetText("AS OF THIS LOGIN")
+	frame.sectionHeading:SetText("THE STORE NOW")
 	A.style(frame.sectionHeading, "label", "accent")
 
 	frame.rows = {}

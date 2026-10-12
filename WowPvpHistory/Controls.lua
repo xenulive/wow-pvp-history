@@ -1505,7 +1505,7 @@ end
 
 
 
-function A.keyedTooltip(owner, lines, anchor)
+function A.keyedTooltip(owner, lines, anchor, kind)
 	if not (GameTooltip and type(lines) == "table" and #lines > 0) then
 		return false
 	end
@@ -1566,9 +1566,11 @@ function A.keyedTooltip(owner, lines, anchor)
 		end
 
 
+
+
 		local okWidth, width = pcall(GameTooltip.GetWidth, GameTooltip)
 		A.trace("tooltip", {
-			source = lines[1],
+			kind = type(kind) == "string" and kind or "keyed",
 			lines = #lines,
 			longest = longest,
 			anchor = used,
@@ -1654,7 +1656,7 @@ function A.attachPillReason(button)
 			local ok, text = pcall(self.GetText, self)
 			title = (ok and type(text) == "string") and text or ""
 		end
-		A.keyedTooltip(self, { title, self.pillReason }, "ANCHOR_TOP")
+		A.keyedTooltip(self, { title, self.pillReason }, "ANCHOR_TOP", "pill")
 	end)
 	button:HookScript("OnLeave", A.hideTooltip)
 	return true

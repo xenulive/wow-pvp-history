@@ -171,8 +171,8 @@ function A.setOverlayCount(value)
 	local want = math.floor(figure)
 	db.ui = db.ui or {}
 	db.ui.overlayCount = want ~= COUNT_DEFAULT and want or nil
-	if A.refreshOptionsWindow then
-		pcall(A.refreshOptionsWindow)
+	if type(A.notifyOverlayCountSetting) == "function" then
+		A.notifyOverlayCountSetting()
 	end
 	A.overlayRepaint("setting", "count")
 	return true
@@ -215,8 +215,8 @@ function A.setOverlayOpacity(value)
 	local want = math.floor(figure / OPACITY_STEP + 0.5) * OPACITY_STEP
 	db.ui = db.ui or {}
 	db.ui.overlayOpacity = want ~= OPACITY_DEFAULT and want or nil
-	if A.refreshOptionsWindow then
-		pcall(A.refreshOptionsWindow)
+	if type(A.notifyOverlayOpacitySetting) == "function" then
+		A.notifyOverlayOpacitySetting()
 	end
 	A.overlayRepaint("setting", "opacity")
 	return true
@@ -246,8 +246,8 @@ function A.setOverlayCombat(enabled)
 	else
 		db.ui.overlayCombat = nil
 	end
-	if A.refreshOptionsWindow then
-		pcall(A.refreshOptionsWindow)
+	if type(A.notifyOverlayCombatSetting) == "function" then
+		A.notifyOverlayCombatSetting()
 	end
 	A.overlayRepaint("setting", "combat")
 	return true
@@ -495,16 +495,17 @@ end
 
 
 
+
 function A.ratingTint(format, rating)
 	local _, _, reason, r, g, b = A.ratingColour(format, rating)
 	if reason == "unheard" then
 		A.ratingAsk()
 	end
 	if r ~= nil then
-		return r, g, b
+		return r, g, b, "tier"
 	end
 	local br, bg, bb = A.color("bright")
-	return br, bg, bb
+	return br, bg, bb, reason
 end
 
 
@@ -666,7 +667,7 @@ local function hover(cell)
 	if rated ~= nil then
 		out[#out + 1] = rated
 	end
-	return A.keyedTooltip(cell, out, hoverAnchor(cell))
+	return A.keyedTooltip(cell, out, hoverAnchor(cell), "overlay")
 end
 
 
@@ -789,8 +790,9 @@ end
 
 
 local function tintRating(fontString, format, rating)
-	local r, g, b = A.ratingTint(format, rating)
+	local r, g, b, tint = A.ratingTint(format, rating)
 	fontString:SetTextColor(r, g, b)
+	return tint
 end
 
 
@@ -809,6 +811,7 @@ local function nameFloor()
 	end
 	return widest
 end
+
 
 
 
@@ -859,14 +862,14 @@ local function paintBlock(text, tone, format, line, floored)
 		return finish(labelWidth)
 	end
 
-	local lineWidth = 0
+	local lineWidth, tint = 0, nil
 	frame.rating:ClearAllPoints()
 	frame.rating:SetPoint("TOPLEFT", frame.label, "BOTTOMLEFT", 0, -LINE_GAP)
 	if line.primary ~= nil then
 		frame.rating:SetText(line.primary)
 		A.style(frame.rating, "number", line.primaryTone or "bright")
 		if line.rating ~= nil then
-			tintRating(frame.rating, format, line.rating)
+			tint = tintRating(frame.rating, format, line.rating)
 		end
 		local width = A.textRoom(frame.rating, line.primary)
 		frame.rating:SetWidth(width)
@@ -907,11 +910,10 @@ local function paintBlock(text, tone, format, line, floored)
 		frame.today:Hide()
 	end
 
-	if lineWidth > labelWidth then
-		return finish(lineWidth)
-	end
-	return finish(labelWidth)
+	local blockWidth, ruleWidth = finish(lineWidth > labelWidth and lineWidth or labelWidth)
+	return blockWidth, ruleWidth, tint
 end
+
 
 
 
@@ -923,7 +925,7 @@ local function paint(character, format, rows)
 		tone = "text"
 	end
 	local line = (#rows > 0) and secondLine(format, character) or nil
-	local blockWidth, ruleWidth = paintBlock(text, tone, format, line, #rows > 0)
+	local blockWidth, ruleWidth, tint = paintBlock(text, tone, format, line, #rows > 0)
 
 	local height = barHeight()
 	local tileTop = centredTop(tileHeight())
@@ -984,7 +986,7 @@ local function paint(character, format, rows)
 
 	local r, g, b = A.color("panel")
 	frame.ground:SetColorTexture(r, g, b, drawnOpacity() / 100)
-	return ids, line, texts, tileX, ruleWidth, height
+	return ids, line, texts, tileX, ruleWidth, height, tint
 end
 
 
@@ -1045,7 +1047,7 @@ function A.overlayRepaint(source, via)
 
 		local format, ids = nil, {}
 		local line, texts, tileX = nil, {}, nil
-		local ruleWidth, height
+		local ruleWidth, height, tint
 		local kept
 		if reason == nil then
 			local db = A.db()
@@ -1061,7 +1063,7 @@ function A.overlayRepaint(source, via)
 				kept = "kept"
 				ids, format = painted.ids, painted.format
 				line, texts, tileX = painted.line, painted.texts, painted.tileX
-				ruleWidth, height = painted.ruleWidth, painted.height
+				ruleWidth, height, tint = painted.ruleWidth, painted.height, painted.tint
 			else
 				if source == "combat" then
 					kept = "drawn"
@@ -1071,11 +1073,11 @@ function A.overlayRepaint(source, via)
 				if build() == nil then
 					return
 				end
-				ids, line, texts, tileX, ruleWidth, height = paint(character, held, rows)
+				ids, line, texts, tileX, ruleWidth, height, tint = paint(character, held, rows)
 				format = held
 				painted = { character = character, db = db, matches = matches, count = count, day = day,
 					format = format, ids = ids, line = line, texts = texts, tileX = tileX,
-					ruleWidth = ruleWidth, height = height }
+					ruleWidth = ruleWidth, height = height, tint = tint }
 				armMidnight(line ~= nil)
 			end
 			if #ids == 0 then
@@ -1100,7 +1102,8 @@ function A.overlayRepaint(source, via)
 		end
 		local title = ruleWidth ~= nil and TITLE_TEXT or nil
 		last = { state = state, reason = reason, source = source, format = format, ids = ids,
-			line = line, texts = texts, tileX = tileX, title = title, ruleWidth = ruleWidth, height = height }
+			line = line, texts = texts, tileX = tileX, title = title, ruleWidth = ruleWidth, height = height,
+			tint = tint }
 		A.trace("overlay", {
 			source = source,
 			via = via or kept,
@@ -1110,6 +1113,7 @@ function A.overlayRepaint(source, via)
 			records = #ids > 0 and table.concat(ids, "+") or nil,
 			n = #ids,
 			rating = line and line.rating or nil,
+			tint = tint,
 			today = line and line.today or nil,
 			todayN = line and line.todayN or nil,
 			cells = #pairsDrawn > 0 and table.concat(pairsDrawn, "+") or nil,
@@ -1294,4 +1298,17 @@ end)
 A.on("PLAYER_REGEN_ENABLED", function()
 	inCombat = false
 	A.overlayRepaint("combat")
+end)
+
+
+
+
+
+
+
+A.on("PVP_RATED_STATS_UPDATE", function()
+	if painted == nil or painted.tint ~= "unheard" then
+		return
+	end
+	A.overlayRepaint("rated")
 end)

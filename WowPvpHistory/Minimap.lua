@@ -327,6 +327,9 @@ local function escapeOf(r, g, b)
 end
 
 
+
+
+
 local function headlineOf(record)
 	local ok, lines, _, _, heads = pcall(A.detailLines, record)
 	if not ok or type(lines) ~= "table" or type(heads) ~= "table" then
@@ -334,8 +337,8 @@ local function headlineOf(record)
 	end
 	for i = 1, #lines do
 		local head = heads[i]
-		if type(head) == "table" and head.kind == "headline" and type(lines[i]) == "string" then
-			return (lines[i]:gsub("^%s+", ""))
+		if type(head) == "table" and head.kind == "headline" then
+			return head
 		end
 	end
 	return nil
@@ -366,9 +369,20 @@ local function showTooltip(owner)
 		return
 	end
 
+
+	local drawn = 0
+	local function line(text, r, g, b)
+		GameTooltip:AddLine(text, r, g, b)
+		drawn = drawn + 1
+	end
+	local function double(left, right, lr, lg, lb, rr, rg, rb)
+		GameTooltip:AddDoubleLine(left, right, lr, lg, lb, rr, rg, rb)
+		drawn = drawn + 1
+	end
+
 	local format = newest.format
 	local formatText = A.formatLabel(format)
-	GameTooltip:AddDoubleLine("PvP History", formatText, ar, ag, ab, dr, dg, db)
+	double("PvP History", formatText, ar, ag, ab, dr, dg, db)
 
 	local figures = A.todayFigures(format, character) or {}
 
@@ -384,27 +398,65 @@ local function showTooltip(owner)
 			parts[#parts + 1] = A.colorEscape(figures.changeTone or "dim") .. figures.change .. " today|r"
 			drawnChange = figures.change
 		end
-		GameTooltip:AddDoubleLine("Rating", table.concat(parts, " "), dr, dg, db, tr, tg, tb)
+		double("Rating", table.concat(parts, " "), dr, dg, db, tr, tg, tb)
 	end
 
 	if figures.record ~= nil then
 		local rr, rg, rb = A.color(figures.recordTone or "dim")
-		GameTooltip:AddDoubleLine("Today", figures.record, dr, dg, db, rr, rg, rb)
+		double("Today", figures.record, dr, dg, db, rr, rg, rb)
 	end
 
-	local headline = headlineOf(newest)
+
+
+	line(" ")
 	local clock = A.clockKey(newest.openedAt or newest.completedAt)
-	local lastText = headline
-	if headline ~= nil and clock ~= nil then
-		lastText = headline .. "  " .. clock
-	end
-	if lastText ~= nil then
-		GameTooltip:AddDoubleLine("Last match", lastText, dr, dg, db, tr, tg, tb)
+	if clock ~= nil then
+		double("Last match", clock, dr, dg, db, dr, dg, db)
+	else
+		line("Last match", dr, dg, db)
 	end
 
-	GameTooltip:AddLine(" ")
-	GameTooltip:AddLine(hint, mr, mg, mb)
+	local drawnFaction
+	local head = headlineOf(newest)
+	if head ~= nil then
+
+
+		local result = head.result
+		if result ~= nil and head.mark ~= nil then
+			result = result .. " " .. A.colorEscape("dim") .. head.mark .. "|r"
+		end
+		local er, eg, eb = A.color(head.resultTone or "text")
+		local cr, cg, cb = A.color(head.deltaTone or "text")
+		if result ~= nil and head.delta ~= nil then
+			double(result, head.delta, er, eg, eb, cr, cg, cb)
+		elseif result ~= nil then
+			line(result, er, eg, eb)
+		elseif head.delta ~= nil then
+			line(head.delta, cr, cg, cb)
+		end
+
+
+
+
+
+		local side = A.factionWord(head.faction)
+		if side ~= nil then
+			local sr, sg, sb = A.color(A.factionTone(head.faction))
+			if head.place ~= nil then
+				double(side, head.place, sr, sg, sb, tr, tg, tb)
+			else
+				line(side, sr, sg, sb)
+			end
+			drawnFaction = head.faction
+		elseif head.place ~= nil then
+			line(head.place, tr, tg, tb)
+		end
+	end
+
+	line(" ")
+	line(hint, mr, mg, mb)
 	GameTooltip:Show()
+
 
 
 	A.trace("minimap/tooltip", {
@@ -413,6 +465,8 @@ local function showTooltip(owner)
 		today = drawnChange,
 		record = figures.record,
 		id = newest.id,
+		faction = drawnFaction,
+		lines = drawn,
 	}, "ui")
 end
 

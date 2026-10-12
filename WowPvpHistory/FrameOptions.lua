@@ -1943,8 +1943,14 @@ end
 
 
 
+
+
 function A.refreshOptionsWindow(walk)
 	if not window then
+		return false
+	end
+	if not window.showingPaint
+		and not (type(A.windowBodyShown) == "function" and A.windowBodyShown() == "settings") then
 		return false
 	end
 
@@ -2138,7 +2144,11 @@ function A.paintPageBody(page, width, height)
 		or window.paintedWidth ~= width or window.paintedHeight ~= height
 	window.onScreen = true
 	window.paintedWidth, window.paintedHeight = width, height
-	return A.refreshOptionsWindow(arriving and storageShowing())
+
+	window.showingPaint = true
+	local ok, painted = pcall(A.refreshOptionsWindow, arriving and storageShowing())
+	window.showingPaint = nil
+	return ok and painted or false
 end
 
 

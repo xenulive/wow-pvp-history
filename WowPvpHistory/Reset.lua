@@ -110,15 +110,20 @@ end
 
 
 
+
 local function factory(db, schema)
 
 
 
+
+
 	local pruneLog = db.pruneLog
+	local characters = db.characters
 	for key in pairs(db) do
 		db[key] = nil
 	end
 	db.pruneLog = pruneLog
+	db.characters = characters
 
 
 	db.schema = type(schema) == "number" and schema or A.schema
@@ -249,6 +254,30 @@ end
 
 
 
+function A.pinLine(pin)
+	if pin.state == "write" then
+		local line = ("a copy of all of it is pinned first, and /pvph restore pinned brings it "
+			.. "back")
+		if pin.replaced then
+			line = line .. (". It replaces a pin holding %d"):format(pin.replaced)
+		end
+		return line
+	end
+
+	if pin.state == "keep" then
+
+
+
+		return ("the pin already holds %d %s from %s and is larger, so it is kept rather than "
+			.. "overwritten"):format(pin.held, pin.held == 1 and "match" or "matches",
+			tostring(pin.at))
+	end
+
+	return "NOTHING IS PINNED: this client provides no encoding surface, so none of this comes back"
+end
+
+
+
 
 
 
@@ -283,11 +312,12 @@ function A.openResetConfirm()
 
 	resetArmed = false
 
-	local pinned = before.pin.state ~= "none"
 	local note
-	if pinned then
-		note = "This cannot be undone from the interface. A copy is pinned first, and "
-			.. "/pvph restore pinned brings it back. Click twice."
+	if before.pin.state ~= "none" then
+
+		local line = A.pinLine(before.pin)
+		note = "This cannot be undone from the interface. " .. line:sub(1, 1):upper() .. line:sub(2)
+			.. ". Click twice."
 	else
 		note = "NOTHING WILL BE PINNED: this client provides no encoding surface, so none of this "
 			.. "comes back. Click twice."
@@ -314,6 +344,8 @@ function A.openResetConfirm()
 				result.matches == 1 and "match" or "matches"))
 			if result.pin.ok then
 				A.say("a copy is pinned. /pvph restore pinned brings it back")
+			elseif result.pin.reason == "smaller" then
+				A.say("the larger pin already held was kept rather than overwritten")
 			end
 
 			return true

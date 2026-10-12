@@ -1585,7 +1585,7 @@ local function buildTile(parent)
 	tile.showTooltip = function(self)
 
 
-		return A.keyedTooltip(self, self.tooltipLines, "ANCHOR_TOP")
+		return A.keyedTooltip(self, self.tooltipLines, "ANCHOR_TOP", "tile")
 	end
 	tile:SetScript("OnEnter", tile.showTooltip)
 	tile:SetScript("OnLeave", A.hideTooltip)
@@ -3312,6 +3312,19 @@ end
 
 
 
+
+function A.statsPillView(open)
+	open = type(open) == "table" and open or {}
+	for _, word in ipairs({ "maps", "specs", "graph", "details" }) do
+		if open[word] then
+			return word
+		end
+	end
+	return nil
+end
+
+
+
 local function paintGraphToggle(region, summary, folded)
 	if not region.graphToggle then
 		return false
@@ -3625,7 +3638,7 @@ local function barColumn(plot, index)
 		column.hit:SetScript("OnEnter", function(self)
 			local text = A.winLossHoverText(self.column)
 			if text and type(A.keyedTooltip) == "function" then
-				A.keyedTooltip(self, { text }, "ANCHOR_TOP")
+				A.keyedTooltip(self, { text }, "ANCHOR_TOP", "winloss")
 			end
 		end)
 		column.hit:SetScript("OnLeave", function()
@@ -3947,6 +3960,33 @@ function A.paintSummaryRegion(region, summary, scope, reading)
 			end
 			A.setPillSelected(region.mapsToggle, type(A.mapsViewShown) == "function" and A.mapsViewShown())
 		end
+	end
+
+
+
+
+	local view = A.statsPillView({
+		maps = region.mapsToggle and region.mapsToggle:IsShown() and type(A.mapsViewShown) == "function"
+			and A.mapsViewShown(),
+		specs = region.specsToggle and region.specsToggle:IsShown() and type(A.specsViewShown) == "function"
+			and A.specsViewShown(),
+		graph = region.graphToggle and region.graphToggle:IsShown() and not graphFolded,
+		details = region.details and region.details:IsShown() and not collapsed,
+	})
+	local pills = { { "maps", region.mapsToggle }, { "specs", region.specsToggle },
+		{ "graph", region.graphToggle }, { "details", region.details } }
+	local selected = {}
+	for _, pair in ipairs(pills) do
+		if pair[2] then
+			A.setPillSelected(pair[2], pair[1] == view)
+			if pair[2].controlSelected and pair[2]:IsShown() then
+				selected[#selected + 1] = pair[1]
+			end
+		end
+	end
+	if type(A.trace) == "function" then
+		A.trace("statspills", { selected = #selected > 0 and table.concat(selected, ",") or "none",
+			pillView = view or "none" }, "ui")
 	end
 
 
