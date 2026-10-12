@@ -76,8 +76,9 @@ end
 
 
 
-local function store(create)
-	local db = A.db()
+
+local function store(create, db)
+	db = db or A.db()
 	if not db then
 		return nil
 	end
@@ -97,6 +98,17 @@ local function stampOf(text)
 		return nil
 	end
 	local trimmed = text:match("^%s*(.-)%s*$")
+
+	local year, month, day = trimmed:match("^(%d%d%d%d)%-(%d%d)%-(%d%d)")
+	year, month, day = tonumber(year), tonumber(month), tonumber(day)
+	if year == nil or month < 1 or month > 12 or day < 1 then
+		return nil
+	end
+	local leap = (year % 4 == 0 and year % 100 ~= 0) or year % 400 == 0
+	local length = ({ 31, leap and 29 or 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 })[month]
+	if day > length then
+		return nil
+	end
 	if trimmed:match("^%d%d%d%d%-%d%d%-%d%d$") then
 		return trimmed .. " 00:00:00"
 	end
@@ -222,7 +234,7 @@ end
 
 
 
-function A.seasonOpen(number, when, source, game)
+function A.seasonOpen(number, when, source, game, db)
 
 	if type(number) ~= "number" or number ~= math.floor(number) or number <= 0
 		or number == math.huge then
@@ -232,22 +244,28 @@ function A.seasonOpen(number, when, source, game)
 	if at == nil then
 		return nil, "a date reads YYYY-MM-DD, or leave it out for now"
 	end
-	local list = store(true)
+	local list = store(true, db)
 	if not list then
 		return nil, "no database"
 	end
+	local taken = false
 	if type(game) == "number" then
 		local newest = list[#list]
-		local taken = type(newest) == "table" and newest.gameSeason == nil and newest.season == number
+		taken = type(newest) == "table" and newest.gameSeason == nil and newest.season == number
 		for i = 1, #list do
 			if list[i].gameSeason == game then
 				taken = true
 			end
 		end
-		if taken then
-			return nil, ("season %d is already declared"):format(number)
+	else
+
+		for i = 1, #list do
+			if list[i].season == number then
+				taken = true
+			end
 		end
-	elseif A.seasonEntry(number) then
+	end
+	if taken then
 		return nil, ("season %d is already declared"):format(number)
 	end
 
@@ -387,7 +405,9 @@ A.on("ARENA_SEASON_WORLD_STATE", function()
 		A.trace("season", { source = "client", reason = "no-answer" }, "data")
 		return
 	end
-	local db = A.db()
+
+
+	local db = A.savedDB()
 	if not db then
 		A.trace("season", { source = "client", n = season, reason = "no-database" }, "data")
 		return
@@ -412,7 +432,7 @@ A.on("ARENA_SEASON_WORLD_STATE", function()
 		return
 	end
 
-	local entry, closed = A.seasonOpen(season, nil, "client", game)
+	local entry, closed = A.seasonOpen(season, nil, "client", game, db)
 	if not entry then
 
 		A.trace("season", { source = "client", n = season, game = game, reason = "open-refused" }, "data")

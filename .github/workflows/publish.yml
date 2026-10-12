@@ -1,15 +1,25 @@
 # The publish: a push to main publishes the draft release waiting for the version the shipped .toc
-# names, pushes the wiki/ folder to this repository's wiki, then removes wiki/ from main.
+# names, pushes the wiki/ folder to this repository's wiki, then removes wiki/ from main. A second
+# job, curseforge, then uploads the release's zip to the CurseForge project the shipped .toc's
+# ## X-Curse-Project-ID: line names, a release candidate as beta, with the release body as its
+# changelog. It takes CURSEFORGE_API_TOKEN, a secret on this repository, and a failed upload leaves
+# the GitHub release published and is retried alone with "Re-run failed jobs".
 #
 # A release arrives here as a pull request from release/v<version>, carrying the stripped addon,
 # LICENSE, wiki/ and this file, beside a draft release for v<version> with the zip attached. Merging
 # that pull request is the decision to release. A push runs the workflow file in the pushed commit,
 # so the merged commit's own copy of this file is the one that runs, the first release included.
 #
-# NOTHING WAITING IS A GREEN RUN THAT SAYS SO. A commit carrying no shipped .toc, or a version with no
-# draft release waiting, publishes nothing, and the summary names which happened. A release already
+# A commit carrying no shipped .toc publishes nothing, and the summary says so. A release already
 # published for the version with its tag on this commit is a rerun: the release is left as it is and
-# the wiki push runs again.
+# the wiki push runs again. A version already published at another commit publishes nothing either.
+# A version with no draft waiting and no published release fails: the merge has moved main to a new
+# addon with no release behind it.
+#
+# The draft is read before it is published, and one carrying no zip, the wrong pre-release flag or
+# another tag fails the run with the draft left as it is. Publishing cannot be undone, so the check
+# comes first. Trap: checked after the publish, a draft with no zip was published, made latest and
+# tagged, and the version could not be released again.
 #
 # The release is published with GITHUB_TOKEN, which sets its target to the pushed commit and creates
 # the tag there. The wiki push takes PUBLIC_WIKI_TOKEN, a secret on this repository, since
@@ -38,6 +48,10 @@ jobs:
     name: publish
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+      state: ${{ steps.release.outputs.state }}
 
     steps:
       - name: Check out the pushed commit
@@ -113,11 +127,19 @@ jobs:
               "state=already", "url=$($published[0].html_url)", "tag_commit=$env:GITHUB_SHA" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
               exit 0
             }
-            Write-Host "release: no draft release for $tag was waiting, so nothing is published"
-            'state=none' | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
-            exit 0
+            if ($published.Count -ge 1) {
+              Write-Host "release: no draft release for $tag was waiting and $tag is published at another commit, so nothing is published"
+              'state=none' | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+              exit 0
+            }
+            Write-Host "::error title=release::No draft release for $tag is waiting and none is published, so main now carries $tag with no release. Tag a new candidate number to publish it."
+            exit 1
           }
           $draft = $drafts[0]
+          Write-Host "read before publishing: draft $($draft.id) for $($draft.tag_name), pre-release $($draft.prerelease), $(@($draft.assets).Count) asset(s)"
+          if ($draft.tag_name -cne $tag) { Write-Host "::error title=release::The draft names $($draft.tag_name) where $tag was expected, so it is left a draft."; exit 1 }
+          if ($draft.prerelease -ne $prerelease) { Write-Host "::error title=release::The draft reads pre-release $($draft.prerelease) and $tag is $(if ($prerelease) { 'a candidate' } else { 'a final release' }), so it is left a draft."; exit 1 }
+          if (@($draft.assets).Count -ne 1) { Write-Host "::error title=release::The draft carries $(@($draft.assets).Count) assets where the zip is one, so it is left a draft."; exit 1 }
           $body = @{
             target_commitish = $env:GITHUB_SHA
             draft            = $false
@@ -266,7 +288,7 @@ jobs:
           else { $out += "version  $env:VERSION" }
           if ($env:VERSION) {
             if ($env:RELEASE_OUTCOME -ne 'success') { $out += "release: not published, the release step reads $(if ($env:RELEASE_OUTCOME) { $env:RELEASE_OUTCOME } else { 'not run' })" }
-            elseif ($env:RELEASE_STATE -eq 'none') { $out += "release: no draft for v$env:VERSION was waiting, so nothing published" }
+            elseif ($env:RELEASE_STATE -eq 'none') { $out += "release: no draft for v$env:VERSION was waiting and it is published at another commit, so nothing published" }
             elseif ($env:RELEASE_STATE -eq 'already') { $out += "release: already published, $env:RELEASE_URL", "tag      v$env:VERSION at $env:TAG_COMMIT" }
             else { $out += "release: published $env:RELEASE_URL", "tag      v$env:VERSION at $env:TAG_COMMIT" }
           }
@@ -279,6 +301,188 @@ jobs:
             else { $out += "main: wiki/ not removed, the prune step reads $(if ($env:PRUNE_OUTCOME) { $env:PRUNE_OUTCOME } else { 'not run' })" }
           }
           else { $out += 'wiki: not pushed, no release was published' }
+          $out += '```'
+          $out | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          $out | Write-Host
+
+  # The CurseForge upload: the zip the GitHub release carries goes to the CurseForge project the
+  # shipped .toc names, so both places carry one file. It runs where the publish job published the
+  # release in this run or found it already published at this commit, and a separate job means
+  # "Re-run failed jobs" retries the upload alone, without the publish or the wiki push.
+  curseforge:
+    name: curseforge
+    needs: publish
+    if: needs.publish.outputs.state == 'published' || needs.publish.outputs.state == 'already'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+
+    steps:
+      - name: Check out the pushed commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # An Interface number names its game version by digit pairs, 120100 being 12.1.0 and 120007
+      # being 12.0.7. A value that is no interface number fails rather than being left out, since an
+      # upload missing a version is hidden from players on it and nothing says so.
+      - name: Read the CurseForge project and game versions off the shipped .toc
+        id: curseforge-toc
+        shell: pwsh
+        run: |
+          $toc = 'WowPvpHistory/WowPvpHistory.toc'
+          if (-not (Test-Path -LiteralPath $toc -PathType Leaf)) {
+            Write-Host "::error title=curseforge::This commit carries no $toc to read the CurseForge project off."
+            exit 1
+          }
+          $lines = @(Get-Content -LiteralPath $toc)
+          $ids = @($lines | Where-Object { $_ -match '^##\s*X-Curse-Project-ID:' })
+          if ($ids.Count -ne 1) {
+            Write-Host "::error title=curseforge::$toc carries $($ids.Count) ## X-Curse-Project-ID: lines where one was expected."
+            exit 1
+          }
+          if ($ids[0] -notmatch '^##\s*X-Curse-Project-ID:\s*([1-9]\d*)\s*$') {
+            Write-Host "::error title=curseforge::The ## X-Curse-Project-ID: line of $toc names no numeric project."
+            exit 1
+          }
+          $project = $Matches[1]
+          $interfaces = @($lines | Where-Object { $_ -match '^##\s*Interface:' })
+          if ($interfaces.Count -ne 1) {
+            Write-Host "::error title=curseforge::$toc carries $($interfaces.Count) ## Interface: lines where one was expected."
+            exit 1
+          }
+          $names = [System.Collections.Generic.List[string]]::new()
+          foreach ($value in (($interfaces[0] -replace '^##\s*Interface:', '').Trim() -split '\s*,\s*')) {
+            if ($value -notmatch '^[1-9]\d{4,5}$') {
+              Write-Host "::error title=curseforge::The ## Interface: value '$value' is no interface number, so no game version can be named for it."
+              exit 1
+            }
+            $n = [int]$value
+            $name = '{0}.{1}.{2}' -f [int][math]::Truncate($n / 10000), ([int][math]::Truncate($n / 100) % 100), ($n % 100)
+            if (-not $names.Contains($name)) { $names.Add($name) }
+          }
+          Write-Host "curseforge: project $project, game versions $($names -join ', ')"
+          "project=$project", "versions=$($names -join ',')" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      # CurseForge's API lists no project's files (L3, its API article, modified 2026-09-27), so a
+      # second copy is told apart off this run's own earlier attempts: an attempt whose curseforge
+      # job succeeded uploaded the file or found it uploaded. "Re-run all jobs" after a green run
+      # skips, and "Re-run failed jobs" after a failed upload uploads.
+      - name: Read whether an earlier attempt of this run uploaded the file
+        id: curseforge-rerun
+        shell: pwsh
+        env:
+          READ_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $attempt = [int]$env:GITHUB_RUN_ATTEMPT
+          $found = 0
+          if ($attempt -gt 1) {
+            $api = "https://api.github.com/repos/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+            $headers = @{ Authorization = "Bearer $env:READ_TOKEN"; Accept = 'application/vnd.github+json'; 'X-GitHub-Api-Version' = '2022-11-28' }
+            for ($n = 1; $n -lt $attempt; $n++) {
+              $jobs = Invoke-RestMethod -Uri "$api/attempts/$n/jobs?per_page=100" -Headers $headers
+              if (@($jobs.jobs | Where-Object { $_.name -ceq 'curseforge' -and $_.conclusion -ceq 'success' }).Count -gt 0) { $found = $n; break }
+            }
+          }
+          if ($found -gt 0) { Write-Host "rerun: attempt $found of this run uploaded the file, so attempt $attempt uploads nothing" }
+          else { Write-Host "rerun: none of the $($attempt - 1) earlier attempt(s) of this run uploaded the file" }
+          "uploaded=$(if ($found -gt 0) { 'true' } else { 'false' })", "attempt=$found" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      # The CurseForge token is handed to this step alone, in a header from the environment, never on
+      # a command line or in a URL. The changelog is the release body, which the release run already
+      # searched for the source author, and the display name is fixed text.
+      - name: Upload the release zip to CurseForge
+        id: curseforge-upload
+        if: steps.curseforge-rerun.outputs.uploaded != 'true'
+        shell: pwsh
+        env:
+          CURSEFORGE_TOKEN: ${{ secrets.CURSEFORGE_API_TOKEN }}
+          RELEASE_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.publish.outputs.version }}
+          PRERELEASE: ${{ needs.publish.outputs.prerelease }}
+          PROJECT: ${{ steps.curseforge-toc.outputs.project }}
+          VERSIONS: ${{ steps.curseforge-toc.outputs.versions }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $finish = "The release v$env:VERSION is published on GitHub and not on CurseForge; use Re-run failed jobs once this is fixed."
+          if ([string]::IsNullOrWhiteSpace($env:CURSEFORGE_TOKEN)) { Write-Host "::error title=curseforge::CURSEFORGE_API_TOKEN is not set on this repository. $finish"; exit 1 }
+          if ([string]::IsNullOrWhiteSpace($env:VERSION) -or [string]::IsNullOrWhiteSpace($env:PROJECT) -or [string]::IsNullOrWhiteSpace($env:VERSIONS)) {
+            Write-Host "::error title=curseforge::The version, the project or the game versions did not reach this step. $finish"
+            exit 1
+          }
+          $cf = 'https://wow.curseforge.com/api'
+          $cfHeaders = @{ 'X-Api-Token' = $env:CURSEFORGE_TOKEN }
+          $code = 0
+          $listed = @(Invoke-RestMethod -Uri "$cf/game/versions" -Headers $cfHeaders -SkipHttpErrorCheck -StatusCodeVariable code)
+          if ($code -ne 200) { Write-Host "::error title=curseforge::CurseForge's game version list answered $code. $finish"; exit 1 }
+          $versionIds = [System.Collections.Generic.List[int]]::new()
+          foreach ($name in ($env:VERSIONS -split ',')) {
+            $match = @($listed | Where-Object { $null -ne $_ -and $_.PSObject.Properties['name'] -and [string]$_.name -ceq $name })
+            if ($match.Count -eq 0) { Write-Host "::error title=curseforge::CurseForge lists no WoW game version named $name, of $($listed.Count) listed. $finish"; exit 1 }
+            if ($match.Count -gt 1) { Write-Host "::error title=curseforge::CurseForge lists $($match.Count) game versions named $name, ids $(@($match.id) -join ', '), so which one is not settled. $finish"; exit 1 }
+            $versionIds.Add([int]$match[0].id)
+            Write-Host "game version: $name is id $($match[0].id)"
+          }
+          $api = "https://api.github.com/repos/$env:GITHUB_REPOSITORY"
+          $headers = @{ Authorization = "Bearer $env:RELEASE_TOKEN"; Accept = 'application/vnd.github+json'; 'X-GitHub-Api-Version' = '2022-11-28' }
+          $release = Invoke-RestMethod -Uri "$api/releases/tags/v$env:VERSION" -Headers $headers
+          $assets = @($release.assets)
+          if ($assets.Count -ne 1 -or -not ([string]$assets[0].name).EndsWith('.zip')) { Write-Host "::error title=curseforge::The release v$env:VERSION carries $($assets.Count) assets where the zip is one. $finish"; exit 1 }
+          if ([string]::IsNullOrWhiteSpace($release.body)) { Write-Host "::error title=curseforge::The release v$env:VERSION carries no body to send as the changelog. $finish"; exit 1 }
+          $zip = Join-Path $env:RUNNER_TEMP $assets[0].name
+          Invoke-WebRequest -Uri $assets[0].url -Headers @{ Authorization = "Bearer $env:RELEASE_TOKEN"; Accept = 'application/octet-stream' } -OutFile $zip
+          $size = (Get-Item -LiteralPath $zip).Length
+          if ($size -ne [long]$assets[0].size) { Write-Host "::error title=curseforge::The zip downloaded at $size bytes and the release lists $($assets[0].size). $finish"; exit 1 }
+          $sha = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          $releaseType = if ($env:PRERELEASE -eq 'true') { 'beta' } else { 'release' }
+          $metadata = [ordered]@{
+            changelog     = [string]$release.body
+            changelogType = 'markdown'
+            displayName   = "WoW PvP History $env:VERSION"
+            gameVersions  = [int[]]$versionIds.ToArray()
+            releaseType   = $releaseType
+          } | ConvertTo-Json -Depth 3 -Compress
+          Write-Host "uploading: $($assets[0].name), $size bytes, sha256 $sha, $releaseType, game version ids $($versionIds -join ', ')"
+          $response = Invoke-RestMethod -Method Post -Uri "$cf/projects/$env:PROJECT/upload-file" -Headers $cfHeaders -Form @{ metadata = $metadata; file = Get-Item -LiteralPath $zip } -SkipHttpErrorCheck -StatusCodeVariable code
+          $fileId = if ($null -ne $response -and $response -isnot [string] -and $response.PSObject.Properties['id']) { [string]$response.id } else { '' }
+          if ($code -ne 200 -or $fileId -notmatch '^[1-9]\d*$') {
+            $said = if ($response -is [string]) { $response } elseif ($null -ne $response) { $response | ConvertTo-Json -Depth 4 -Compress } else { 'an empty body' }
+            if ($said.Length -gt 500) { $said = $said.Substring(0, 500) }
+            Write-Host "::error title=curseforge::CurseForge answered $code with no file id: $said. $finish"
+            exit 1
+          }
+          Write-Host "curseforge: file $fileId uploaded to project $env:PROJECT"
+          "file=$fileId", "type=$releaseType", "sha=$sha" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Put the summary on the run
+        if: always()
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.publish.outputs.version }}
+          TOC_OUTCOME: ${{ steps.curseforge-toc.outcome }}
+          PROJECT: ${{ steps.curseforge-toc.outputs.project }}
+          VERSIONS: ${{ steps.curseforge-toc.outputs.versions }}
+          RERUN_OUTCOME: ${{ steps.curseforge-rerun.outcome }}
+          RERUN_UPLOADED: ${{ steps.curseforge-rerun.outputs.uploaded }}
+          RERUN_ATTEMPT: ${{ steps.curseforge-rerun.outputs.attempt }}
+          UPLOAD_OUTCOME: ${{ steps.curseforge-upload.outcome }}
+          FILE_ID: ${{ steps.curseforge-upload.outputs.file }}
+          RELEASE_TYPE: ${{ steps.curseforge-upload.outputs.type }}
+          ZIP_SHA: ${{ steps.curseforge-upload.outputs.sha }}
+        run: |
+          $out = @('## CurseForge', '', '```text')
+          $out += "version  $env:VERSION"
+          if ($env:TOC_OUTCOME -ne 'success') { $out += "curseforge: not uploaded, the .toc step reads $(if ($env:TOC_OUTCOME) { $env:TOC_OUTCOME } else { 'not run' })" }
+          else {
+            $out += "project  $env:PROJECT", "game     $($env:VERSIONS -replace ',', ', ')"
+            if ($env:RERUN_OUTCOME -ne 'success') { $out += "curseforge: not uploaded, the rerun read reads $(if ($env:RERUN_OUTCOME) { $env:RERUN_OUTCOME } else { 'not run' })" }
+            elseif ($env:RERUN_UPLOADED -eq 'true') { $out += "curseforge: skipped, attempt $env:RERUN_ATTEMPT of this run uploaded the file (read off this run's earlier attempts, since CurseForge lists no project files)" }
+            elseif ($env:UPLOAD_OUTCOME -eq 'success') { $out += "curseforge: file $env:FILE_ID uploaded as $env:RELEASE_TYPE", "zip      sha256 $env:ZIP_SHA" }
+            else { $out += "curseforge: not uploaded, the upload step reads $(if ($env:UPLOAD_OUTCOME) { $env:UPLOAD_OUTCOME } else { 'not run' })" }
+          }
           $out += '```'
           $out | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
           $out | Write-Host

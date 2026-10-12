@@ -23,7 +23,10 @@ function A.matches(format, character)
 	local list = db.matches
 	for i = #list, 1, -1 do
 		local record = list[i]
-		if (format == nil or record.format == format) and A.recordedBy(record, character) then
+
+
+		if type(record) == "table" and (format == nil or record.format == format)
+			and A.recordedBy(record, character) then
 			out[#out + 1] = record
 		end
 	end
@@ -83,7 +86,8 @@ function A.formats()
 	local seen, out = {}, {}
 	for i = 1, #db.matches do
 		local format = db.matches[i].format
-		if format ~= nil and not seen[format] then
+
+		if type(format) == "string" and not seen[format] then
 			seen[format] = true
 			out[#out + 1] = format
 		end
@@ -1281,7 +1285,7 @@ function A.pendingLine()
 
 		return nil
 	end
-	return ("%s %s disk on /reload or logout. /pvph to check what is held.")
+	return ("%s %s disk on /reload or logout. /pvph status to check what is held.")
 		:format(matchNoun(pending), pending == 1 and "reaches" or "reach")
 end
 
@@ -2039,7 +2043,7 @@ function A.lastLines(record)
 	lines[#lines + 1] = ("      %s  %s  duration=%ss  rounds=%s  columns=%s")
 		:format(tostring(record.openedAt or record.completedAt),
 			tostring(record.map and record.map.name),
-			tostring(record.duration), tostring(record.rounds and #record.rounds or 0),
+			tostring(record.duration), tostring(A.roundList(record) and #record.rounds or 0),
 			tostring(record.columns and #record.columns or 0))
 
 
@@ -2107,7 +2111,7 @@ function A.noteLead(text, bound)
 		return trimmed
 	end
 
-	local cut = trimmed:sub(1, max)
+	local cut = A.byteCut(trimmed, max)
 
 	local word
 	if trimmed:sub(max + 1, max + 1):match("%s") then
@@ -2198,7 +2202,7 @@ function A.rowCells(record, room)
 				keep = floor
 			end
 			if keep < #name then
-				cells[mapAt] = (name:sub(1, keep):gsub("%s+$", "")) .. "..."
+				cells[mapAt] = (A.byteCut(name, keep):gsub("%s+$", "")) .. "..."
 			end
 		end
 	end
@@ -2377,10 +2381,14 @@ local ROW_COLUMN_SETS = {
 			align = "RIGHT", group = "VS" },
 		{ key = "swing", name = "SWING", metric = "lobbySwing", lane = "figure",
 			align = "RIGHT", sort = "swing", first = "descending" },
-		{ key = "damage", name = "DAMAGE", metric = "rowDamageValue", lane = "figure", align = "RIGHT" },
-		{ key = "wins", name = "WINS", metric = "rowHeal", lane = "figure", align = "RIGHT" },
-		{ key = "kb", name = "KB", metric = "rowKb", lane = "figure", align = "RIGHT" },
-		{ key = "dispels", name = "DISP", metric = "rowDispels", lane = "figure", align = "RIGHT" },
+		{ key = "damage", name = "DAMAGE", metric = "rowDamageValue", lane = "figure", align = "RIGHT",
+			sort = "damage", first = "descending" },
+		{ key = "wins", name = "WINS", metric = "rowHeal", lane = "figure", align = "RIGHT",
+			sort = "wins", first = "descending" },
+		{ key = "kb", name = "KB", metric = "rowKb", lane = "figure", align = "RIGHT",
+			sort = "kb", first = "descending" },
+		{ key = "dispels", name = "DISP", metric = "rowDispels", lane = "figure", align = "RIGHT",
+			sort = "dispels", first = "descending" },
 	},
 	unknown = {
 		{ key = "id", name = "MATCH", metric = "rowColMatch" },
@@ -5594,6 +5602,289 @@ end
 
 
 
+local SCORE_SORT_OPENS = {
+	name = true, damage = false, healing = false, kb = false, dispels = false, objective = false,
+}
+
+
+local SCORE_SORT_WORDS = {
+	name = "name", damage = "DAMAGE", healing = "HEALING", kb = "KB", dispels = "DISP",
+}
+
+
+
+
+
+
+
+
+
+
+
+local scoreState = { roster = { key = "name", up = true, index = 1, set = false }, lobby = nil,
+	pending = {}, defaults = {} }
+local scoreSortPending = scoreState.pending
+
+
+
+local TEAM_LOOK = { bg = true, blitz = true, ["blitz-unrated"] = true, rbg = true }
+
+
+function A.rosterLook(record)
+	if type(record) == "table" and TEAM_LOOK[record.format] then
+		return "team"
+	end
+	return nil
+end
+
+
+
+
+function A.teamWords(record)
+	local verdict = type(A.matchVerdict) == "function" and A.matchVerdict(record) or nil
+	local words = type(verdict) == "table" and verdict.words or nil
+	if words == "WON" then
+		return "WON", "LOST"
+	elseif words == "LOST" then
+		return "LOST", "WON"
+	elseif words == "DRAW" then
+		return "DRAW", "DRAW"
+	end
+	return nil, nil
+end
+
+
+function A.scoreSortKnown(key)
+	return type(key) == "string" and SCORE_SORT_OPENS[key] ~= nil
+end
+
+
+
+function A.scoreSort()
+	local held = scoreState.roster
+	return held.key, held.up, held.index, held.set == true
+end
+
+
+function A.noteScoreSortChange(which)
+	if which == "roster" or which == "lobby" then
+		scoreSortPending[which] = true
+	end
+end
+
+
+function A.lobbySessionSort()
+	local held = scoreState.lobby
+	if held == nil then
+		return nil
+	end
+	return held.key, held.up
+end
+
+
+
+function A.setLobbySessionSort(key, ascending)
+	if key == nil then
+		scoreState.lobby = nil
+		return true
+	end
+	if not (type(A.lobbySortKnown) == "function" and A.lobbySortKnown(key)) then
+		return false
+	end
+	local before, beforeUp = nil, nil
+	if type(A.lobbySort) == "function" then
+		before, beforeUp = A.lobbySort()
+	end
+	if before ~= key or beforeUp ~= (ascending == true) then
+		A.noteScoreSortChange("lobby")
+	end
+	scoreState.lobby = { key = key, up = ascending == true }
+	return true
+end
+
+
+
+function A.setScoreSort(key, up, index)
+	if not A.scoreSortKnown(key) then
+		return false
+	end
+	if up == nil then
+		up = SCORE_SORT_OPENS[key]
+	end
+	index = (key == "objective" and type(index) == "number" and index >= 1) and math.floor(index) or 1
+	up = up == true
+	local held = scoreState.roster
+	if key ~= held.key or up ~= held.up or index ~= held.index or held.set ~= true then
+		A.noteScoreSortChange("roster")
+	end
+	scoreState.roster = { key = key, up = up, index = index, set = true }
+	return true
+end
+
+
+
+
+
+function A.toggleScoreSort(key, index, drawnUp)
+	if not A.scoreSortKnown(key) then
+		return false
+	end
+	local slot = key == "objective" and (type(index) == "number" and math.floor(index) or 1) or 1
+	if type(drawnUp) == "boolean" then
+		return A.setScoreSort(key, not drawnUp, slot)
+	end
+	local held = scoreState.roster
+	if held.set == true and key == held.key and slot == held.index then
+		return A.setScoreSort(key, not held.up, slot)
+	end
+	return A.setScoreSort(key, nil, slot)
+end
+
+
+
+
+function A.scoreSortWords(key, up, index, opts)
+	local within = (type(opts) == "table" and opts.teams) and " in each team" or ""
+	if key == "name" then
+		return ("by name%s, %s"):format(within, up and "A to Z" or "Z to A")
+	end
+	local slot = type(index) == "number" and index or 1
+	local columns = type(opts) == "table" and opts.columns or nil
+	local named = key == "objective" and type(columns) == "table" and type(columns[slot]) == "table"
+		and columns[slot].short or nil
+	local column = SCORE_SORT_WORDS[key] or named or ("objective %d"):format(slot)
+	return ("by %s%s, %s"):format(column, within, up and "low to high" or "high to low")
+end
+
+
+
+
+local function scoreColumnDrawn(key, index, filled, slots, look)
+	local team = look == "team"
+	if key == "name" then
+		return true
+	elseif key == "damage" then
+		return filled.damage == true and (team or slots < 2)
+	elseif key == "healing" then
+		return filled.healing == true and (team or slots < 1)
+	elseif key == "kb" then
+		return filled.kb == true
+	elseif key == "dispels" then
+		return filled.dispels == true
+	elseif key == "objective" then
+		return index <= slots
+	end
+	return false
+end
+
+
+
+
+local function scoreFigure(c, key, index)
+	local value
+	if key == "damage" then
+		value = c.damage
+	elseif key == "healing" then
+		value = c.healing
+	elseif key == "kb" then
+		value = c.kb
+	elseif key == "dispels" then
+		value = c.dispels
+	elseif key == "objective" then
+		value = type(c.objectiveValues) == "table" and c.objectiveValues[index] or nil
+	end
+	if type(value) ~= "number" or value ~= value then
+		return nil
+	end
+	return value
+end
+
+
+
+
+
+
+local function scoreOrdered(roster, cellsList, drawn, key, up, index)
+	if not drawn or (key == "name" and up) then
+		return roster, cellsList, false
+	end
+	local items = {}
+	for i = 1, #roster do
+		items[i] = { entry = roster[i], c = cellsList[i], at = i,
+			figure = key ~= "name" and scoreFigure(cellsList[i], key, index) or nil }
+	end
+	local function before(a, b)
+		if key == "name" then
+			local an, bn = a.entry.p.name, b.entry.p.name
+			if an ~= bn then
+				return lessThan(bn, an)
+			end
+			return a.at < b.at
+		end
+		if a.figure ~= b.figure then
+
+			if a.figure == nil then return false end
+			if b.figure == nil then return true end
+			if up then
+				return a.figure < b.figure
+			end
+			return a.figure > b.figure
+		end
+		return a.at < b.at
+	end
+	local out, outCells = {}, {}
+	local run = 1
+	while run <= #items do
+		local stop = run
+		while stop < #items and items[stop + 1].c.side == items[run].c.side do
+			stop = stop + 1
+		end
+		local part = {}
+		for i = run, stop do
+			part[#part + 1] = items[i]
+		end
+		table.sort(part, before)
+		for i = 1, #part do
+			out[#out + 1] = part[i].entry
+			outCells[#outCells + 1] = part[i].c
+		end
+		run = stop + 1
+	end
+	return out, outCells, true
+end
+
+
+
+
+
+
+local function rosterOrderFor(filled, slots, look)
+	local key, up, index, set = A.scoreSort()
+	if set and scoreColumnDrawn(key, index, filled, slots, look) then
+		return key, up, index, true, false
+	end
+	if look == "team" then
+		if scoreColumnDrawn("damage", 1, filled, slots, look) then
+			return "damage", false, 1, true, true
+		end
+		if scoreColumnDrawn("objective", 1, filled, slots, look) then
+			return "objective", false, 1, true, true
+		end
+		return "name", true, 1, true, true
+	end
+
+
+	if set then
+		return key, up, index, false, false
+	end
+	return "name", true, 1, true, true
+end
+
+
+
+
+
+
 function A.detailLines(record, pane)
 	local lines, heads = {}, {}
 
@@ -5701,7 +5992,7 @@ function A.detailLines(record, pane)
 
 	put(when, A.durationCaveat(record.openedState))
 
-	if record.rounds and #record.rounds > 0 and roundsWon == nil then
+	if A.roundList(record) and #record.rounds > 0 and roundsWon == nil then
 		put(when, ("%d rounds"):format(#record.rounds))
 	end
 
@@ -5782,6 +6073,14 @@ function A.detailLines(record, pane)
 	local objColumns = A.objectiveColumns(record)
 
 
+	local look = A.rosterLook(record)
+	local yoursWord, theirsWord = nil, nil
+	if look == "team" then
+		yoursWord, theirsWord = A.teamWords(record)
+	end
+
+
+
 	local totals = A.objectiveTotals(record)
 	if totals then
 		local parts = { "objectives" }
@@ -5797,7 +6096,8 @@ function A.detailLines(record, pane)
 			parts[#parts + 1] = table.concat(cells, "  ")
 		end
 		lines[#lines + 1] = "  " .. table.concat(parts, "  ")
-		heads[#lines] = { kind = "objectives", totals = totals }
+		heads[#lines] = { kind = "objectives", totals = totals, look = look,
+			words = look == "team" and { yours = yoursWord, theirs = theirsWord } or nil }
 	end
 
 
@@ -5838,6 +6138,25 @@ function A.detailLines(record, pane)
 		end
 	end
 
+	local lobbyColumns = type(A.lobbyColumns) == "function" and A.lobbyColumns(record) or nil
+	if merged then
+		lobbyColumns = merged.columns
+	end
+
+
+	if lobbySort ~= nil and type(lobbyColumns) == "table" and type(A.lobbySortDefault) == "function" then
+		local carried = false
+		for c = 1, #lobbyColumns do
+			if lobbyColumns[c].sort == lobbySort then
+				carried = true
+				break
+			end
+		end
+		if not carried then
+			lobbySort, lobbyAscending = A.lobbySortDefault()
+		end
+	end
+
 	local lobbyRows, lobbyRead, lobbyTotal, lobbyTally, lobbyTyped = nil, 0, 0, nil, 0
 	if type(A.lobbyRows) == "function" then
 		local got, rows, read, total, tally, typed =
@@ -5847,10 +6166,6 @@ function A.detailLines(record, pane)
 			lobbyRows, lobbyRead, lobbyTotal, lobbyTally = rows, read, total, tally
 			lobbyTyped = type(typed) == "number" and typed or 0
 		end
-	end
-	local lobbyColumns = type(A.lobbyColumns) == "function" and A.lobbyColumns(record) or nil
-	if merged then
-		lobbyColumns = merged.columns
 	end
 	local drewTable = false
 
@@ -5928,6 +6243,14 @@ function A.detailLines(record, pane)
 		heads[#lines] = { kind = "lobbyYou", columns = lobbyColumns, row = you, table = shared }
 
 		local words = A.lobbySortWords(lobbySort, lobbyAscending)
+		if scoreSortPending.lobby then
+			scoreSortPending.lobby = nil
+
+			local top = type(A.lobbySortValue) == "function" and A.lobbySortValue(lobbyRows[1], lobbySort) or nil
+			pcall(A.trace, "scoresort", { kind = "lobby", column = lobbySort,
+				sortDir = lobbyAscending and "up" or "down", id = record.id, rows = #lobbyRows,
+				first = top or "-" }, "ui")
+		end
 		lines[#lines + 1] = ("    sorted %s"):format(words)
 		heads[#lines] = { kind = "lobbyFoot", columns = lobbyColumns, words = words, table = shared }
 
@@ -5993,6 +6316,42 @@ function A.detailLines(record, pane)
 		filled.dispels = true
 	end
 
+
+
+
+	local rosterCells = {}
+	for i = 1, #roster do
+		rosterCells[i] = A.participantCells(record, roster[i], sides, objColumns)
+	end
+	local objectiveSlots = math.min(type(objColumns) == "table" and #objColumns or 0,
+		A.metric("rowObjectiveMax"))
+	local sortKey, sortUp, sortIndex, sortDrawn, sortDefault = rosterOrderFor(filled, objectiveSlots, look)
+	local sorted
+	roster, rosterCells, sorted = scoreOrdered(roster, rosterCells, sortDrawn, sortKey, sortUp, sortIndex)
+
+
+
+	local defaultId = record.id ~= nil and record.id or "-"
+	local defaultFirst = pane == true and look == "team" and sortDefault and not scoreState.defaults[defaultId]
+	if defaultFirst then
+		scoreState.defaults[defaultId] = true
+	end
+	if scoreSortPending.roster or defaultFirst then
+		scoreSortPending.roster = nil
+
+		local tops = {}
+		for i = 1, #rosterCells do
+			local side = rosterCells[i].side or "first"
+			if tops[side] == nil then
+				tops[side] = sortKey == "name" and "-" or (scoreFigure(rosterCells[i], sortKey, sortIndex) or "-")
+			end
+		end
+		pcall(A.trace, "scoresort", { kind = "roster", column = sortKey, sortDir = sortUp and "up" or "down",
+			slot = sortKey == "objective" and sortIndex or nil, id = record.id, drawn = sortDrawn,
+			rows = #rosterCells, yoursTop = tops.yours, theirsTop = tops.theirs, first = tops.first,
+			default = sortDefault or not sortDrawn }, "ui")
+	end
+
 	local heading = ("  %d participants"):format(#roster)
 
 	local stored = nil
@@ -6003,8 +6362,14 @@ function A.detailLines(record, pane)
 	lines[#lines + 1] = heading
 
 
+
 	heads[#lines] = { kind = "roster", count = #roster, stored = stored, columns = objColumns,
-		filled = filled }
+		filled = filled, sortKey = sorted and sortKey or nil, sortIndex = sorted and sortIndex or nil,
+		look = look }
+
+	if sorted then
+		heads[#lines].sortUp = sortUp == true
+	end
 
 
 
@@ -6029,10 +6394,29 @@ function A.detailLines(record, pane)
 	end
 
 
+
+	local sideTotals = {}
+	if look == "team" then
+		for i = 1, #rosterCells do
+			local c = rosterCells[i]
+			if c.side ~= nil then
+				local held = sideTotals[c.side] or {}
+				sideTotals[c.side] = held
+				if type(c.damage) == "number" then
+					held.damage = (held.damage or 0) + c.damage
+				end
+				if type(c.healing) == "number" then
+					held.healing = (held.healing or 0) + c.healing
+				end
+			end
+		end
+	end
+
+
 	local lastSide = nil
 
 	for i = 1, #roster do
-		local c = A.participantCells(record, roster[i], sides, objColumns)
+		local c = rosterCells[i]
 
 		if c.side ~= nil and c.side ~= lastSide then
 			lastSide = c.side
@@ -6045,7 +6429,17 @@ function A.detailLines(record, pane)
 					or (", %d %s"):format(bots, bots == 1 and "bot" or "bots"))
 			end
 			lines[#lines + 1] = sideLine
-			heads[#lines] = { kind = "roster", side = c.side, count = sideSize, bots = bots }
+			local divider = { kind = "roster", side = c.side, count = sideSize, bots = bots, look = look }
+			if look == "team" then
+				local held = sideTotals[c.side] or {}
+				divider.damage, divider.healing = held.damage, held.healing
+				if c.side == "yours" then
+					divider.word = yoursWord
+				else
+					divider.word = theirsWord
+				end
+			end
+			heads[#lines] = divider
 		end
 
 		lines[#lines + 1] = participantLine(record, roster[i], sides, c)
@@ -6054,7 +6448,17 @@ function A.detailLines(record, pane)
 		c.share = (type(c.damage) == "number" and maxDamage > 0)
 			and (c.damage / maxDamage) or nil
 		c.filled = filled
+		c.look = look
 		cells[#lines] = c
+	end
+
+
+
+	if look == "team" and #roster > 0 then
+		local words = A.scoreSortWords(sortKey, sortUp, sortIndex,
+			{ columns = objColumns, teams = sides ~= nil })
+		lines[#lines + 1] = ("    sorted %s"):format(words)
+		heads[#lines] = { kind = "rosterFoot", words = words, teams = sides ~= nil }
 	end
 
 	return lines, guids, cells, heads
@@ -6106,11 +6510,9 @@ function A.isSelfPlayer(guid)
 	if type(guid) ~= "string" or guid == "" then
 		return false
 	end
-	if type(UnitGUID) ~= "function" then
-		return false
-	end
-	local ok, own = pcall(UnitGUID, "player")
-	return ok and own == guid
+
+	local own = A.ownGuid()
+	return own ~= nil and own == guid
 end
 
 
@@ -6635,7 +7037,8 @@ function A.encounterIndex()
 	for i = #matches, 1, -1 do
 		local record = matches[i]
 		if type(record) == "table" and type(record.participants) == "table" then
-			local shuffle = record.format == "shuffle"
+
+			local shuffle = record.format == "shuffle" or record.format == "shuffle-unrated"
 			local seats, results, count
 			if shuffle then
 				seats, results, count = shuffleSeats(record)
@@ -6984,7 +7387,6 @@ local function rowIdentity(_, entry, encounters)
 				if out.spec == nil then
 					out.spec = p.spec
 					out.specLabel = A.chipText({ spec = p.spec, class = p.class })
-					out.mark = p.spec:sub(1, 3)
 				elseif p.spec ~= out.spec and not seen[p.spec] then
 					out.also[#out.also + 1] = p.spec
 				end
@@ -7059,7 +7461,13 @@ function A.newestSession()
 		if as ~= bs then
 			return as > bs
 		end
-		return tostring(a.subject.id) > tostring(b.subject.id)
+
+		local ak, an = A.matchIdRank(a.subject.id)
+		local bk, bn = A.matchIdRank(b.subject.id)
+		if ak ~= bk then
+			return ak > bk
+		end
+		return an > bn
 	end)
 	local ids = {}
 	if type(A.buildSessions) ~= "function" then
@@ -7076,7 +7484,42 @@ function A.newestSession()
 end
 
 
-local SORTS = { recent = true, met = true, rep = true }
+
+
+
+local SORTS = {
+	recent = { segment = true },
+	met = { segment = true, header = true, first = "down" },
+	rep = { segment = true },
+	player = { header = true, first = "up" },
+	with = { header = true, first = "down" },
+	against = { header = true, first = "down" },
+}
+
+
+local SORT_LABELS = {
+	met = { down = "Met most often", up = "Fewest met" },
+	player = { up = "By name", down = "By name, Z to A" },
+	with = { down = "Best with you", up = "Worst with you" },
+	against = { down = "Best against you", up = "Worst against you" },
+}
+
+
+function A.playerSortKnown(word)
+	return type(word) == "string" and SORTS[word] ~= nil
+end
+
+
+function A.playerSortFirst(word)
+	local sort = type(word) == "string" and SORTS[word] or nil
+	return sort and sort.first or nil
+end
+
+
+function A.playerSortSegment(word)
+	local sort = type(word) == "string" and SORTS[word] or nil
+	return sort ~= nil and sort.segment == true
+end
 
 
 function A.playerSorts()
@@ -7200,10 +7643,33 @@ end
 
 
 
+
+local function sideRank(side)
+	local rounds, matches = side.rounds, side.matches
+	local games = rounds.won + rounds.lost + matches.won + matches.lost + matches.drawn
+
+
+	if games == 0 then
+		return nil
+	end
+	return {
+		diff = rounds.won - rounds.lost + matches.won - matches.lost,
+		games = games,
+	}
+end
+
+
+
+
+
 function A.playersView(state)
 	state = type(state) == "table" and state or {}
 	local now = type(state.now) == "number" and state.now or time()
 	local sort = SORTS[state.sort] and state.sort or "recent"
+	local dir = SORTS[sort].first
+	if dir ~= nil and (state.dir == "up" or state.dir == "down") then
+		dir = state.dir
+	end
 	local needle = (type(state.text) == "string" and state.text ~= "") and A.foldText(state.text) or nil
 	local rep = repValue(state.rep) and state.rep or nil
 	local index = type(state.index) == "table" and state.index or A.encounterIndex()
@@ -7264,6 +7730,9 @@ function A.playersView(state)
 			met = record.met,
 			with = with,
 			against = against,
+
+			withRank = with ~= nil and sideRank(record.with) or nil,
+			againstRank = against ~= nil and sideRank(record.against) or nil,
 			last = last,
 			lastEpoch = record.lastEpoch or A.stampEpoch(last),
 			tonight = tonight,
@@ -7351,15 +7820,76 @@ function A.playersView(state)
 		return tostring(a.identity.bare) < tostring(b.identity.bare)
 	end
 
+
+
+	local function byLastThenGuid(a, b)
+		if byLast(a, b) then
+			return true
+		end
+		if byLast(b, a) then
+			return false
+		end
+		return tostring(a.guid) < tostring(b.guid)
+	end
+
 	local sections = {}
 	if sort == "met" then
+
 		table.sort(shown, function(a, b)
 			if a.met ~= b.met then
+				if dir == "up" then
+					return a.met < b.met
+				end
 				return a.met > b.met
 			end
-			return byLast(a, b)
+			return byLastThenGuid(a, b)
 		end)
-		sections[1] = { key = "met", label = "Met most often", rows = shown }
+		sections[1] = { key = "met", label = SORT_LABELS.met[dir], rows = shown }
+	elseif sort == "player" then
+
+		local keys = {}
+		for i = 1, #shown do
+			local identity = shown[i].identity
+			keys[shown[i]] = { A.foldText(tostring(identity.bare or "")), A.foldText(tostring(identity.realm or "")),
+				tostring(shown[i].guid) }
+		end
+		table.sort(shown, function(a, b)
+			local ak, bk = keys[a], keys[b]
+			for k = 1, 3 do
+				if ak[k] ~= bk[k] then
+					if dir == "down" then
+						return ak[k] > bk[k]
+					end
+					return ak[k] < bk[k]
+				end
+			end
+			return false
+		end)
+		sections[1] = { key = "player", label = SORT_LABELS.player[dir], rows = shown }
+	elseif sort == "with" or sort == "against" then
+
+
+
+		local field = sort == "with" and "withRank" or "againstRank"
+		table.sort(shown, function(a, b)
+			local ar, br = a[field], b[field]
+			if (ar == nil) ~= (br == nil) then
+				return br == nil
+			end
+			if ar ~= nil and br ~= nil then
+				if ar.diff ~= br.diff then
+					if dir == "up" then
+						return ar.diff < br.diff
+					end
+					return ar.diff > br.diff
+				end
+				if ar.games ~= br.games then
+					return ar.games > br.games
+				end
+			end
+			return byLastThenGuid(a, b)
+		end)
+		sections[1] = { key = sort, label = SORT_LABELS[sort][dir], rows = shown }
 	elseif sort == "rep" then
 		local buckets = {}
 		for _, choice in ipairs(A.ratingChoices()) do
@@ -7423,6 +7953,7 @@ function A.playersView(state)
 		strip = strip,
 		shown = #ordered,
 		sort = sort,
+		dir = dir,
 		rep = rep,
 		scope = scoped,
 		scopeId = state.scope,

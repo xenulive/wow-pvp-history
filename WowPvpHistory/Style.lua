@@ -329,9 +329,171 @@ function A.specIcon(classToken, spec)
 end
 
 
+
+
+
+
+
+function A.classIconAtlas(classToken)
+	if type(classToken) ~= "string" or classToken == "" then
+		return nil
+	end
+	local lookup = rawget(_G, "GetClassAtlas")
+	if type(lookup) ~= "function" then
+		return nil
+	end
+	local ok, atlas = pcall(lookup, classToken)
+	if not ok or type(atlas) ~= "string" or atlas == "" then
+		return nil
+	end
+	if type(C_Texture) ~= "table" or type(C_Texture.GetAtlasInfo) ~= "function" then
+		return nil
+	end
+	local known, info = pcall(C_Texture.GetAtlasInfo, atlas)
+	if not known or type(info) ~= "table" then
+		return nil
+	end
+	return atlas
+end
+
+
+
+
+
+function A.rosterIcon(classToken, spec)
+	local icon = A.specIcon(classToken, spec)
+	if icon ~= nil then
+		return "spec", icon
+	end
+	if type(classToken) ~= "string" or classToken == "" then
+		return "blank", nil
+	end
+	local atlas = A.classIconAtlas(classToken)
+	if atlas ~= nil then
+		return "class", atlas
+	end
+	return "square", nil
+end
+
+
 function A.resetSpecIcons()
 	specIcons = nil
 	specIconMissed = {}
+end
+
+
+
+local specDraws = { icons = 0, squares = 0 }
+
+
+function A.specDrawCounts()
+	return specDraws.icons, specDraws.squares
+end
+
+
+function A.clearSpecDraws()
+	specDraws.icons, specDraws.squares = 0, 0
+end
+
+
+
+
+
+
+
+
+
+
+
+
+
+function A.drawSpec(cell, classToken, spec, room, opts)
+	opts = type(opts) == "table" and opts or {}
+	if type(cell) ~= "table" or cell.icon == nil then
+		return nil, 0
+	end
+	local icon, name = cell.icon, cell.name
+	local size = type(opts.size) == "number" and opts.size or A.metric("compSwatch")
+	local alpha = opts.faint and 0.4 or 1
+	local art = A.specIcon(classToken, spec)
+	local kind
+	if art ~= nil then
+		icon:SetTexture(art)
+		kind = "icon"
+		specDraws.icons = specDraws.icons + 1
+	else
+		icon:SetColorTexture(A.classColor(classToken))
+		kind = "square"
+		specDraws.squares = specDraws.squares + 1
+	end
+	icon:SetVertexColor(1, 1, 1, alpha)
+	icon:SetSize(size, size)
+	icon:Show()
+	if name == nil then
+		return kind, size
+	end
+
+	local gap = type(opts.gap) == "number" and opts.gap or A.metric("chipGap")
+	local text = A.chipText({ spec = spec, class = opts.class, name = opts.fallback })
+	A.style(name, opts.role or "bodyText", opts.faint and "underText" or "text")
+	if not opts.faint then
+		name:SetTextColor(A.classColor(classToken))
+	end
+	name:ClearAllPoints()
+	name:SetPoint("LEFT", icon, "RIGHT", gap, 0)
+	name:SetText(text)
+	local wide = A.textRoom(name, text)
+	local nameRoom = type(room) == "number" and math.floor(room - size - gap) or wide
+	if nameRoom < 1 or wide <= 0 then
+
+		name:SetText("")
+		name:SetWidth(0)
+		name:Hide()
+		return kind, size
+	end
+	local drawn = math.min(wide, nameRoom)
+	name:SetWidth(drawn)
+	name:Show()
+	return kind, size + gap + drawn
+end
+
+
+
+
+
+function A.drawComp(cells, members, room, opts)
+	if type(cells) ~= "table" then
+		return 0
+	end
+	members = type(members) == "table" and members or {}
+	local count = math.min(#members, #cells)
+	local gap = A.metric("compChipGap")
+	local each = nil
+	if type(room) == "number" and count > 0 then
+		each = math.floor((room - gap * (count - 1)) / count)
+	end
+	local width, previous = 0, nil
+	for i = 1, #cells do
+		local cell, m = cells[i], members[i]
+		if i <= count and type(m) == "table" then
+			if previous ~= nil then
+				cell.icon:ClearAllPoints()
+				cell.icon:SetPoint("LEFT", previous, "RIGHT", gap, 0)
+				width = width + gap
+			end
+			local pairOpts = { faint = opts and opts.faint, role = opts and opts.role, class = m.class,
+				size = opts and opts.size, gap = opts and opts.gap }
+			local _, drawn = A.drawSpec(cell, m.classToken, m.spec, each, pairOpts)
+			width = width + drawn
+			previous = (cell.name ~= nil and cell.name:IsShown()) and cell.name or cell.icon
+		else
+			cell.icon:Hide()
+			if cell.name ~= nil then
+				cell.name:Hide()
+			end
+		end
+	end
+	return width
 end
 
 
@@ -793,6 +955,8 @@ end
 
 
 
+
+
 function A.askCardRow(parts, room)
 	parts = type(parts) == "table" and parts or {}
 	local held = (type(room) == "number" and room > 0) and room or 0
@@ -823,6 +987,8 @@ function A.askCardRow(parts, room)
 	end
 
 	out.width = cluster()
+	out.drop = A.metric("cardPad") + A.fontSize("label") + A.metric("cardLabelGap")
+	out.under = A.metric("cardCaptionGap")
 	return out
 end
 
@@ -866,6 +1032,49 @@ function A.fittedForm(fontString, room, forms)
 		end
 	end
 	return nil, nil, true
+end
+
+
+
+
+
+
+
+
+
+function A.metRowWidths(room, roundsNeed)
+	local gap = A.metric("rowCellGap")
+	local squares = (A.metric("rowPip") + A.metric("rowPipGap")) * 6
+	local widths = {
+		lead = gap,
+		id = A.metric("rowColMatch"),
+		squares = squares,
+		rounds = type(roundsNeed) == "number" and roundsNeed > 0 and roundsNeed or A.labelRoom("6 of 6"),
+		change = A.metric("metChange"),
+		rating = A.metric("metRating"),
+	}
+	local fixed = widths.lead + widths.id + widths.squares + widths.rounds + widths.change + widths.rating
+		+ gap * 5
+	local held = type(room) == "number" and room or 0
+	widths.where = math.max(0, math.floor(held - fixed))
+	return widths, fixed <= held
+end
+
+
+
+
+function A.metGridWidths(room, byRound)
+	local gap = A.metric("rowCellGap")
+	local widths = {
+		lead = gap,
+		match = math.max(A.metric("rowColMatch"), A.headerFloor("MATCH")),
+		round = byRound and A.headerFloor("ROUND") or 0,
+		result = A.headerFloor("RESULT"),
+	}
+	local fixed = widths.lead + widths.match + widths.result + gap * 2
+		+ (byRound and (widths.round + gap) or 0)
+	widths.side = math.max(0, math.floor((type(room) == "number" and room or 0) - fixed))
+	return widths
 end
 
 
@@ -1087,6 +1296,16 @@ local METRICS = {
 
 	rowHeal        = 58,
 
+
+	rowIcon        = 14,
+
+
+	rowIconTrim    = 0.08,
+
+	rowObjective   = 58,
+
+	rowDamageBar   = 60,
+
 	rowNamePad     = 8,
 	rowCellGap     = 6,
 
@@ -1216,10 +1435,12 @@ local METRICS = {
 	compHeadRoom   = 0.85,
 
 
-	compPct        = 62,
+	compPct        = 44,
 
 	compSwatch     = 8,
 	compChipGap    = 10,
+
+	compChipInner  = 4,
 
 
 
@@ -1230,6 +1451,11 @@ local METRICS = {
 	cardCaptionGap = 3,
 
 	cardHeadGap    = 8,
+
+
+
+	metChange      = 36,
+	metRating      = 40,
 
 	playerRow      = 34,
 	playerSection  = 22,
@@ -1623,13 +1849,32 @@ function A.paneWidth()
 end
 
 
-function A.rosterRowWidth()
+
+
+function A.rosterRowWidth(look, objectives)
 	local gap = METRICS.rowCellGap
 	local left = METRICS.classEdge + METRICS.rowNamePad + METRICS.rowName
+	if look == "team" then
+		local cells = type(objectives) == "number" and math.max(0, math.min(objectives,
+			METRICS.rowObjectiveMax)) or 0
+		local right = gap + METRICS.rowDispels + gap + METRICS.rowKb + gap + METRICS.rowHeal
+			+ gap + METRICS.rowDamageValue + gap + METRICS.rowDamageBar
+			+ cells * (gap + METRICS.rowObjective)
+			+ gap + METRICS.rowRole + gap + METRICS.rowSpec
+		return left + METRICS.rowIcon + METRICS.headCrestGap + gap + right
+	end
 	local right = gap + METRICS.rowDispels
 		+ gap + METRICS.rowKb + gap + METRICS.rowHeal + gap + METRICS.rowBar
 		+ gap + METRICS.rowRole + gap + METRICS.rowSpec
 	return left + gap + right
+end
+
+
+
+function A.objectiveCellWidth(short)
+	local floor = type(short) == "string" and A.headerFloor(short) or 0
+	local cell = A.metric("rowObjective")
+	return floor > cell and floor or cell
 end
 
 
@@ -2003,28 +2248,6 @@ function A.viewportRows(room, extent)
 end
 
 
-function A.linesOver(lines, room)
-	if type(lines) ~= "table" or type(room) ~= "number" or room <= 0 then
-		return 0
-	end
-	local held = 0
-	for i = 1, #lines do
-		local height = type(lines[i]) == "table" and lines[i].height or nil
-		if type(height) ~= "number" or height <= 0 then
-			break
-		end
-		if held + height > room then
-			if held == 0 then
-				return 0
-			end
-			return room - held
-		end
-		held = held + height
-	end
-	return 0
-end
-
-
 
 local EDGE_SLACK = 0.5
 
@@ -2296,10 +2519,18 @@ function A.stripHeight(headline)
 end
 
 
+
 function A.objectivesHeight()
 	return A.metric("objectivesPad") * 2
 		+ A.fontSize("label") + A.metric("objectivesGap")
 		+ (A.fontSize("numberSmall") + A.metric("objectivesGap")) * 2
+end
+
+
+
+function A.objectiveCardsHeight()
+	return A.metric("roundCardPad") * 2 + A.metric("roundCardEdge")
+		+ A.fontSize("label") + A.metric("roundCardLine") + A.fontSize("number")
 end
 
 

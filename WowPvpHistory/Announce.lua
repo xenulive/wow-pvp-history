@@ -2010,7 +2010,8 @@ local function readRows()
 	end
 
 	local ok, count = pcall(GetNumBattlefieldScores)
-	if not ok or type(count) ~= "number" or count < 1 then
+
+	if not ok or not A.canRead(count) or type(count) ~= "number" or count < 1 then
 		return {}
 	end
 

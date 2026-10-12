@@ -208,6 +208,32 @@ function A.notifyAnnounceShapeSetting()
 end
 
 
+
+function A.notifyOverlayCountSetting()
+	traceSetting("overlay-count", A.overlayCount)
+	if A.refreshOptionsWindow then
+		pcall(A.refreshOptionsWindow)
+	end
+	return false
+end
+
+function A.notifyOverlayOpacitySetting()
+	traceSetting("overlay-opacity", A.overlayOpacity)
+	if A.refreshOptionsWindow then
+		pcall(A.refreshOptionsWindow)
+	end
+	return false
+end
+
+function A.notifyOverlayCombatSetting()
+	traceSetting("overlay-combat", A.overlayCombat)
+	if A.refreshOptionsWindow then
+		pcall(A.refreshOptionsWindow)
+	end
+	return false
+end
+
+
 function A.notifyOverlaySetting()
 	traceSetting("overlay", A.overlayEnabled)
 	return notify(OVERLAY_VARIABLE)
@@ -329,8 +355,8 @@ local function addResetButton(layout)
 				A.openResetConfirm()
 			end,
 			"Erase every stored match, the player index, the notes and the incomplete entries, "
-			.. "and return the interface to its defaults. A copy is pinned first and can be "
-			.. "restored.",
+			.. "and return the interface to its defaults. The confirm window says whether a copy "
+			.. "is pinned first.",
 			true))
 	end)
 

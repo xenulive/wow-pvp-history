@@ -52,9 +52,16 @@ local function ratingReading(participant)
 		return nil
 	end
 
+
+
+	local out = type(participant.ratingChange) == "number" and rating + change or nil
+	local mmr = mmrPost ~= 0 and mmrPost or nil
+	if out == nil and mmr == nil then
+		return nil
+	end
 	return {
-		rating = rating + change,
-		mmr = mmrPost ~= 0 and mmrPost or nil,
+		rating = out,
+		mmr = mmr,
 	}
 end
 
@@ -169,6 +176,10 @@ local function side(selfFaction, participant)
 	end
 
 	if selfFaction == nil or participant.faction == nil then
+		return nil
+	end
+
+	if (selfFaction ~= 0 and selfFaction ~= 1) or (participant.faction ~= 0 and participant.faction ~= 1) then
 		return nil
 	end
 	if participant.faction == selfFaction then

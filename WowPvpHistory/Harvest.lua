@@ -187,12 +187,16 @@ end
 
 
 
+
+
 local function readMap()
 	local map = {}
 	local located = pcall(function()
 		local name, instanceType, _, _, _, _, _, instanceId = GetInstanceInfo()
 		map.name = name
-		map.instanceType = instanceType
+		if A.canRead(instanceType) then
+			map.instanceType = instanceType
+		end
 		map.instanceId = instanceId
 	end)
 	if located and map.name then
@@ -207,7 +211,8 @@ local function ratedArenaFormat()
 	local size
 	if type(GetNumArenaOpponentSpecs) == "function" then
 		local ok, res = pcall(GetNumArenaOpponentSpecs)
-		if ok then
+
+		if ok and A.canRead(res) then
 			size = res
 		end
 	end
@@ -245,11 +250,16 @@ A.arenaOnBattlegroundMap = arenaOnBattlegroundMap
 
 
 
+
 local function walk(ladder, instanceType)
 	for i = 1, #ladder do
 
 		local name, answer = ladder[i][1], ladder[i][2]
-		if not arenaOnBattlegroundMap(name, instanceType) and A.pvpCall(name) == true then
+		local value = nil
+		if not arenaOnBattlegroundMap(name, instanceType) then
+			value = A.pvpCall(name)
+		end
+		if A.canRead(value) and value == true then
 			if type(answer) == "function" then
 				return answer()
 			end
@@ -391,7 +401,8 @@ local function sweep()
 	end
 
 	local ok, rows = pcall(GetNumBattlefieldScores)
-	if not ok or type(rows) ~= "number" then
+
+	if not ok or not A.canRead(rows) or type(rows) ~= "number" then
 
 		return nil, 0, nil, {}
 	end
@@ -438,7 +449,7 @@ local function readOwnRating()
 	end
 
 	local ok, rows = pcall(GetNumBattlefieldScores)
-	if not ok or type(rows) ~= "number" then
+	if not ok or not A.canRead(rows) or type(rows) ~= "number" then
 		return nil
 	end
 
@@ -734,7 +745,8 @@ local function store(record, participants, kept, rows, attempt, readSeconds, rea
 
 
 	local winner, side = record.winnerFaction, record.selfFaction
-	local rounds = record.rounds and #record.rounds or 0
+	local roundList = A.roundList(record)
+	local rounds = roundList and #roundList or 0
 	local classified = record.format ~= "unknown"
 	local isShuffle = (record.format == "shuffle" or record.format == "shuffle-unrated"
 		or rounds > 0)
@@ -744,7 +756,10 @@ local function store(record, participants, kept, rows, attempt, readSeconds, rea
 		elseif winner == (side + 1) % 2 then
 			record.result = "loss"
 		else
-			record.result = "draw"
+
+
+
+			A.trace("harvest", { format = record.format, winnerOdd = winner })
 		end
 	end
 
@@ -772,6 +787,9 @@ local function store(record, participants, kept, rows, attempt, readSeconds, rea
 	end
 	if columns then
 		record.columns = columns
+
+
+		A.forgetRoundOutcomes(record)
 	end
 
 
@@ -782,7 +800,7 @@ local function store(record, participants, kept, rows, attempt, readSeconds, rea
 			A.noteError(written, "harvest.roundwins")
 			written, refused = nil, "threw"
 		end
-		A.trace("rounds", { n = roundCount, kept = roundsKept, rows = roundsLost, won = written,
+		A.trace("rounds", { n = roundCount, kept = roundsKept, dropped = roundsLost, won = written,
 			refused = refused })
 	end
 
@@ -906,20 +924,7 @@ local function store(record, participants, kept, rows, attempt, readSeconds, rea
 	end
 
 
-	if A.finderRecordStored then
-		local repainted, err = pcall(A.finderRecordStored)
-		if not repainted then
-			A.noteError(err, "harvest.finder")
-		end
-	end
-
-
-	if A.overlayRecordStored then
-		local repainted, err = pcall(A.overlayRecordStored)
-		if not repainted then
-			A.noteError(err, "harvest.overlay")
-		end
-	end
+	A.recordStored("harvest")
 
 
 	local knownOk, knownClause = pcall(A.matchKnownClause, record)

@@ -285,6 +285,7 @@ end
 
 
 
+
 function A.aboutBests()
 	local rows = {}
 	local function put(key, label, build)
@@ -342,8 +343,9 @@ function A.aboutBests()
 		if row == nil or (row.met or 0) < 1 then
 			return nil, "no-player-met"
 		end
+
 		return { value = tostring(row.identity.bare), sub = counted(row.met, "time", "times"),
-			classToken = row.identity.classToken, word = true }
+			traced = row.met, classToken = row.identity.classToken, word = true }
 	end)
 	put("map", "Most played map", function()
 		local row, reason = mostPlayedMap()
@@ -1154,7 +1156,11 @@ function A.paintAboutBody(width)
 	if leftOk and type(bests) == "table" then
 		for _, row in ipairs(bests) do
 			if row.value ~= nil then
-				bestWords[#bestWords + 1] = ("%s=%s"):format(row.key, tostring(row.value))
+				local shown = row.traced
+				if shown == nil then
+					shown = row.value
+				end
+				bestWords[#bestWords + 1] = ("%s=%s"):format(row.key, tostring(shown))
 			else
 				bestWords[#bestWords + 1] = ("%s:%s"):format(row.key, tostring(row.withdrawn))
 			end

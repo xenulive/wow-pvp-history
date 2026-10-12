@@ -24,9 +24,6 @@ local TAGS = {
 }
 
 
-
-
-
 local TITLE_NOTE_MAX = 60
 
 
@@ -205,7 +202,7 @@ local function noteTitle(guid)
 
 	local text = note.text
 	if #text > TITLE_NOTE_MAX then
-		text = text:sub(1, TITLE_NOTE_MAX) .. "..."
+		text = A.byteCut(text, TITLE_NOTE_MAX) .. "..."
 	end
 	return text
 end

@@ -457,7 +457,10 @@ local MATCH_COLUMNS = {
 			local entries = {}
 			for i = 1, #columns do
 				local column = columns[i]
-				entries[i] = { column.id, column.order, column.name }
+
+
+
+				entries[i] = { column.id, column.order == nil and "" or column.order, column.name }
 			end
 			return packJoin(entries)
 		end,
@@ -834,6 +837,10 @@ end
 
 
 function A.csvExport(filter, part)
+
+	if A.sandboxed() then
+		return nil, A.refusalText("sandbox")
+	end
 	local db = A.db()
 	if not db then
 		return nil, "no database"
@@ -1055,6 +1062,13 @@ function A.csvImport(text, forced)
 		return nil, A.csvRefusalText("no-database"), "no-database"
 	end
 
+
+
+	if db.active ~= nil then
+		A.trace("csv-import", { state = "refused", reason = "in-flight" }, "data")
+		return nil, A.refusalText("in-flight"), "in-flight"
+	end
+
 	local held = {}
 	for i = 1, #db.matches do
 		held[naturalKey(db.matches[i])] = true
@@ -1204,7 +1218,13 @@ function A.csvImport(text, forced)
 		moved = A.orderByCompletion(db.matches)
 
 
-		A.rebuildIndex()
+
+		local rebuilt, rebuildError = pcall(A.rebuildIndex)
+		if not rebuilt then
+			A.noteError(rebuildError, "csv-index")
+			A.say(("the records are stored and the player index was not rebuilt: %s. /pvph rebuild")
+				:format(tostring(rebuildError)))
+		end
 		pcall(A.notePrune, "csv", #db.matches - added)
 		pcall(A.storeReplaced)
 	end
@@ -1213,7 +1233,7 @@ function A.csvImport(text, forced)
 		state = forced and "forced" or "applied",
 		rows = preview.dataRows,
 		n = added,
-		kept = skipped,
+		skipped = skipped,
 		refusals = refused,
 		moved = moved,
 		records =#addedIds > 0 and table.concat(addedIds, "+") or nil,

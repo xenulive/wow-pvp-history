@@ -201,7 +201,8 @@ function A.inMatchInstance()
 		return false
 	end
 	local ok, _, instanceType = pcall(GetInstanceInfo)
-	return ok and (instanceType == "pvp" or instanceType == "arena")
+
+	return ok and A.canRead(instanceType) and (instanceType == "pvp" or instanceType == "arena")
 end
 
 
@@ -550,7 +551,8 @@ local function inPvpInstance()
 		return false
 	end
 	local ok, _, kind = pcall(IsInInstance)
-	return ok and (kind == "pvp" or kind == "arena")
+
+	return ok and A.canRead(kind) and (kind == "pvp" or kind == "arena")
 end
 
 

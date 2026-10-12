@@ -21,8 +21,11 @@ local selectedGuid
 
 
 
+
+
 local searchText
 local sortWord = "recent"
+local sortDir
 local repFilter
 local formatFilter
 local sideFilter
@@ -39,11 +42,17 @@ local pendingReveal
 
 
 
+
+local requestedGuid
+
+
+
 local function setSelected(guid)
 	if guid == selectedGuid then
 		return
 	end
 	selectedGuid = guid
+	requestedGuid = nil
 	local box = window and window.tagRow and window.tagRow.box
 	if box then
 		pcall(box.SetText, box, "")
@@ -53,6 +62,10 @@ end
 
 
 local lastRows = 0
+
+
+
+local tracedOrder = "recent"
 
 
 local MET_ROWS = 4
@@ -174,6 +187,11 @@ end
 
 
 
+function A.playersIconSize()
+	return A.fontSize("bodyMedium") + 2 + A.fontSize("note")
+end
+
+
 
 local function initRow(row, data)
 	if not row.built then
@@ -211,22 +229,21 @@ local function initRow(row, data)
 
 		local left = A.metric("playerLane") + A.metric("playerLaneGap")
 
+		row.specIcon = row:CreateTexture(nil, "ARTWORK")
+		row.specIcon:SetPoint("TOPLEFT", row, "TOPLEFT", left, -4)
+		row.specIcon:Hide()
+
+
 
 		row.label = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-		row.label:SetPoint("TOPLEFT", row, "TOPLEFT", left, -4)
+		row.label:SetPoint("TOPLEFT", row, "TOPLEFT", left + A.playersIconSize() + A.metric("chipGap"), -4)
 		row.label:SetPoint("RIGHT", row, "RIGHT", -used, 0)
 		row.label:SetJustifyH("LEFT")
 		row.label:SetWordWrap(false)
 
 
-		row.mark = row:CreateTexture(nil, "ARTWORK")
-		row.mark:SetSize(A.metric("rowChip"), A.fontSize("note") + 2)
-		row.mark:SetPoint("TOPLEFT", row.label, "BOTTOMLEFT", 0, -2)
-		row.markText = row:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-		row.markText:SetPoint("CENTER", row.mark, "CENTER", 0, 0)
-		row.markText:SetWordWrap(false)
 		row.spec = row:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
-		row.spec:SetPoint("LEFT", row.mark, "RIGHT", A.metric("rowCellGap"), 0)
+		row.spec:SetPoint("TOPLEFT", row.label, "BOTTOMLEFT", 0, -2)
 		row.spec:SetPoint("RIGHT", row, "RIGHT", -used, 0)
 		row.spec:SetJustifyH("LEFT")
 		row.spec:SetWordWrap(false)
@@ -261,8 +278,7 @@ local function initRow(row, data)
 		row.selection:Hide()
 		row.lane:Hide()
 		row.label:Hide()
-		row.mark:Hide()
-		row.markText:Hide()
+		row.specIcon:Hide()
 		row.spec:Hide()
 		for i = 1, #row.figures do
 			row.figures[i]:Hide()
@@ -296,16 +312,9 @@ local function initRow(row, data)
 		item.noted and ("  " .. A.colorEscape("noteWord") .. "note|r") or nil)
 	row.label:Show()
 
-	if identity.mark then
-		row.mark:SetColorTexture(A.classColor(identity.classToken))
-		row.mark:Show()
-		A.style(row.markText, "rowClock", "menuGround")
-		row.markText:SetText(identity.mark)
-		row.markText:Show()
-	else
-		row.mark:Hide()
-		row.markText:Hide()
-	end
+
+
+	A.drawSpec({ icon = row.specIcon }, identity.classToken, identity.spec, nil, { size = A.playersIconSize() })
 	local sub = identity.specLabel or ""
 	if item.tag then
 		sub = sub .. (sub ~= "" and "  " or "") .. A.colorEscape("text") .. item.tag .. "|r"
@@ -471,15 +480,18 @@ local function commitTags()
 	if #tags == 0 then
 		return
 	end
+
+
+	pcall(box.SetText, box, "")
 	local stored, added, why, offender, bound = A.addPlayerTags(selectedGuid, tags)
 	if not stored then
+		pcall(box.SetText, box, text)
 		tagRefusal(why, offender, bound)
 		return
 	end
 	if type(added) == "table" and #added == 0 then
 		A.say("every one of those tags was already there. Nothing written")
 	end
-	pcall(box.SetText, box, "")
 	pcall(box.ClearFocus, box)
 end
 
@@ -500,13 +512,19 @@ local function suggestClicked(button)
 	if not (selectedGuid and button.tagValue) then
 		return
 	end
+	local box = window and window.tagRow and window.tagRow.box
+	local typed
+	if box then
+		local read, held = pcall(box.GetText, box)
+		typed = read and held or ""
+		pcall(box.SetText, box, "")
+	end
 	local stored, _, why, offender, bound = A.addPlayerTags(selectedGuid, { button.tagValue })
 	if not stored then
+		if box then
+			pcall(box.SetText, box, typed)
+		end
 		tagRefusal(why, offender, bound)
-		return
-	end
-	if window and window.tagRow then
-		pcall(window.tagRow.box.SetText, window.tagRow.box, "")
 	end
 end
 
@@ -1056,6 +1074,7 @@ local function buildToolbar(frame)
 		end
 		local ok, text = pcall(self.GetText, self)
 		searchText = (ok and type(text) == "string" and text ~= "") and text or nil
+		requestedGuid = nil
 		A.refreshNotes()
 	end)
 	frame.searchBox:SetScript("OnEscapePressed", function(self)
@@ -1097,7 +1116,8 @@ end
 
 
 local function paintToolbar()
-	A.setSegmentChosen(window.sortTrack, sortWord)
+
+	A.setSegmentChosen(window.sortTrack, A.playerSortSegment(sortWord) and sortWord or nil)
 	A.setDropdownChoices(window.formatFilter, A.playerFormatChoices(), formatFilter)
 	A.setDropdownChoices(window.sideFilter, A.playerSideChoices(), sideFilter)
 
@@ -1180,12 +1200,38 @@ local function buildListHeader(frame)
 	frame.listHeader.rule:SetHeight(1)
 	frame.listHeader.labels = {}
 	frame.listHeader.names = { "PLAYER" }
+	frame.listHeader.keys = { "player" }
+	frame.listHeader.buttons = {}
 	local name = frame.listHeader:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
 	name:SetPoint("LEFT", frame.listHeader, "LEFT", A.metric("playerLane") + A.metric("playerLaneGap"), 0)
 	name:SetWordWrap(false)
 	frame.listHeader.labels[1] = name
+
+
+
+
+	local function sortButton(key)
+		local button = CreateFrame("Button", nil, frame.listHeader)
+		button:SetHeight(listHeaderHeight())
+		button:RegisterForClicks("LeftButtonUp")
+		button.hover = button:CreateTexture(nil, "HIGHLIGHT")
+		button.hover:SetAllPoints(button)
+		button.sortKey = key
+		button:SetScript("OnClick", function(self)
+			A.clickNotesHeader(self.sortKey)
+		end)
+		frame.listHeader.buttons[#frame.listHeader.buttons + 1] = button
+		return button
+	end
+
 	local edges = figureEdges()
-	for i, column in ipairs(figureColumns()) do
+	local columns = figureColumns()
+
+
+	local player = sortButton("player")
+	player:SetPoint("LEFT", frame.listHeader, "LEFT", 0, 0)
+	player:SetPoint("RIGHT", frame.listHeader, "RIGHT", -(edges[1] + columns[1].width), 0)
+	for i, column in ipairs(columns) do
 		local label = frame.listHeader:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
 		label:SetPoint("RIGHT", frame.listHeader, "RIGHT", -edges[i], 0)
 		label:SetWidth(column.width)
@@ -1193,6 +1239,11 @@ local function buildListHeader(frame)
 		label:SetWordWrap(false)
 		frame.listHeader.labels[#frame.listHeader.labels + 1] = label
 		frame.listHeader.names[#frame.listHeader.names + 1] = column.name
+		frame.listHeader.keys[#frame.listHeader.keys + 1] = column.key
+
+		local button = sortButton(column.key)
+		button:SetPoint("RIGHT", frame.listHeader, "RIGHT", -edges[i], 0)
+		button:SetWidth(column.width)
 	end
 end
 
@@ -1567,14 +1618,35 @@ local function viewState(index)
 		side = sideFilter,
 		rep = repFilter,
 		sort = sortWord,
+		dir = sortDir,
 		now = time(),
 	}
 end
 
 
 
-local function listRows(index)
-	local view = A.playersView(viewState(index))
+
+
+local function orderValue(sort, row)
+	if type(row) ~= "table" then
+		return nil
+	end
+	if sort == "with" or sort == "against" then
+		local rank = row[sort .. "Rank"]
+		return rank and rank.diff or "-"
+	end
+	if sort == "met" then
+		return row.met
+	end
+	if sort == "player" then
+		local folded = A.foldText(tostring(row.identity and row.identity.bare or ""))
+		return folded:match("^[%z\1-\127\194-\244][\128-\191]*")
+	end
+	return nil
+end
+
+
+local function drawnRows(view)
 	local rows, selected = {}, nil
 	for s = 1, #view.sections do
 		local section = view.sections[s]
@@ -1588,6 +1660,57 @@ local function listRows(index)
 			end
 		end
 	end
+	return rows, selected
+end
+
+
+local function clearNarrowings()
+	local cleared = 0
+	if searchText ~= nil then
+		cleared = cleared + 1
+		searchText = nil
+		if window and window.searchBox then
+			pcall(window.searchBox.SetText, window.searchBox, "")
+		end
+	end
+	if repFilter ~= nil then
+		cleared = cleared + 1
+		repFilter = nil
+	end
+	if formatFilter ~= nil then
+		cleared = cleared + 1
+		formatFilter = nil
+	end
+	if sideFilter ~= nil then
+		cleared = cleared + 1
+		sideFilter = nil
+	end
+	if scopeMatchId ~= nil then
+		cleared = cleared + 1
+		scopeMatchId = nil
+	end
+	return cleared
+end
+
+
+
+local function listRows(index)
+	local view = A.playersView(viewState(index))
+	local rows, selected = drawnRows(view)
+
+
+
+
+	local requested = selectedGuid ~= nil and requestedGuid == selectedGuid
+	if not selected and requested and pendingReveal == selectedGuid then
+		local cleared = clearNarrowings()
+		if cleared > 0 then
+			view = A.playersView(viewState(index))
+			rows, selected = drawnRows(view)
+		end
+		pcall(A.trace, "notesasked", { cleared = cleared, hidden = selected == nil }, "ui")
+	end
+
 
 
 
@@ -1596,7 +1719,7 @@ local function listRows(index)
 		if selectedGuid ~= nil then
 			entry, stored = A.playerEntry(selectedGuid)
 		end
-		if entry and not stored then
+		if entry and (not stored or requested) then
 			selected = { guid = entry.guid, entry = entry.entry }
 		else
 			selected = nil
@@ -1873,6 +1996,8 @@ function A.faultReport()
 		tostring(select(2, pcall(A.stamp)))))
 
 
+
+	local ringOn = type(A.debugEnabled) == "function" and A.debugEnabled()
 	line("")
 	local painted = lastNotesPaint()
 	if type(painted) == "table" then
@@ -1885,6 +2010,8 @@ function A.faultReport()
 			:format(tostring(painted.metW), tostring(painted.metH), tostring(painted.metUp)))
 		line(("  the roster band: %s high, shown %s")
 			:format(tostring(painted.bandH), tostring(painted.bandUp)))
+	elseif not ringOn then
+		line("the last paint: the debug ring is off, so no paint was recorded")
 	else
 
 		line("the last paint: no paint entry is in the ring, so what the paint saw is unrecorded")
@@ -1927,7 +2054,9 @@ function A.faultReport()
 	line("")
 	line("the last ten ui entries, newest last:")
 	local held = type(A.debugLines) == "function" and A.debugLines(10, "ui") or {}
-	if #held == 0 then
+	if #held == 0 and not ringOn then
+		line("  the debug ring is off, so nothing was recorded")
+	elseif #held == 0 then
 		line("  the ui ring is empty")
 	end
 	for i = 1, #held do
@@ -2154,13 +2283,31 @@ function A.refreshNotes()
 	local stripDrew = (stripOk and type(stripErr) == "table") and stripErr or {}
 	pcall(paintToolbar)
 
+
+
 	pcall(function()
 		window.listHeader.rule:SetColorTexture(A.color("hairline"))
 		for i, label in ipairs(window.listHeader.labels) do
-			A.style(label, "label", "dimmer")
+			A.style(label, "label", window.listHeader.keys[i] == view.sort and "accent" or "dimmer")
 			label:SetText(window.listHeader.names[i] or "")
 		end
+		for _, button in ipairs(window.listHeader.buttons) do
+			button.hover:SetColorTexture(A.color("hover"))
+		end
 	end)
+
+
+	local order = view.sort .. (view.dir and ("/" .. view.dir) or "")
+	if order ~= tracedOrder then
+		tracedOrder = order
+		pcall(A.trace, "notessort", {
+			sort = view.sort,
+			sortDir = view.dir,
+			n = view.shown,
+			topValue = orderValue(view.sort, view.rows[1]),
+			bottomValue = orderValue(view.sort, view.rows[#view.rows]),
+		}, "ui")
+	end
 
 
 	local listTook = A.setRows(window.list, rows)
@@ -2242,9 +2389,10 @@ function A.refreshNotes()
 		dossier = dossierOk,
 		panel = panel,
 		sort = sortWord,
+		sortDir = sortDir,
 		repStep = repFilter ~= nil and tostring(repFilter) or nil,
 		fmt = formatFilter,
-		side = sideFilter,
+		sideFilter = sideFilter,
 		players = view.strip.players,
 		unmet = view.strip.unmet,
 		sections = #view.sections,
@@ -2338,13 +2486,35 @@ end
 
 
 
-function A.setNotesSort(word)
-	if word ~= "recent" and word ~= "met" and word ~= "rep" then
+
+
+
+function A.setNotesSort(word, dir)
+	if not A.playerSortKnown(word) then
+		return false
+	end
+	local first = A.playerSortFirst(word)
+	if dir ~= nil and (first == nil or (dir ~= "up" and dir ~= "down")) then
 		return false
 	end
 	sortWord = word
+	sortDir = first ~= nil and (dir or first) or nil
 	A.refreshNotes()
 	return true
+end
+
+
+
+function A.clickNotesHeader(word)
+	local first = A.playerSortFirst(word)
+	if first == nil then
+		return false
+	end
+	local dir = first
+	if word == sortWord and sortDir ~= nil then
+		dir = sortDir == "up" and "down" or "up"
+	end
+	return A.setNotesSort(word, dir)
 end
 
 
@@ -2397,6 +2567,7 @@ function A.setNotesSearch(text)
 		return false
 	end
 	searchText = (text ~= nil and text ~= "") and text or nil
+	requestedGuid = nil
 	if window and window.searchBox then
 		pcall(window.searchBox.SetText, window.searchBox, searchText or "")
 	end
@@ -2406,7 +2577,7 @@ end
 
 
 function A.notesState()
-	return { sort = sortWord, rep = repFilter, format = formatFilter, side = sideFilter,
+	return { sort = sortWord, dir = sortDir, rep = repFilter, format = formatFilter, side = sideFilter,
 		text = searchText, scope = scopeMatchId }
 end
 
@@ -2484,6 +2655,7 @@ function A.selectPlayer(guid, forWriting)
 		return false
 	end
 	setSelected(guid)
+	requestedGuid = guid
 
 	pendingReveal = guid
 	if not windowOrNil() then

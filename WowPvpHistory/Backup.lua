@@ -462,6 +462,16 @@ local RESTORE_KEEPS = { "pruneLog" }
 
 
 local function refill(db, value, keep)
+
+
+	local repairs = A.repairStore(value)
+	for i = 1, #repairs do
+		A.trace("repair", {
+			field = repairs[i].field,
+			foundType = repairs[i].foundType,
+			position = repairs[i].position,
+		})
+	end
 	local kept = {}
 	for _, key in ipairs(keep or {}) do
 		kept[key] = db[key]
@@ -492,6 +502,24 @@ local function refill(db, value, keep)
 		end
 		db.nextMatchId = math.floor(largest) + 1
 		traceBackup("refill", "derived", "next-id", db.nextMatchId)
+	end
+
+
+
+
+	local largestFixture = 0
+	for _, record in ipairs(db.matches) do
+		local n = type(record) == "table" and type(record.id) == "string" and tonumber(record.id:match("^F(%d+)$"))
+		if n and n > largestFixture then
+			largestFixture = n
+		end
+	end
+	local payloadFixture = type(db.nextFixtureId) == "number" and db.nextFixtureId or 1
+	if largestFixture + 1 > payloadFixture then
+		db.nextFixtureId = largestFixture + 1
+		traceBackup("refill", "derived", "next-fixture-id", db.nextFixtureId)
+	else
+		db.nextFixtureId = payloadFixture
 	end
 	db.dropped = db.dropped or {}
 	db.dropEvents = db.dropEvents or {}
@@ -584,6 +612,7 @@ function A.applyRestore(which)
 
 	pcall(A.notePrune, "restore", before)
 
+
 	A.storeReplaced()
 
 	traceBackup("restore", "applied", nil, #db.matches)
@@ -598,6 +627,10 @@ end
 function A.exportString()
 	if not codec then
 		return nil, "the client provides no encoding surface"
+	end
+
+	if A.sandboxed() then
+		return nil, A.refusalText("sandbox")
 	end
 
 	local db = A.db()
@@ -680,6 +713,11 @@ function A.applyImport(text)
 
 	local before = #db.matches
 	refill(db, preview.payload, IMPORT_KEEPS)
+
+
+	if type(db.ui) == "table" then
+		db.ui.sessionFolds = nil
+	end
 	pcall(A.notePrune, "import", before)
 	A.storeReplaced()
 
@@ -702,13 +740,19 @@ local function bytesText(bytes)
 end
 
 
-local function pinClause(held)
+local function hasPin(held)
 	local pinned = held and held.pinned
-	if type(pinned) ~= "table" or type(pinned.blob) ~= "string" then
+	return type(pinned) == "table" and type(pinned.blob) == "string"
+end
+
+
+
+local function pinClause(held)
+	if not hasPin(held) then
 		return ""
 	end
-
-	return (". A pinned copy holds %d %s from %s. /pvph restore pinned"):format(
+	local pinned = held.pinned
+	return (". A pinned copy holds %d %s from %s"):format(
 		pinned.matches or 0, pinned.matches == 1 and "match" or "matches", tostring(pinned.at))
 end
 
@@ -728,7 +772,7 @@ local function generationClause(held, heldRaw, offered, offeredRaw)
 end
 
 
-function A.backupReading()
+local function backupText()
 	if not codec then
 		return "this client provides no encoding surface, so nothing is backed up"
 	end
@@ -740,7 +784,7 @@ function A.backupReading()
 			return ("none held. The last write failed at %s"):format(
 				tostring(held.failed.step)) .. pinClause(held)
 		end
-		return "none on this character yet. /pvph backup takes one" .. pinClause(held)
+		return "none on this character yet" .. pinClause(held), true
 	end
 
 	local current = held.current
@@ -768,8 +812,25 @@ function A.backupReading()
 end
 
 
+
+
+function A.backupReading()
+	local text, none = backupText()
+	return text, none, hasPin(A.backupStore())
+end
+
+
+
+
 function A.backupLine()
-	return "backup: " .. A.backupReading()
+	local reading, none, pinned = A.backupReading()
+	if none then
+		reading = reading .. ". /pvph backup takes one"
+	end
+	if pinned then
+		reading = reading .. ". /pvph restore pinned brings the pin back"
+	end
+	return "backup: " .. reading
 end
 
 

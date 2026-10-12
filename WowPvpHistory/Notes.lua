@@ -138,9 +138,10 @@ end
 
 
 function A.setPlayerNote(guid, text)
-	if type(guid) ~= "string" or guid == "" then
-		traceNote("note", "refused", "no-guid")
-		return false, nil, "no-guid"
+	local usable, why = A.playerKey(guid)
+	if not usable then
+		traceNote("note", "refused", why)
+		return false, nil, why
 	end
 
 	if text == nil or text == "" then
@@ -267,7 +268,6 @@ function A.setPlayerRating(guid, value)
 		traceNote("rating", "cleared")
 		return true, was
 	end
-
 
 
 	if A.ratingText(value) == nil then

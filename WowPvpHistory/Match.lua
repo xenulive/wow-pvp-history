@@ -109,7 +109,13 @@ end
 
 
 local function addRound(record)
-	local rounds = record.rounds
+
+
+	local rounds = A.roundList(record)
+	if not rounds then
+		rounds = {}
+		record.rounds = rounds
+	end
 	local round = { endedEpoch = time() }
 	rounds[#rounds + 1] = round
 
@@ -180,9 +186,17 @@ local function onComplete(record)
 
 	if not claimHarvest(record, "complete") then
 		if record.completedEpoch == nil then
+
+
+
+			local held = A.roundList(record)
+			if held and #held > 0 then
+				addRound(record)
+			end
 			record.completedEpoch = time()
 		end
-		if record.winnerFaction == nil then
+
+		if record.winnerFaction == nil and A.readMatchSurface() then
 			A.put(record, "winnerFaction", A.readMatchWinner())
 		end
 		if record.season == nil then
@@ -195,7 +209,8 @@ local function onComplete(record)
 	end
 
 
-	if #record.rounds > 0 then
+	local held = A.roundList(record)
+	if held and #held > 0 then
 		addRound(record)
 	end
 
@@ -251,6 +266,14 @@ local function onState(event)
 	local name = A.stateName(A.matchState())
 	local record = db.active
 
+
+
+	if record ~= nil and type(record) ~= "table" then
+		A.drop("abandoned-across-session", A.dropContext(record))
+		db.active = nil
+		record = nil
+	end
+
 	if name == nil or name == "Inactive" then
 		if A.perfHalt then
 			A.perfHalt()
@@ -273,7 +296,7 @@ local function onState(event)
 		elseif record then
 
 			A.trace("transition", { state = "Inactive", reason = "harvesting", source = event,
-				rounds = type(record.rounds) == "table" and #record.rounds or nil })
+				rounds = A.roundList(record) and #record.rounds or nil })
 		end
 		return
 	end
@@ -294,7 +317,7 @@ local function onState(event)
 		A.trace("release", {
 			state = name,
 			source = record.harvestSource,
-			rounds = #record.rounds,
+			rounds = A.roundList(record) and #record.rounds or nil,
 			off = age,
 		})
 		db.active = nil
@@ -378,6 +401,11 @@ local function resume()
 		return
 	end
 
+	if type(db.active) ~= "table" then
+		abandon(db)
+		return
+	end
+
 	if openedUnder[db.active] == nil then
 		openedUnder[db.active] = generation
 	end
@@ -399,7 +427,7 @@ local function resume()
 		db.active.harvesting = true
 		A.stashAtTransition(db.active)
 		A.scheduleHarvest(db.active)
-		A.trace("resume", { state = name, rounds = #db.active.rounds })
+		A.trace("resume", { state = name, rounds = A.roundList(db.active) and #db.active.rounds or nil })
 		return
 	end
 
@@ -411,8 +439,9 @@ local function resume()
 	end
 
 	db.active.completedPrecise = nil
-	A.trace("resume", { state = name, rounds = #db.active.rounds })
-	A.say("resumed a match in progress, " .. tostring(#db.active.rounds) .. " rounds so far")
+	local resumedRounds = A.roundList(db.active)
+	A.trace("resume", { state = name, rounds = resumedRounds and #resumedRounds or nil })
+	A.say("resumed a match in progress, " .. tostring(resumedRounds and #resumedRounds or 0) .. " rounds so far")
 
 
 

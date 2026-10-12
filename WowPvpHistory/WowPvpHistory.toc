@@ -1,9 +1,10 @@
 ## Interface: 120100, 120007
 ## Title: WoW PvP History
 ## Notes: A history of your PvP matches and the players in them.
-## Version: 0.64.7-rc.1
+## Version: 0.68.4-rc.1
 ## X-License: MIT
-## X-Website: https://xenu.live
+## X-Website: https://pvphistory.xenu.live
+## X-Curse-Project-ID: 1739823
 ## SavedVariables: WowPvpHistoryDB
 ## SavedVariablesPerCharacter: WowPvpHistoryCanaryDB, WowPvpHistoryBackupDB, WowPvpHistoryDebugDB
 ## DefaultState: enabled

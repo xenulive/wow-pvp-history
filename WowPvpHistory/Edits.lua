@@ -5,6 +5,7 @@
 
 
 
+
 local _, A = ...
 
 
@@ -76,6 +77,23 @@ local function traceEdit(source, subject, state, reason)
 end
 
 
+local function typedValue(subject, key)
+	local manual = subject.manual
+	return type(manual) == "table" and manual[key] or nil
+end
+
+
+
+
+local function clearsNothing(source, subject, held)
+	if held ~= nil then
+		return false
+	end
+	traceEdit(source, subject, "cleared", "nothing-stored")
+	return true
+end
+
+
 
 local function writeNote(subject, text, source)
 	if type(subject) ~= "table" then
@@ -88,9 +106,12 @@ local function writeNote(subject, text, source)
 		return false, nil, "too-long", #text, A.MANUAL_NOTE_MAX
 	end
 
+	local cleared = text == nil or text == ""
+	if cleared and clearsNothing(source, subject, typedValue(subject, "note")) then
+		return true, nil
+	end
 	local manual = block(subject)
 	local was = manual.note
-	local cleared = text == nil or text == ""
 	if cleared then
 		manual.note = nil
 	else
@@ -134,6 +155,9 @@ function A.editResult(record, value)
 		return false, nil, "bad-result"
 	end
 
+	if value == nil and clearsNothing("result", record, typedValue(record, "result")) then
+		return true, nil
+	end
 	local manual = block(record)
 	local was = manual.result
 	manual.result = value
@@ -204,6 +228,13 @@ function A.editRound(record, index, value)
 		return false, nil, refusal, blocking
 	end
 
+	if value == nil then
+		local typedRounds = typedValue(record, "rounds")
+		local held = type(typedRounds) == "table" and typedRounds[index] or nil
+		if clearsNothing("round", record, held) then
+			return true, nil
+		end
+	end
 	local manual = block(record)
 	local typed = type(manual.rounds) == "table" and manual.rounds or {}
 	local held = typed[index]
@@ -240,7 +271,7 @@ function A.incompleteById(id)
 	end
 	local list = db.incomplete
 	for i = #list, 1, -1 do
-		if list[i].id == id then
+		if type(list[i]) == "table" and list[i].id == id then
 			return list[i]
 		end
 	end
@@ -274,6 +305,9 @@ function A.editReason(entry, token)
 		return false, nil, "bad-reason"
 	end
 
+	if token == nil and clearsNothing("reason", entry, typedValue(entry, "reason")) then
+		return true, nil
+	end
 	local manual = block(entry)
 	local was = manual.reason
 	manual.reason = token

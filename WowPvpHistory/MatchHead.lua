@@ -162,6 +162,9 @@ local CARD_SLOTS = 6
 local CARD_NAMES = 6
 
 
+local TEAM_CARD_PAIRS = 4
+
+
 local function outline(line, layer)
 	local box = {}
 	for i = 1, 4 do
@@ -239,6 +242,22 @@ function A.buildMatchHeadParts(line)
 			card.names[n] = text("GameFontHighlightSmall")
 		end
 		line.roundCards[c] = card
+	end
+
+
+
+	line.teamCards = {}
+	for s = 1, 2 do
+		local card = { values = {}, labels = {} }
+		card.bg = keep(line:CreateTexture(nil, "BACKGROUND"))
+		card.edge = keep(line:CreateTexture(nil, "BORDER"))
+		card.title = text("GameFontDisableSmall")
+		card.word = text("GameFontDisableSmall", "RIGHT")
+		for c = 1, TEAM_CARD_PAIRS do
+			card.values[c] = text("GameFontNormalLarge")
+			card.labels[c] = text("GameFontDisableSmall")
+		end
+		line.teamCards[s] = card
 	end
 
 
@@ -723,13 +742,136 @@ end
 
 
 
+
+function A.paintTeamCards(line, h)
+	local totals = type(h.totals) == "table" and h.totals or {}
+	local columns = type(totals.columns) == "table" and totals.columns or {}
+	local words = type(h.words) == "table" and h.words or {}
+	local width = type(h.available) == "number" and h.available or A.detailWindowBody()
+	local gap, pad = A.metric("roundCardGap"), A.metric("roundCardPad")
+	local cardWidth = math.max(1, math.floor((width - gap) / 2))
+	local height = A.objectiveCardsHeight()
+	local sides = { { "yours", "win", totals.yours }, { "theirs", "loss", totals.theirs } }
+	for s = 1, 2 do
+		local card = line.teamCards[s]
+		local side, tone = sides[s][1], sides[s][2]
+
+		local values = type(sides[s][3]) == "table" and sides[s][3] or {}
+		card.bg:ClearAllPoints()
+		card.bg:SetPoint("TOPLEFT", line, "TOPLEFT", (s - 1) * (cardWidth + gap), 0)
+		card.bg:SetSize(cardWidth, height)
+		card.bg:SetColorTexture(A.color("panelDeep"))
+		card.bg:Show()
+		card.edge:ClearAllPoints()
+		card.edge:SetPoint("TOPLEFT", card.bg, "TOPLEFT", 0, 0)
+		card.edge:SetSize(cardWidth, A.metric("roundCardEdge"))
+		card.edge:SetColorTexture(A.color(tone))
+		card.edge:Show()
+
+		local y = -(A.metric("roundCardEdge") + pad)
+		A.style(card.title, "label", "dim")
+		card.title:SetText(A.sideWord(side):upper())
+		card.title:ClearAllPoints()
+		card.title:SetPoint("TOPLEFT", card.bg, "TOPLEFT", pad, y)
+		card.title:Show()
+		local word = words[side]
+		if word ~= nil then
+			A.style(card.word, "label", word == "DRAW" and "dim" or tone)
+			card.word:SetText(word)
+			card.word:ClearAllPoints()
+			card.word:SetPoint("TOPRIGHT", card.bg, "TOPRIGHT", -pad, y)
+			card.word:Show()
+		else
+			card.word:SetText("")
+			card.word:Hide()
+		end
+
+
+		y = y - A.fontSize("label") - A.metric("roundCardLine")
+		local x = pad
+		for c = 1, #card.values do
+			local value, label, column = card.values[c], card.labels[c], columns[c]
+			if type(column) == "table" then
+				local figure = values[c]
+				local text = figure ~= nil and tostring(figure) or "-"
+				A.style(value, "number", figure ~= nil and "text" or "dim")
+				value:SetText(text)
+				value:ClearAllPoints()
+				value:SetPoint("TOPLEFT", card.bg, "TOPLEFT", x, y)
+				value:Show()
+				x = x + A.textRoom(value, text) + A.metric("rowMarkGap")
+				A.style(label, "label", "dim")
+				label:SetText(column.short)
+				label:ClearAllPoints()
+
+				label:SetPoint("BOTTOMLEFT", value, "BOTTOMRIGHT", A.metric("rowMarkGap"), 0)
+				label:Show()
+				x = x + A.textRoom(label, column.short) + A.metric("headGap") * 2
+			else
+				value:SetText("")
+				label:SetText("")
+				value:Hide()
+				label:Hide()
+			end
+		end
+	end
+end
+
+
+local TEAM_LEGEND = { "your team", "their team" }
+
+
+
+function A.paintTeamLegend(line)
+	local size = A.metric("roundCellMark")
+	local top = -math.floor((A.metric("rowHeight") - size) / 2)
+	local x = 0
+	for i = 1, 2 do
+		local mark = line.legendMarks[i]
+		mark:ClearAllPoints()
+		mark:SetPoint("TOPLEFT", line, "TOPLEFT", x, top)
+		mark:SetSize(size, size)
+		mark:SetColorTexture(A.color(i == 1 and "win" or "loss"))
+		mark:Show()
+		local word = line.legendWords[i]
+		A.style(word, "note", "dim")
+		word:SetText(TEAM_LEGEND[i])
+		word:ClearAllPoints()
+		word:SetPoint("LEFT", line, "LEFT", x + size + A.metric("headCrestGap"), 0)
+		word:Show()
+		x = x + size + A.metric("headCrestGap") + A.textRoom(word, TEAM_LEGEND[i]) + A.metric("headGap") * 2
+	end
+	return x
+end
+
+
+
+
+
+
+
+
+
 function A.traceMatchHead(id, rows, height)
 	if type(A.trace) ~= "function" then
 		return false
 	end
 	local heading, headline, ladder, cards = nil, nil, nil, false
+	local team, teamCards = false, false
+	local counts = { spec = 0, class = 0, square = 0, blank = 0, rows = 0 }
 	for _, row in ipairs(type(rows) == "table" and rows or {}) do
 		local h = type(row) == "table" and row.head or nil
+		local c = type(row) == "table" and row.cells or nil
+		if type(c) == "table" and c.look == "team" then
+			team = true
+			local kind = A.rosterIcon(c.classToken, c.spec)
+			counts[kind] = (counts[kind] or 0) + 1
+			counts.rows = counts.rows + 1
+		end
+		if type(h) == "table" and h.look == "team" then
+			team = true
+			teamCards = teamCards or h.kind == "objectives"
+		end
 		if type(h) == "table" then
 			if h.kind == "heading" then
 				heading = h
@@ -744,6 +886,11 @@ function A.traceMatchHead(id, rows, height)
 	end
 	local parts = heading or headline or {}
 	local chip = parts.chip
+
+	local drewCards = nil
+	if team then
+		drewCards = teamCards
+	end
 	A.trace("match-head", {
 		id = id,
 		verdict = parts.result or "none",
@@ -753,6 +900,11 @@ function A.traceMatchHead(id, rows, height)
 		markTo = ladder and ladder.to or "none",
 		cards = cards,
 		height = height,
+		teamCards = drewCards,
+		rows = team and counts.rows or nil,
+		icons = team and counts.spec or nil,
+		classIcons = team and (counts.class + counts.square) or nil,
+		blankIcons = team and counts.blank or nil,
 	}, "ui")
 	return true
 end

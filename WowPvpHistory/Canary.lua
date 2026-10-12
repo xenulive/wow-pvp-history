@@ -201,6 +201,7 @@ function A.canaryLossLines(state)
 	end
 
 
+
 	local restorable = A.backupLossLine()
 	if restorable then
 		lines[#lines + 1] = restorable
@@ -276,7 +277,7 @@ local function check()
 		state = state.state,
 		n = state.stored,
 		kept = state.seen,
-		held = state.via and state.held or nil,
+		heldCount = state.via and state.held or nil,
 		via = state.via,
 	})
 

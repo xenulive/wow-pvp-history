@@ -268,9 +268,16 @@ function A.buildTagRow(parent, onRemove, onSuggest, onCommit)
 	if onCommit then
 		row.box:SetScript("OnEnterPressed", onCommit)
 	end
+
+
+
 	row.box:SetScript("OnEscapePressed", function(self)
 		pcall(self.SetText, self, "")
 		pcall(self.ClearFocus, self)
+		local read, changed = pcall(self.GetScript, self, "OnTextChanged")
+		if read and type(changed) == "function" then
+			pcall(changed, self, true)
+		end
 	end)
 	return row
 end

@@ -460,6 +460,10 @@ function A.askAnswer(key, format, season, character, bound, comp)
 		answer.unit = { "match", "matches" }
 		answer.floorUnit = "matches"
 	end
+
+	if key == "comp" and type(A.compCountName) == "function" then
+		answer.countName = A.compCountName(format)
+	end
 	answer.table = question.table
 	answer.comp = comp
 	if answer.lead == nil then
@@ -644,9 +648,6 @@ local ASK_CELL = {
 	end,
 	rate = function(row)
 
-		if row.rateHidden then
-			return "-"
-		end
 		return A.percentText(row.winRate) or "-"
 	end,
 }
@@ -778,6 +779,7 @@ end
 
 
 
+
 function A.idLines(ids, key)
 	local out = {}
 	if type(ids) ~= "table" then
@@ -788,7 +790,8 @@ function A.idLines(ids, key)
 	for i = #ids, 1, -1 do
 		local text = type(A.matchLineText) == "function" and A.matchLineText(ids[i]) or nil
 		if text then
-			met[#met + 1] = { kind = "specMet", id = ids[i], text = text, stay = true }
+			met[#met + 1] = { kind = "specMet", id = ids[i], text = text, stay = true,
+				look = type(A.matchRowLook) == "function" and A.matchRowLook(ids[i]) or nil }
 		end
 	end
 	if #met == 0 then
@@ -804,38 +807,67 @@ end
 
 
 
+local function sideMembers(entries)
+	local out = {}
+	for i = 1, #(entries or {}) do
+		local p = type(entries[i]) == "table" and entries[i].p or nil
+		if type(p) == "table" then
+			out[#out + 1] = { spec = p.spec, classToken = p.classToken, class = p.class }
+		end
+	end
+	return out
+end
+
+
+
+
+
+
 function A.compRowLines(row)
 	if type(row) ~= "table" then
 		return {}
 	end
-	if type(row.rounds) ~= "table" then
-		return A.idLines(row.ids, "MET IN")
-	end
+	local byRound = type(row.rounds) == "table"
 	local met = {}
-	for i = #row.rounds, 1, -1 do
-		local held = row.rounds[i]
-		local record = type(A.match) == "function" and A.match(held.id) or nil
-		local round = type(record) == "table" and type(record.rounds) == "table" and record.rounds[held.round]
-			or nil
-		if type(round) == "table" then
-			local parts = { ("#%s"):format(tostring(held.id)), ("R%d"):format(held.round) }
-			local mates = type(A.roundSides) == "function" and A.roundSides(record, round) or nil
-			if type(mates) == "table" and #mates > 0 then
-				local who = {}
-				for m = 1, #mates do
-					who[m] = A.chipText(mates[m].p)
-				end
-				parts[#parts + 1] = table.concat(who, " + ")
+	if byRound then
+		for i = #row.rounds, 1, -1 do
+			local held = row.rounds[i]
+			local record = type(A.match) == "function" and A.match(held.id) or nil
+			local round = type(record) == "table" and type(record.rounds) == "table" and record.rounds[held.round]
+				or nil
+			if type(round) == "table" then
+				local mates = type(A.roundSides) == "function" and A.roundSides(record, round) or nil
+				local won = held.won == true
+				local grid = { match = ("#%s"):format(tostring(held.id)), round = ("R%d"):format(held.round),
+					side = sideMembers(mates), result = won and "WON" or "LOST", tone = won and "win" or "loss" }
+				met[#met + 1] = { kind = "specMet", id = held.id, grid = grid, stay = true,
+					text = ("%s   %s   %s"):format(grid.match, grid.round, grid.result) }
 			end
-			parts[#parts + 1] = held.won == true and "WON" or "LOST"
-			met[#met + 1] = { kind = "specMet", id = held.id, text = table.concat(parts, "   "), stay = true }
+		end
+	else
+		local ids = type(row.ids) == "table" and row.ids or {}
+		for i = #ids, 1, -1 do
+			local record = type(A.match) == "function" and A.match(ids[i]) or nil
+			if type(record) == "table" then
+				local split = type(A.rosterSplit) == "function" and A.rosterSplit(record) or nil
+				local tone = A.resultTone(record)
+				local result = (tone == "win" and "WON") or (tone == "loss" and "LOST") or "-"
+				local grid = { match = ("#%s"):format(tostring(record.id)),
+					side = sideMembers(type(split) == "table" and split.own or nil), result = result,
+					tone = (tone == "win" or tone == "loss") and tone or nil }
+				met[#met + 1] = { kind = "specMet", id = ids[i], grid = grid, stay = true,
+					text = ("%s   %s"):format(grid.match, grid.result) }
+			end
 		end
 	end
 	if #met == 0 then
 		return {}
 	end
-	local out = { { kind = "specMetHead", key = "MET IN",
-		text = ("%d %s"):format(#met, #met == 1 and "round" or "rounds") } }
+	local noun = byRound and { "round", "rounds" } or { "match", "matches" }
+	local out = {
+		{ kind = "specMetHead", key = "MET IN", text = ("%d %s"):format(#met, #met == 1 and noun[1] or noun[2]) },
+		{ kind = "metGridHead", byRound = byRound or nil },
+	}
 	for i = 1, #met do
 		out[#out + 1] = met[i]
 	end
@@ -885,10 +917,14 @@ function A.askCard(answer)
 		over = over,
 		overForms = overForms,
 		winRate = row.winRate,
-		tone = faint and "dimmer" or A.winRateTone(row.winRate),
+		tone = faint and "underText" or A.winRateTone(row.winRate),
 		faint = faint or nil,
 		classToken = row.classToken,
 		spec = row.spec,
+		class = row.class,
+
+		members = type(row.tally) == "table" and type(row.tally.members) == "table" and row.tally.members
+			or nil,
 	}
 end
 
@@ -920,10 +956,38 @@ end
 
 
 
-local COMP_SORT_COLUMNS = {
-	{ sort = "met", name = "ROUNDS", first = "descending" },
-	{ sort = "rate", name = "WIN RATE", first = "ascending" },
+
+local COMP_COLUMNS = {
+	{ key = "games", name = "RDS", metric = "compGames", sort = "met", first = "descending" },
+	{ key = "record", name = "W-L", metric = "compRecord" },
+	{ key = "rate", name = "WON", metric = "compPct", sort = "rate", first = "ascending" },
+	{ key = "delta", name = "RATING", metric = "compDelta" },
+	{ key = "length", name = "LEN", metric = "compLength" },
 }
+
+
+local COMP_SORT_COLUMNS = {}
+for i = 1, #COMP_COLUMNS do
+	local column = COMP_COLUMNS[i]
+	if column.sort ~= nil then
+		COMP_SORT_COLUMNS[#COMP_SORT_COLUMNS + 1] = { sort = column.sort, name = column.name, first = column.first }
+	end
+end
+
+
+
+
+function A.compColumns(format)
+	local out = {}
+	for i = 1, #COMP_COLUMNS do
+		local column = COMP_COLUMNS[i]
+		local name = column.key == "games" and type(A.compCountName) == "function" and A.compCountName(format)
+			or column.name
+		out[i] = { key = column.key, name = name, metric = column.metric, sort = column.sort,
+			width = math.max(A.metric(column.metric), A.headerFloor(name)) }
+	end
+	return out
+end
 
 
 local ASK_SORT_WORDS = {
@@ -1104,6 +1168,9 @@ function A.askSortLine(answer)
 				heading = columns[i].name
 			end
 		end
+		if answer.key == "comp" and column == "met" and type(answer.countName) == "string" then
+			heading = answer.countName
+		end
 	end
 	local rows = A.askSorted(answer)
 	local names = {}
@@ -1227,6 +1294,7 @@ end
 
 
 
+
 function A.mapsAnswer(format, season, character, bound)
 	local answer = { key = "maps", title = "Maps", group = "EVERY MAP", columns = "askWhere",
 		noun = { "map", "maps" }, floorKind = "maps", floorUnit = "decided matches",
@@ -1253,7 +1321,6 @@ function A.mapsAnswer(format, season, character, bound)
 			entry[field] = value
 		end
 		entry.ranked = false
-		entry.rateHidden = true
 		all[#all + 1] = entry
 	end
 	answer.rows = all

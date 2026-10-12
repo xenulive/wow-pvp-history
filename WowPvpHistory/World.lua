@@ -204,18 +204,7 @@ local function open(db, now)
 	db.matches[#db.matches + 1] = record
 	current, currentIndex = record, #db.matches
 
-	if A.finderRecordStored then
-		local repainted, err = pcall(A.finderRecordStored)
-		if not repainted then
-			A.noteError(err, "world-finder")
-		end
-	end
-	if A.overlayRecordStored then
-		local repainted, err = pcall(A.overlayRecordStored)
-		if not repainted then
-			A.noteError(err, "world-overlay")
-		end
-	end
+	A.recordStored("world")
 	pcall(A.noteCanary)
 	return record
 end
@@ -295,7 +284,7 @@ local function count(kills, deaths, delta)
 
 
 	A.trace("world", { id = record.id, state = opened and "open" or "count", n = record.kills,
-		d = record.deaths, delta = delta })
+		d = record.deaths, honorDelta = delta })
 	armGap()
 end
 
@@ -542,13 +531,13 @@ local function onKillsChanged()
 
 	baseline = reading
 	if delta < 0 then
-		A.trace("world", { state = "refused", reason = "rebased", delta = delta })
+		A.trace("world", { state = "refused", reason = "rebased", honorDelta = delta })
 		return
 	end
 
 	local why = refusal()
 	if why then
-		A.trace("world", { state = "refused", reason = why, delta = delta })
+		A.trace("world", { state = "refused", reason = why, honorDelta = delta })
 		return
 	end
 	count(delta, 0, delta)

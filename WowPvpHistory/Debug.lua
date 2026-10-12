@@ -60,7 +60,10 @@ end
 
 
 local FIELDS = {
-	"state", "restriction", "rounds", "rows", "kept", "attempt", "off",
+	"state", "restriction", "rounds", "rows", "kept",
+
+	"skipped",
+	"attempt", "off",
 	"format", "rated", "bracket", "source", "reason", "id", "n", "build", "version",
 	"season", "arena",
 
@@ -68,17 +71,19 @@ local FIELDS = {
 
 	"rating", "winner",
 
+	"tint",
+
+	"winnerOdd",
+
 	"out", "from", "gap", "mmr",
 
 	"noRow", "noGuid", "secretGuid",
 
 	"left",
 
-	"seg", "mid", "thick", "cap",
+	"seg",
 
 	"capped",
-
-	"hairline", "least", "gapFrom", "gapTo",
 
 	"total", "strip", "plot",
 
@@ -151,6 +156,9 @@ local FIELDS = {
 
 	"rect", "given",
 
+
+	"sizeFrom",
+
 	"windows", "records", "refusals",
 
 	"fill",
@@ -168,11 +176,14 @@ local FIELDS = {
 
 	"err",
 
-	"section", "deepest",
+	"section",
 
 	"column",
 
 	"viewport", "panes", "checks",
+
+
+
 
 	"kind",
 
@@ -182,7 +193,7 @@ local FIELDS = {
 
 	"bytes", "letters", "bound",
 
-	"theme", "air",
+	"theme",
 
 	"loaded", "nextId",
 
@@ -195,7 +206,7 @@ local FIELDS = {
 
 	"lockdown", "sources", "matched", "unmatched",
 
-	"unfinished", "comp",
+	"unfinished",
 
 	"opacity",
 
@@ -254,6 +265,11 @@ local FIELDS = {
 
 	"sort", "repStep", "fmt", "sections",
 
+
+	"sortDir", "topValue", "bottomValue",
+
+	"yoursTop", "theirsTop",
+
 	"tileForms", "lead", "ratedPlayers", "unratedPlayers", "repBars",
 
 	"search", "empty",
@@ -279,7 +295,10 @@ local FIELDS = {
 
 	"tries", "cls", "tok",
 
-	"measured", "drawnWidth", "reserved", "drawn",
+	"measured", "drawnWidth", "reserved",
+
+
+	"roundsRoom", "roundsNeed", "roundsMeasured",
 
 	"cols",
 
@@ -302,6 +321,11 @@ local FIELDS = {
 	"rowHeights", "nameForm", "ratingForm", "chart", "cell",
 
 	"statsView",
+
+
+	"selected", "pillView",
+
+	"ratedRows",
 
 	"seasonBreaks", "icons", "squares",
 
@@ -337,6 +361,11 @@ local FIELDS = {
 
 	"verdict", "chip", "reached", "markFrom", "markTo", "cards",
 
+
+	"teamCards", "classIcons", "blankIcons",
+
+	"default",
+
 	"switch", "alerts", "groupNotes",
 
 
@@ -353,6 +382,26 @@ local FIELDS = {
 	"nameCut",
 
 	"baseline",
+
+
+	"cleared", "hidden",
+
+
+	"field", "foundType", "position",
+
+
+
+	"scopeFrom", "chipRoom",
+
+	"honorDelta",
+
+	"heldCount",
+
+	"modifiers",
+
+	"tabFrom",
+
+	"sideFilter",
 }
 
 
@@ -625,8 +674,15 @@ end
 
 
 
+
+
+local NAME_OPEN = "[%u\192-\255]"
+local NAME_BODY = "[%w'\128-\255]"
+local NAME_END = "[%w\128-\255]"
+
+
 local function identityShaped(text)
-	return text:match("^%a+%-%d") ~= nil or text:match("^%u[%w']*%-%u") ~= nil
+	return text:match("^%a+%-%d") ~= nil or text:match("^" .. NAME_OPEN .. NAME_BODY .. "*%-" .. NAME_OPEN) ~= nil
 end
 
 
@@ -639,21 +695,27 @@ local ERROR_NAME = "<name>"
 local ERROR_GUID = "<guid>"
 
 
+local function scrubbed(text)
+
+	text = text:gsub("[Pp]layer%-%d+%-%w+", ERROR_GUID)
+
+
+	local part = "(" .. NAME_OPEN .. NAME_BODY .. "*" .. NAME_END .. ")"
+	text = text:gsub(part .. "%-" .. part, ERROR_NAME)
+	return text
+end
+
+
 
 local function errorText(value)
 	local text = tostring(value)
 
 
 	text = text:gsub("^Interface[\\/]+AddOns[\\/]+", "")
-
-
-	text = text:gsub("[Pp]layer%-%d+%-%w+", ERROR_GUID)
-
-
-	text = text:gsub("(%u[%w']*%w)%-(%u[%w']*%w)", ERROR_NAME)
+	text = scrubbed(text)
 
 	if #text > ERROR_MAX then
-		text = text:sub(1, ERROR_MAX) .. "..."
+		text = A.byteCut(text, ERROR_MAX) .. "..."
 	end
 	return text
 end
@@ -686,7 +748,9 @@ local function scalar(value)
 	if identityShaped(value) then
 		return REFUSED
 	end
-	return value
+
+
+	return (scrubbed(value))
 end
 
 
@@ -1097,4 +1161,14 @@ A.on("PLAYER_LOGIN", function()
 		ringFrom = stored and "stored" or "default",
 		ringDefault = A.debugDefault and "on" or "off",
 	})
+
+
+	local repairs = type(A.loadRepairs) == "function" and A.loadRepairs() or {}
+	for i = 1, #repairs do
+		A.trace("repair", {
+			field = repairs[i].field,
+			foundType = repairs[i].foundType,
+			position = repairs[i].position,
+		})
+	end
 end)
