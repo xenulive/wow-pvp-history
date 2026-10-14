@@ -12,7 +12,8 @@ Everything stays in the game's own addon files on your computer. It needs no acc
 companion app.
 
 [Download the latest release](https://github.com/xenulive/wow-pvp-history/releases) or get it
-[on CurseForge](https://www.curseforge.com/wow/addons/wow-pvp-history), read
+[on CurseForge](https://www.curseforge.com/wow/addons/wow-pvp-history) or
+[on Wago](https://addons.wago.io/addons/wow-pvp-history), read
 [the guide](https://github.com/xenulive/wow-pvp-history/wiki), visit
 [the website](https://pvphistory.xenu.live), or
 [report a problem](https://github.com/xenulive/wow-pvp-history/issues).
@@ -54,9 +55,10 @@ the list. If it isn't, look for `WowPvpHistory.toc` one folder too deep, such as
 `AddOns`. [Getting started](https://github.com/xenulive/wow-pvp-history/wiki/Getting-Started) walks
 through it step by step.
 
-Every release is also on CurseForge as the same zip, on the
-[WoW PvP History](https://www.curseforge.com/wow/addons/wow-pvp-history) page: install it from there
-with the CurseForge app to keep it up to date. A release candidate shows on CurseForge as a beta file.
+Every release is also on CurseForge and on Wago as the same zip, on the
+[CurseForge page](https://www.curseforge.com/wow/addons/wow-pvp-history) and the
+[Wago page](https://addons.wago.io/addons/wow-pvp-history): install it from either with its app
+to keep it up to date. A release candidate shows on both as a beta.
 
 Built for Retail WoW. Releases marked **Pre-release** are release candidates.
 

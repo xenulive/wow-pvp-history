@@ -3,7 +3,9 @@
 # job, curseforge, then uploads the release's zip to the CurseForge project the shipped .toc's
 # ## X-Curse-Project-ID: line names, a release candidate as beta, with the release body as its
 # changelog. It takes CURSEFORGE_API_TOKEN, a secret on this repository, and a failed upload leaves
-# the GitHub release published and is retried alone with "Re-run failed jobs".
+# the GitHub release published and is retried alone with "Re-run failed jobs". A third job, wago,
+# uploads the same zip beside it to the Wago Addons project the ## X-Wago-ID: line names, a release
+# candidate as beta, taking WAGO_API_TOKEN, a secret on this repository, in the same way.
 #
 # A release arrives here as a pull request from release/v<version>, carrying the stripped addon,
 # LICENSE, wiki/ and this file, beside a draft release for v<version> with the zip attached. Merging
@@ -37,7 +39,7 @@ on:
       - main
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: publish
@@ -48,6 +50,9 @@ jobs:
     name: publish
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    # Publishing the release and pushing the commit that removes wiki/ write to this repository.
+    permissions:
+      contents: write
     outputs:
       version: ${{ steps.version.outputs.version }}
       prerelease: ${{ steps.version.outputs.prerelease }}
@@ -197,7 +202,11 @@ jobs:
           & git -C $work add -A
           if ($LASTEXITCODE -ne 0) { Write-Host "::error title=wiki::git add answered $LASTEXITCODE. $finish"; exit 1 }
           $images = @(Get-ChildItem -LiteralPath 'wiki/images' -Recurse -File -ErrorAction SilentlyContinue).Count
-          if (@(& git -C $work status --porcelain).Count -eq 0) {
+          # Trap: a status that fails prints nothing, which reads as unchanged and lets the prune step
+          # remove wiki/ from main with no wiki push behind it, so the exit code is read first.
+          $status = @(& git -C $work status --porcelain)
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error title=wiki::git status answered $LASTEXITCODE. $finish"; exit 1 }
+          if ($status.Count -eq 0) {
             Write-Host "wiki: unchanged, the wiki already carries these $($pages.Count) pages and $images images, so nothing is committed or pushed"
             'state=unchanged', "pages=$($pages.Count)", "images=$images" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
             exit 0
@@ -242,7 +251,10 @@ jobs:
           & git fetch -q origin main
           if ($LASTEXITCODE -ne 0) { Write-Host "::error title=prune::Fetching main answered $LASTEXITCODE. $finish"; exit 1 }
           $tip = (& git rev-parse FETCH_HEAD).Trim()
-          if (@(& git ls-tree -d --name-only $tip -- wiki).Count -eq 0) {
+          # Trap: a listing that fails prints nothing, which reads as a main carrying no wiki/.
+          $listed = @(& git ls-tree -d --name-only $tip -- wiki)
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error title=prune::git ls-tree answered $LASTEXITCODE. $finish"; exit 1 }
+          if ($listed.Count -eq 0) {
             Write-Host "prune: main at $tip carries no wiki/, so nothing is removed"
             'state=absent', "commit=$tip" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
             exit 0
@@ -487,6 +499,185 @@ jobs:
             elseif ($env:RERUN_UPLOADED -eq 'true') { $out += "curseforge: skipped, attempt $env:RERUN_ATTEMPT of this run uploaded the file (read off this run's earlier attempts, since CurseForge lists no project files)" }
             elseif ($env:UPLOAD_OUTCOME -eq 'success') { $out += "curseforge: file $env:FILE_ID uploaded as $env:RELEASE_TYPE", "zip      sha256 $env:ZIP_SHA" }
             else { $out += "curseforge: not uploaded, the upload step reads $(if ($env:UPLOAD_OUTCOME) { $env:UPLOAD_OUTCOME } else { 'not run' })" }
+          }
+          $out += '```'
+          $out | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          $out | Write-Host
+
+  # The Wago upload: the same zip goes to the Wago Addons project the shipped .toc's ## X-Wago-ID:
+  # line names. It runs on the same condition as the CurseForge job and beside it, so a failure on
+  # one site leaves the other's upload alone and "Re-run failed jobs" retries only the one that failed.
+  wago:
+    name: wago
+    needs: publish
+    if: needs.publish.outputs.state == 'published' || needs.publish.outputs.state == 'already'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+
+    steps:
+      - name: Check out the pushed commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The game versions are read off ## Interface: by the same digit pairs the CurseForge job uses.
+      - name: Read the Wago project and game versions off the shipped .toc
+        id: wago-toc
+        shell: pwsh
+        run: |
+          $toc = 'WowPvpHistory/WowPvpHistory.toc'
+          if (-not (Test-Path -LiteralPath $toc -PathType Leaf)) {
+            Write-Host "::error title=wago::This commit carries no $toc to read the Wago project off."
+            exit 1
+          }
+          $lines = @(Get-Content -LiteralPath $toc)
+          $ids = @($lines | Where-Object { $_ -match '^##\s*X-Wago-ID:' })
+          if ($ids.Count -ne 1) {
+            Write-Host "::error title=wago::$toc carries $($ids.Count) ## X-Wago-ID: lines where one was expected."
+            exit 1
+          }
+          if ($ids[0] -cnotmatch '^##\s*X-Wago-ID:\s*([A-Za-z0-9]{8})\s*$') {
+            Write-Host "::error title=wago::The ## X-Wago-ID: line of $toc names no eight-character project."
+            exit 1
+          }
+          $project = $Matches[1]
+          $interfaces = @($lines | Where-Object { $_ -match '^##\s*Interface:' })
+          if ($interfaces.Count -ne 1) {
+            Write-Host "::error title=wago::$toc carries $($interfaces.Count) ## Interface: lines where one was expected."
+            exit 1
+          }
+          $names = [System.Collections.Generic.List[string]]::new()
+          foreach ($value in (($interfaces[0] -replace '^##\s*Interface:', '').Trim() -split '\s*,\s*')) {
+            if ($value -notmatch '^[1-9]\d{4,5}$') {
+              Write-Host "::error title=wago::The ## Interface: value '$value' is no interface number, so no game version can be named for it."
+              exit 1
+            }
+            $n = [int]$value
+            $name = '{0}.{1}.{2}' -f [int][math]::Truncate($n / 10000), ([int][math]::Truncate($n / 100) % 100), ($n % 100)
+            if (-not $names.Contains($name)) { $names.Add($name) }
+          }
+          Write-Host "wago: project $project, game versions $($names -join ', ')"
+          "project=$project", "versions=$($names -join ',')" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      # Whether Wago's API lists a project's versions is not read here, so a second copy is told
+      # apart off this run's own earlier attempts, as the CurseForge job does.
+      - name: Read whether an earlier attempt of this run uploaded the file
+        id: wago-rerun
+        shell: pwsh
+        env:
+          READ_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $attempt = [int]$env:GITHUB_RUN_ATTEMPT
+          $found = 0
+          if ($attempt -gt 1) {
+            $api = "https://api.github.com/repos/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+            $headers = @{ Authorization = "Bearer $env:READ_TOKEN"; Accept = 'application/vnd.github+json'; 'X-GitHub-Api-Version' = '2022-11-28' }
+            for ($n = 1; $n -lt $attempt; $n++) {
+              $jobs = Invoke-RestMethod -Uri "$api/attempts/$n/jobs?per_page=100" -Headers $headers
+              if (@($jobs.jobs | Where-Object { $_.name -ceq 'wago' -and $_.conclusion -ceq 'success' }).Count -gt 0) { $found = $n; break }
+            }
+          }
+          if ($found -gt 0) { Write-Host "rerun: attempt $found of this run uploaded the file, so attempt $attempt uploads nothing" }
+          else { Write-Host "rerun: none of the $($attempt - 1) earlier attempt(s) of this run uploaded the file" }
+          "uploaded=$(if ($found -gt 0) { 'true' } else { 'false' })", "attempt=$found" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      # The Wago token is handed to this step alone, in a header from the environment. The metadata
+      # carries the fields the BigWigs packager sends (L2, its release.sh, read 2026-10-13): label,
+      # supported_retail_patches, stability and changelog. Each game version has to be one Wago's
+      # game data lists for retail, or the job fails naming it.
+      - name: Upload the release zip to Wago
+        id: wago-upload
+        if: steps.wago-rerun.outputs.uploaded != 'true'
+        shell: pwsh
+        env:
+          WAGO_TOKEN: ${{ secrets.WAGO_API_TOKEN }}
+          RELEASE_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.publish.outputs.version }}
+          PRERELEASE: ${{ needs.publish.outputs.prerelease }}
+          PROJECT: ${{ steps.wago-toc.outputs.project }}
+          VERSIONS: ${{ steps.wago-toc.outputs.versions }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $finish = "The release v$env:VERSION is published on GitHub and not on Wago; use Re-run failed jobs once this is fixed."
+          if ([string]::IsNullOrWhiteSpace($env:WAGO_TOKEN)) { Write-Host "::error title=wago::WAGO_API_TOKEN is not set on this repository. $finish"; exit 1 }
+          if ([string]::IsNullOrWhiteSpace($env:VERSION) -or [string]::IsNullOrWhiteSpace($env:PROJECT) -or [string]::IsNullOrWhiteSpace($env:VERSIONS)) {
+            Write-Host "::error title=wago::The version, the project or the game versions did not reach this step. $finish"
+            exit 1
+          }
+          $code = 0
+          $game = Invoke-RestMethod -Uri 'https://addons.wago.io/api/data/game' -SkipHttpErrorCheck -StatusCodeVariable code
+          if ($code -ne 200) { Write-Host "::error title=wago::Wago's game data answered $code. $finish"; exit 1 }
+          $retail = @()
+          if ($null -ne $game -and $game -isnot [string] -and $game.PSObject.Properties['patches'] -and $game.patches.PSObject.Properties['retail']) {
+            $listed = $game.patches.retail
+            $retail = @($listed | ForEach-Object { [string]$_ })
+          }
+          if ($retail.Count -eq 0) { Write-Host "::error title=wago::Wago's game data lists no retail patch. $finish"; exit 1 }
+          $patches = [System.Collections.Generic.List[string]]::new()
+          foreach ($name in ($env:VERSIONS -split ',')) {
+            if ($retail -cnotcontains $name) { Write-Host "::error title=wago::Wago lists no retail patch named $name, of $($retail.Count) listed. $finish"; exit 1 }
+            $patches.Add($name)
+          }
+          $api = "https://api.github.com/repos/$env:GITHUB_REPOSITORY"
+          $headers = @{ Authorization = "Bearer $env:RELEASE_TOKEN"; Accept = 'application/vnd.github+json'; 'X-GitHub-Api-Version' = '2022-11-28' }
+          $release = Invoke-RestMethod -Uri "$api/releases/tags/v$env:VERSION" -Headers $headers
+          $assets = @($release.assets)
+          if ($assets.Count -ne 1 -or -not ([string]$assets[0].name).EndsWith('.zip')) { Write-Host "::error title=wago::The release v$env:VERSION carries $($assets.Count) assets where the zip is one. $finish"; exit 1 }
+          if ([string]::IsNullOrWhiteSpace($release.body)) { Write-Host "::error title=wago::The release v$env:VERSION carries no body to send as the changelog. $finish"; exit 1 }
+          $zip = Join-Path $env:RUNNER_TEMP $assets[0].name
+          Invoke-WebRequest -Uri $assets[0].url -Headers @{ Authorization = "Bearer $env:RELEASE_TOKEN"; Accept = 'application/octet-stream' } -OutFile $zip
+          $size = (Get-Item -LiteralPath $zip).Length
+          if ($size -ne [long]$assets[0].size) { Write-Host "::error title=wago::The zip downloaded at $size bytes and the release lists $($assets[0].size). $finish"; exit 1 }
+          $sha = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          $stability = if ($env:PRERELEASE -eq 'true') { 'beta' } else { 'stable' }
+          $metadata = [ordered]@{
+            label                    = $env:VERSION
+            supported_retail_patches = [string[]]$patches.ToArray()
+            stability                = $stability
+            changelog                = [string]$release.body
+          } | ConvertTo-Json -Depth 3 -Compress
+          $wagoHeaders = @{ Authorization = "Bearer $env:WAGO_TOKEN"; Accept = 'application/json' }
+          Write-Host "uploading: $($assets[0].name), $size bytes, sha256 $sha, $stability, patches $($patches -join ', ')"
+          # Trap: Wago redirects a refused upload, and a followed redirect answers 200 off the page it lands on, so no redirect is followed and a 3xx fails below.
+          $response = Invoke-RestMethod -Method Post -Uri "https://addons.wago.io/api/projects/$env:PROJECT/version" -Headers $wagoHeaders -Form @{ metadata = $metadata; file = Get-Item -LiteralPath $zip } -MaximumRedirection 0 -SkipHttpErrorCheck -StatusCodeVariable code
+          if ($code -ne 200 -and $code -ne 201) {
+            $said = if ($response -is [string]) { $response } elseif ($null -ne $response) { $response | ConvertTo-Json -Depth 4 -Compress } else { 'an empty body' }
+            if ($said.Length -gt 500) { $said = $said.Substring(0, 500) }
+            Write-Host "::error title=wago::Wago answered $code: $said. $finish"
+            exit 1
+          }
+          Write-Host "wago: answered $code, version $env:VERSION uploaded to project $env:PROJECT"
+          "code=$code", "stability=$stability", "sha=$sha" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Put the summary on the run
+        if: always()
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.publish.outputs.version }}
+          TOC_OUTCOME: ${{ steps.wago-toc.outcome }}
+          PROJECT: ${{ steps.wago-toc.outputs.project }}
+          VERSIONS: ${{ steps.wago-toc.outputs.versions }}
+          RERUN_OUTCOME: ${{ steps.wago-rerun.outcome }}
+          RERUN_UPLOADED: ${{ steps.wago-rerun.outputs.uploaded }}
+          RERUN_ATTEMPT: ${{ steps.wago-rerun.outputs.attempt }}
+          UPLOAD_OUTCOME: ${{ steps.wago-upload.outcome }}
+          UPLOAD_CODE: ${{ steps.wago-upload.outputs.code }}
+          STABILITY: ${{ steps.wago-upload.outputs.stability }}
+          ZIP_SHA: ${{ steps.wago-upload.outputs.sha }}
+        run: |
+          $out = @('## Wago', '', '```text')
+          $out += "version  $env:VERSION"
+          if ($env:TOC_OUTCOME -ne 'success') { $out += "wago: not uploaded, the .toc step reads $(if ($env:TOC_OUTCOME) { $env:TOC_OUTCOME } else { 'not run' })" }
+          else {
+            $out += "project  $env:PROJECT", "game     $($env:VERSIONS -replace ',', ', ')"
+            if ($env:RERUN_OUTCOME -ne 'success') { $out += "wago: not uploaded, the rerun read reads $(if ($env:RERUN_OUTCOME) { $env:RERUN_OUTCOME } else { 'not run' })" }
+            elseif ($env:RERUN_UPLOADED -eq 'true') { $out += "wago: skipped, attempt $env:RERUN_ATTEMPT of this run uploaded the file" }
+            elseif ($env:UPLOAD_OUTCOME -eq 'success') { $out += "wago: uploaded as $env:STABILITY, answered $env:UPLOAD_CODE", "zip      sha256 $env:ZIP_SHA" }
+            else { $out += "wago: not uploaded, the upload step reads $(if ($env:UPLOAD_OUTCOME) { $env:UPLOAD_OUTCOME } else { 'not run' })" }
           }
           $out += '```'
           $out | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
