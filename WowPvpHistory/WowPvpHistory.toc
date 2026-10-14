@@ -1,10 +1,11 @@
-## Interface: 120100, 120007
+## Interface: 120105, 120100
 ## Title: WoW PvP History
 ## Notes: A history of your PvP matches and the players in them.
-## Version: 0.68.4-rc.2
+## Version: 0.68.21
 ## X-License: MIT
 ## X-Website: https://pvphistory.xenu.live
 ## X-Curse-Project-ID: 1739823
+## X-Wago-ID: O67bnyN3
 ## SavedVariables: WowPvpHistoryDB
 ## SavedVariablesPerCharacter: WowPvpHistoryCanaryDB, WowPvpHistoryBackupDB, WowPvpHistoryDebugDB
 ## DefaultState: enabled
@@ -12,9 +13,11 @@
 ## AddonCompartmentFuncOnEnter: WowPvpHistory_OnAddonCompartmentEnter
 ## AddonCompartmentFuncOnLeave: WowPvpHistory_OnAddonCompartmentLeave
 
+# WowPvpHistory 0.68.21
 # Author:  Xenu-Sentinels
 # Project: wow-pvp-history
 #          https://github.com/xenulive/wow-pvp-history
+# License: MIT, see LICENSE
 
 Core.lua
 Style.lua
@@ -36,6 +39,8 @@ Edits.lua
 Query.lua
 Summary.lua
 Sessions.lua
+Builds.lua
+Bests.lua
 Ask.lua
 Alerts.lua
 Sightings.lua
