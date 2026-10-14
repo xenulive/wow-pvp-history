@@ -647,7 +647,7 @@ jobs:
           if ($code -ne 200 -and $code -ne 201) {
             $said = if ($response -is [string]) { $response } elseif ($null -ne $response) { $response | ConvertTo-Json -Depth 4 -Compress } else { 'an empty body' }
             if ($said.Length -gt 500) { $said = $said.Substring(0, 500) }
-            Write-Host "::error title=wago::Wago answered $code: $said. $finish"
+            Write-Host "::error title=wago::Wago answered ${code}: $said. $finish"
             exit 1
           }
           Write-Host "wago: answered $code, version $env:VERSION uploaded to project $env:PROJECT"

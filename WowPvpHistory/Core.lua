@@ -1,4 +1,4 @@
--- WowPvpHistory 0.68.21
+-- WowPvpHistory 0.68.22
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
