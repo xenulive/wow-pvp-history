@@ -1,4 +1,4 @@
--- WowPvpHistory 0.68.22
+-- WowPvpHistory 0.68.35
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -711,6 +711,43 @@ return false
 end
 end
 return true
+end
+function A.recordZone(record)
+local map=type(record)=="table"and record.map or nil
+local name=type(map)=="table"and map.name or nil
+if type(name)~="string"or name==""then
+return nil
+end
+return name
+end
+function A.zoneFilterPasses(record,zone)
+if zone==nil then
+return true
+end
+return A.recordZone(record)==zone
+end
+function A.recordZones(records)
+local counts,out={},{}
+for _,record in ipairs(type(records)=="table"and records or{})do
+local zone=A.recordZone(record)
+if zone~=nil then
+if counts[zone]==nil then
+counts[zone]=0
+out[#out+1]=zone
+end
+counts[zone]=counts[zone]+1
+end
+end
+table.sort(out,function(a,b)
+if counts[a]~=counts[b]then
+return counts[a]>counts[b]
+end
+return a<b
+end)
+for i=1,#out do
+out[i]={zone=out[i],count=counts[out[i]]}
+end
+return out
 end
 function A.resultFilterPasses(record,choice)
 if choice==nil then
@@ -1541,6 +1578,61 @@ local deaths=type(record.deaths)=="number"and record.deaths or 0
 return("%d %s, %d %s"):format(kills,kills==1 and"kill"or"kills",deaths,
 deaths==1 and"death"or"deaths")
 end
+function A.worldCounts(record)
+if type(record)~="table"or record.format~="world"then
+return nil
+end
+if type(record.kills)~="number"and type(record.deaths)~="number"then
+return nil
+end
+return type(record.kills)=="number"and record.kills or 0,
+type(record.deaths)=="number"and record.deaths or 0
+end
+function A.kdText(kills,deaths)
+if type(kills)~="number"or type(deaths)~="number"then
+return nil
+end
+if deaths==0 then
+if kills==0 then
+return nil
+end
+return("%.2f"):format(kills)
+end
+return("%.2f"):format(kills/deaths)
+end
+function A.kdTone(kills,deaths)
+if type(kills)~="number"or type(deaths)~="number"or kills==deaths then
+return"dim"
+end
+return kills>deaths and"win"or"loss"
+end
+function A.worldEdgeTone(record)
+local kills,deaths=A.worldCounts(record)
+if kills==nil then
+return nil
+end
+if kills==deaths then
+return"level"
+end
+return kills>deaths and"win"or"loss"
+end
+function A.kdPairText(kills,deaths)
+if type(kills)~="number"or type(deaths)~="number"then
+return A.colorEscape("dim").."-|r"
+end
+return("%s%d|r%s-|r%s%d|r"):format(A.colorEscape("win"),kills,A.colorEscape("dim"),
+A.colorEscape("loss"),deaths)
+end
+local KD_MARKS=12
+function A.kdMarkCap()
+return KD_MARKS
+end
+function A.kdMarks(kills,deaths)
+if type(kills)~="number"or type(deaths)~="number"then
+return 0,0
+end
+return math.min(math.max(kills,0),KD_MARKS),math.min(math.max(deaths,0),KD_MARKS)
+end
 local NOTE_LEAD_MAX=48
 function A.noteLead(text,bound)
 if type(text)~="string"then
@@ -1976,6 +2068,8 @@ opponent={key="opponent",name="OPPONENT",metric="rowColWhere"},
 how={key="how",name="HOW",metric="rowColOpponent"},
 entry={key="entry",name="TYPE",metric="rowColOpponent"},
 why={key="why",name="WHY YOU LEFT",metric="rowColWhere",align="RIGHT"},
+tally={key="tally",name="KILLS AND DEATHS",metric="rowColTally"},
+ratio={key="ratio",name="K/D",metric="rowColKd",align="RIGHT"},
 }
 local function flatColumn(key,name)
 local out={}
@@ -2050,7 +2144,11 @@ add("verdict");add("opponent");add("how");add("where");add("span")
 elseif format=="unknown"then
 lead();add("entry");add("verdict");add("where");add("span");add("why")
 elseif format=="world"then
-lead();add("result");out[#out].metric="rowColWhere";add("where");add("length")
+add("id","OUTING");add("time")
+if flat then
+add("day")
+end
+add("where","ZONE");add("tally");add("ratio");add("span")
 else
 lead()
 if count(sizes)>1 and format~="arena-unrated"then
@@ -2189,7 +2287,7 @@ chip=function()
 return""
 end,
 day=function(subject)
-return A.dayKey(subject.openedAt or subject.completedAt or subject.endedAt)or"-"
+return A.shortDay(subject.openedAt or subject.completedAt or subject.endedAt)or"-"
 end,
 where=function(subject)
 return tostring(subject.map and subject.map.name or"-")
@@ -2263,6 +2361,12 @@ return subject.format~=nil and A.formatLabel(subject.format)or"-"
 end,
 why=function()
 return""
+end,
+tally=function(subject)
+return A.kdPairText(A.worldCounts(subject))
+end,
+ratio=function(subject)
+return A.kdText(A.worldCounts(subject))or(A.colorEscape("dim").."-|r")
 end,
 length=function(subject,kind)
 if kind=="incomplete"then
@@ -4149,7 +4253,75 @@ return nil
 end
 return hidden,unsettled
 end
+function A.outingHeadLines(record,head)
+local game=A.theme()~="flat"
+local zone=A.recordZone(record)
+local details={}
+local function detail(text,tone,place)
+if text~=nil then
+details[#details+1]={text=tostring(text),tone=tone,place=place}
+end
+end
+detail(zone or"-",zone and"text"or"dim",true)
+local from=A.clockKey(record.openedAt)
+local to=A.clockKey(record.completedAt)
+if from~=nil and to~=nil then
+detail(("%s to %s"):format(from,to),"dim")
+end
+detail(spanText(record.duration),"dim")
+if record.warMode==true then
+detail("War Mode on","dim")
+elseif record.warMode==false then
+detail("War Mode off","dim")
+end
+detail(A.durationCaveat(record.openedState),"caveat")
+local parts={place=zone or"-",faction=head.faction,details=details,format=record.format,
+chipWhy="unrated"}
+if not game then
+parts.result,parts.resultTone=zone or"-",zone and"bright"or"dim"
+end
+local function with(kind)
+local out={kind=kind}
+for key,value in pairs(parts)do
+out[key]=value
+end
+return out
+end
+local top,sub=with("heading"),with("headline")
+local rest={}
+for i=2,#details do
+rest[#rest+1]=details[i].text
+end
+if game then
+top.text=table.concat({details[1].text,table.concat(rest,"  ")},"  ")
+sub=nil
+else
+top.text=details[1].text
+sub.details={}
+for i=2,#details do
+sub.details[#sub.details+1]=details[i]
+end
+sub.text=#rest>0 and table.concat(rest,"  ")or nil
+if sub.text==nil then
+sub=nil
+end
+end
+local kills,deaths=A.worldCounts(record)
+local cells={
+{label="KILLS",value=kills and tostring(kills)or"-",tone=kills and"win"or"dim"},
+{label="DEATHS",value=deaths and tostring(deaths)or"-",tone=deaths and"loss"or"dim"},
+{label="K/D",value=A.kdText(kills,deaths)or"-",tone=A.kdTone(kills,deaths)},
+}
+local words={}
+for i=1,#cells do
+words[#words+1]=cells[i].label.." "..cells[i].value
+end
+return top,sub,nil,{kind="tally",cells=cells,text=table.concat(words,"  ")}
+end
 function A.windowHeadLines(record,head,provenance)
+if record.format=="world"then
+return A.outingHeadLines(record,head)
+end
 local duel=record.format=="duel"
 local game=A.theme()~="flat"
 local own=record.character and type(record.participants)=="table"
@@ -4799,7 +4971,7 @@ if merged and drewTable then
 return lines,lobbyGuids,{},heads
 end
 local roster=rosterEntries(record)
-if(record.format=="duel"or record.format=="world")and#roster<2 then
+if record.format=="world"or(record.format=="duel"and#roster<2)then
 return lines,{},{},heads
 end
 local sides=rosterSides(record,roster)
@@ -6523,11 +6695,11 @@ end
 return false
 end
 function A.rosterWords(record)
+if type(record)=="table"and record.format=="world"then
+return"Note this outing","Note on this outing, then Enter"
+end
 if type(record)=="table"and A.recordHasTable(record,"match")then
 return"Note this roster","Note on this match, then Enter"
-end
-if type(record)=="table"and record.format=="world"then
-return"Note who you fought","Note on this match, then Enter"
 end
 return"Note this duel","Note on this duel, then Enter"
 end
@@ -6541,6 +6713,10 @@ local out={
 {key="roster",label=(A.rosterWords(record))},
 {key="print",label="Print in chat"},
 }
+if record.format=="world"then
+out[2].label=(A.rosterWords(record))
+table.remove(out,3)
+end
 if type(A.talentsString)=="function"and A.talentsString(record)~=nil then
 out[#out+1]={key="talents",label="Copy talents"}
 end

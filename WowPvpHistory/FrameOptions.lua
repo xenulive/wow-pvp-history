@@ -1,4 +1,4 @@
--- WowPvpHistory 0.68.22
+-- WowPvpHistory 0.68.35
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -321,10 +321,8 @@ GameTooltip:AddLine(tipFor(spec),1,1,1,true)
 GameTooltip:Show()
 end)
 end
-local function hideTip()
-if GameTooltip then
-pcall(GameTooltip.Hide,GameTooltip)
-end
+local function hideTip(owner)
+A.hideOwnedTooltip(owner)
 end
 local function paintToggle(toggle)
 local on=toggle:GetChecked()and true or false

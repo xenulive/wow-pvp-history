@@ -1,4 +1,4 @@
--- WowPvpHistory 0.68.22
+-- WowPvpHistory 0.68.35
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -660,6 +660,40 @@ end
 columns=build(true)
 return columns,rest,true
 end
+function A.worldSessionGrid(columns)
+if type(columns)~="table"then
+return nil
+end
+local widthOf={}
+for _,column in ipairs(columns)do
+if column.key~=nil then
+widthOf[column.key]=(type(column.width)=="number"and column.width>0)and column.width
+or A.metric(column.metric)
+end
+end
+for _,key in ipairs({"id","time","where","tally","ratio","span"})do
+if widthOf[key]==nil then
+return nil
+end
+end
+return{
+{key="session",name="SESSION",width=widthOf.id},
+{key="time",name="TIME",width=widthOf.time+A.metric("rowCellGap")+widthOf.where},
+{key="tally",name="KILLS AND DEATHS",width=widthOf.tally},
+{key="ratio",name="K/D",width=widthOf.ratio,align="RIGHT"},
+{key="matches",name="OUTINGS",width=widthOf.span,align="RIGHT"},
+}
+end
+function A.worldSessionTally(listed)
+local out={kills=0,deaths=0,tallied=0}
+for _,entry in ipairs(type(listed)=="table"and listed or{})do
+local kills,deaths=A.worldCounts(entry.kind~="incomplete"and entry.subject or nil)
+if kills~=nil then
+out.kills,out.deaths,out.tallied=out.kills+kills,out.deaths+deaths,out.tallied+1
+end
+end
+return out.tallied>0 and out or nil
+end
 local function storedFolds()
 local db=A.db and A.db()
 local folds=db and db.ui and db.ui.sessionFolds
@@ -841,8 +875,8 @@ name=bare~=""and bare or nil,
 realm=realm,
 classToken=key and hero.classes[key]or nil,
 how=#how>0 and table.concat(how,", ")or nil,
-when=(A.shortDayText(stamp)and A.clockKey(stamp))
-and(A.shortDayText(stamp).." "..A.clockKey(stamp))or nil,
+when=(A.shortDay(stamp)and A.clockKey(stamp))
+and(A.shortDay(stamp).." "..A.clockKey(stamp))or nil,
 }
 end
 return hero
@@ -894,6 +928,65 @@ hero.lastSub=clock and newestMap and(clock..", "..newestMap)or clock
 end
 return hero
 end
+local WORLD_TREND=20
+function A.worldReading(records,now)
+records=type(records)=="table"and records or{}
+local hero={kind="world",outings=#records,kills=0,deaths=0,tallied=0,bars={},
+seconds=0,timed=0}
+local best=nil
+for i=1,#records do
+local record=records[i]
+local kills,deaths=A.worldCounts(record)
+if kills~=nil then
+hero.kills,hero.deaths,hero.tallied=hero.kills+kills,hero.deaths+deaths,hero.tallied+1
+local margin=kills-deaths
+if best==nil or margin>best.margin or(margin==best.margin and kills>best.kills)then
+best={margin=margin,kills=kills,deaths=deaths,zone=A.recordZone(record)}
+end
+end
+if type(record.duration)=="number"and record.duration>=0 then
+hero.seconds,hero.timed=hero.seconds+record.duration,hero.timed+1
+end
+end
+for i=1,#records do
+if#hero.bars>=WORLD_TREND then
+break
+end
+local kills,deaths=A.worldCounts(records[i])
+if kills~=nil then
+table.insert(hero.bars,1,{kills=kills,deaths=deaths})
+end
+end
+hero.ratio=hero.tallied>0 and A.kdText(hero.kills,hero.deaths)or nil
+hero.ratioTone=hero.tallied>0 and A.kdTone(hero.kills,hero.deaths)or"dim"
+if best~=nil then
+hero.best=("best %d-%d"):format(best.kills,best.deaths)
+if best.zone~=nil then
+hero.best=hero.best..", "..best.zone
+end
+end
+hero.timeOut=hero.timed>0 and A.lengthText(hero.seconds)or nil
+hero.average=hero.timed>0 and("avg "..A.lengthText(math.floor(hero.seconds/hero.timed+0.5)))or nil
+local last=records[1]
+local stamp=last and(last.openedAt or last.completedAt)or nil
+if stamp~=nil then
+hero.lastOut=A.sessionDayLabel(stamp,now)
+hero.lastForms=A.sessionDayForms(stamp,now)
+if hero.lastOut=="Tonight"then
+hero.lastOut,hero.lastForms="Today",{"Today"}
+end
+local parts={}
+local zone=A.recordZone(last)
+if zone~=nil then
+parts[#parts+1]=zone
+end
+if type(last.duration)=="number"then
+parts[#parts+1]=A.lengthText(last.duration)
+end
+hero.lastSub=#parts>0 and table.concat(parts,", ")or nil
+end
+return hero
+end
 function A.seasonHigh(format,season,character)
 local high=nil
 for _,record in ipairs(scopedRecords(format,season,character,nil))do
@@ -923,7 +1016,7 @@ newest=newestKeys[record.id]==true,
 end
 return bars
 end
-function A.standingReading(format,season,character,bound,summary,now)
+function A.standingReading(format,season,character,bound,summary,now,listed)
 summary=type(summary)=="table"and summary or A.summarize(format,season,character,bound)
 local shape=A.standingShape(format)
 local records=scopedRecords(format,season,character,bound)
@@ -1069,7 +1162,9 @@ sub=avgText},
 forms=lastStamp and A.sessionDayForms(lastStamp,now)or nil,
 sub=lastStamp and A.clockKey(lastStamp)or nil},
 }
-if format=="duel"then
+if format=="world"then
+reading.hero=A.worldReading(type(listed)=="table"and listed or records,now)
+elseif format=="duel"then
 reading.hero=A.duelReading(records,character,season,bound)
 reading.hero.kind="duel"
 elseif format=="unknown"then

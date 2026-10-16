@@ -1,4 +1,4 @@
--- WowPvpHistory 0.68.22
+-- WowPvpHistory 0.68.35
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -781,11 +781,24 @@ from[i]=positions[name.."\1"..counted[name]]
 end
 local out={rows[1],wanted}
 for r=3,#rows do
-local row,built=rows[r],{}
+local row=rows[r]
+if#row~=#held then
+local kept=row
+if#row==#wanted then
+kept={}
+for i=1,#row do
+kept[i]=row[i]
+end
+kept[#kept+1]=""
+end
+out[r]=kept
+else
+local built={}
 for i=1,#wanted do
 built[i]=from[i]and row[from[i]]or""
 end
 out[r]=built
+end
 end
 return out
 end

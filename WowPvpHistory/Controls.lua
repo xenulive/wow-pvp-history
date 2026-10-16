@@ -1,4 +1,4 @@
--- WowPvpHistory 0.68.22
+-- WowPvpHistory 0.68.35
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -82,7 +82,7 @@ local PANEL_TAB_ACTIVE={"LeftActive","MiddleActive","RightActive"}
 local PANEL_TAB_HOVER={"LeftHighlight","MiddleHighlight","RightHighlight"}
 local function showArt(button,keys,shown)
 for i=1,#keys do
-local region=button[keys[i]]
+local region=rawget(button,keys[i])
 if type(region)=="table"and region.SetShown then
 region:SetShown(shown)
 end
@@ -540,11 +540,37 @@ end
 paint(button)
 return true
 end
+local function panelTabFloor(button)
+local left,right=rawget(button,"Left"),rawget(button,"Right")
+if type(left)~="table"or type(right)~="table"or not left.GetWidth or not right.GetWidth then
+return nil
+end
+local okLeft,leftWidth=pcall(left.GetWidth,left)
+local okRight,rightWidth=pcall(right.GetWidth,right)
+if not(okLeft and okRight and type(leftWidth)=="number"and type(rightWidth)=="number")then
+return nil
+end
+return leftWidth+rightWidth
+end
+local function panelTabLabel(button)
+if type(button.Text)~="table"or not button.Text.GetText then
+return nil
+end
+local ok,text=pcall(button.Text.GetText,button.Text)
+return ok and type(text)=="string"and text or nil
+end
 function A.fitPanelTab(button)
-local text=stringWidth(button.Text)
-local flat=stringWidth(button.flatLabel)
-button:SetWidth(math.max(text,flat)+A.metric("panelTabPad"))
-return button:GetWidth()
+local asked=math.max(stringWidth(button.Text),stringWidth(button.flatLabel))+A.metric("panelTabPad")
+local floor=panelTabFloor(button)
+button:SetWidth(math.max(asked,floor or 0))
+local width=button:GetWidth()
+A.trace("paneltab",{
+tabLabel=panelTabLabel(button),
+tabAsked=A.unitFigure(asked),
+tabFloor=A.unitFigure(floor),
+tabWidth=A.unitFigure(width),
+},"ui")
+return width
 end
 function A.panelTab(parent,text,onClick)
 local built,button=pcall(CreateFrame,"Button",nil,parent,"PanelTabButtonTemplate")
@@ -553,7 +579,7 @@ button=CreateFrame("Button",nil,parent)
 end
 button.controlKind="panelTab"
 button:SetHeight(A.metric("panelTabHeight"))
-if type(button.Text)~="table"then
+if type(rawget(button,"Text"))~="table"then
 button.Text=button:CreateFontString(nil,"OVERLAY","GameFontNormalSmall")
 end
 button.Text:SetText(text)
@@ -655,10 +681,8 @@ GameTooltip:SetText(self.segmentReason,1,1,1,1,true)
 GameTooltip:Show()
 end)
 end)
-chip:HookScript("OnLeave",function()
-if GameTooltip then
-pcall(GameTooltip.Hide,GameTooltip)
-end
+chip:HookScript("OnLeave",function(self)
+A.hideOwnedTooltip(self)
 end)
 if onPick then
 chip:SetScript("OnClick",function(self)
@@ -1177,6 +1201,15 @@ if bottom*relScale-(height+drop)*tipScale<0 then
 return"flipped"
 end
 return"clear"
+end
+function A.hideOwnedTooltip(owner)
+if owner==nil or not(GameTooltip and GameTooltip.GetOwner)then
+return
+end
+local ok,held=pcall(GameTooltip.GetOwner,GameTooltip)
+if ok and held==owner then
+pcall(GameTooltip.Hide,GameTooltip)
+end
 end
 function A.hideTooltip()
 releaseTooltip()

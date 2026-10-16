@@ -1,4 +1,4 @@
--- WowPvpHistory 0.68.22
+-- WowPvpHistory 0.68.35
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -292,17 +292,21 @@ return(SELF.name:match("^([^-]+)"))or SELF.name
 end
 local FIXTURE_BUILDS={
 {string="CQQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYMzMjZMjZmZGjxMDzMjZAAAAAAgBAzwMA",
-loadout="Arena",hero=31,heroName="Herald of the Sun"},
+loadout="Arena",hero=31,heroName="Herald of the Sun",pvp={5573,5584,752}},
 {string="CQQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYMzMjZMjZmZGjxMDzMjxAAAAAAgBAzwMA",
-loadout="Arena",hero=31,heroName="Herald of the Sun"},
+loadout="Arena",hero=31,heroName="Herald of the Sun",pvp={5535,5666,753}},
 {string="CQQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMzMjZMDzMzYGjxMDjZmZAAAAAAgBAzwMA",
-hero=32,heroName="Templar"},
+hero=32,heroName="Templar",pvp={5572,5573,753}},
 }
 local function fixtureTalents(own)
 local damage=type(own)=="table"and type(own.damage)=="number"and own.damage or 0
 local pick=FIXTURE_BUILDS[(math.floor(damage/1000)%#FIXTURE_BUILDS)+1]
+local pvp={}
+for i=1,#pick.pvp do
+pvp[i]=pick.pvp[i]
+end
 return{string=pick.string,loadout=pick.loadout,hero=pick.hero,heroName=pick.heroName,
-pvp={}}
+pvp=pvp}
 end
 local function close(r,rows)
 local n=0
@@ -358,16 +362,27 @@ spec=SELF.spec,side="with"})},
 against,
 })
 end
-local world=record({format="world",rated=false,epoch=now-3000,duration=840,
-map={name="Fixture Plains",instanceType="none"}})
+local outings={
+{ends=22680,duration=660,zone="Fixture Ridge",kills=4,deaths=1},
+{ends=20580,duration=900,zone="Fixture Plains",kills=7,deaths=3},
+{ends=14100,duration=480,zone="Fixture Plains",kills=0,deaths=2},
+{ends=12360,duration=540,zone="Fixture Ridge",kills=1,deaths=4},
+{ends=6240,duration=720,zone="Fixture Ridge",kills=5,deaths=0},
+{ends=4740,duration=600,zone="Fixture Plains",kills=2,deaths=2},
+{ends=3000,duration=840,zone="Fixture Plains",kills=3,deaths=1},
+}
+for _,outing in ipairs(outings)do
+local world=record({format="world",rated=false,epoch=now-outing.ends,
+duration=outing.duration,map={name=outing.zone,instanceType="none"}})
 world.rounds=nil
 world.openedState=nil
 world.warMode=true
-world.kills=3
-world.deaths=1
+world.kills=outing.kills
+world.deaths=outing.deaths
 out[#out+1]=close(world,{
 {guid=recorder,p={name=SELF.name,side="with"}},
 })
+end
 local other=record({format="unknown",epoch=now-300,duration=95,
 map={name="Fixture Basin",instanceType="pvp",instanceId=9003}})
 out[#out+1]=close(other,{

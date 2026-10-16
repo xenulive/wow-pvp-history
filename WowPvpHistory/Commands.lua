@@ -1,4 +1,4 @@
--- WowPvpHistory 0.68.22
+-- WowPvpHistory 0.68.35
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -172,7 +172,23 @@ if built and type(buildLine)=="string"then
 A.say(buildLine)
 end
 end
+function A.refuseUnstoredFormat(format)
+if format==nil or A.formatCounts()[format]~=nil then
+return false
+end
+local formats=A.formats()
+if#formats>0 then
+A.say(("no stored match has format %q. stored: %s")
+:format(format,table.concat(formats,", ")))
+else
+A.say(("no stored match has format %q, and nothing is stored"):format(format))
+end
+return true
+end
 function A.reportBests(format)
+if A.refuseUnstoredFormat(format)then
+return
+end
 format=format or A.windowFormat()
 if format~=nil and type(A.bestsViewOffered)=="function"and not A.bestsViewOffered(format)then
 A.say(("%s keeps no bests: its records carry no scoreboard row of yours")
@@ -971,6 +987,9 @@ if type(A.askLines)~="function"then
 A.say("the questions did not load")
 return
 end
+if A.refuseUnstoredFormat(format)then
+return
+end
 local named=format or A.windowFormat()
 local _,season,_,bound=A.formatScope(named)
 local character=A.windowCharacter()
@@ -1052,6 +1071,9 @@ A.say(("the specs view, %s: %s"):format(A.specSortWords(held,up),
 end
 local function askStandIn()
 local view=type(A.tableViewShowing)=="function"and A.tableViewShowing()or nil
+if view=="zones"then
+return"Where you fight"
+end
 if view=="maps"then
 return"the Maps view"
 end
@@ -1191,7 +1213,7 @@ end
 local lines=A.compLines(format,scope.season,scope.character,scope.bound)
 if#lines==0 then
 if not A.compFormat(format)then
-A.say(("%s has no enemy comp to rank. Comps are a rated arena and solo shuffle "
+A.say(("%s has no enemy comp to rank. Comps are an arena and solo shuffle "
 .."reading: a battleground's ten are not a team")
 :format(A.formatLabel(format)))
 return
@@ -1215,14 +1237,7 @@ A.say(lines[i])
 end
 end
 local function reportRegion(format)
-if format~=nil and A.formatCounts()[format]==nil then
-local formats=A.formats()
-if#formats>0 then
-A.say(("no stored match has format %q. stored: %s")
-:format(format,table.concat(formats,", ")))
-else
-A.say(("no stored match has format %q, and nothing is stored"):format(format))
-end
+if A.refuseUnstoredFormat(format)then
 return
 end
 if type(A.regionLines)~="function"then
@@ -1635,7 +1650,7 @@ overlaytile=function()
 local held=A.overlayCells and A.overlayCells()or nil
 return held and held[1]or nil
 end,
-tooltip=function()return GameTooltip end,
+tooltip=function()return A.tooltipSampleShown()or GameTooltip end,
 finder=function()return A.finderTooltip and A.finderTooltip()or nil end,
 card=function()return A.nameCardFrame and A.nameCardFrame()or nil end,
 hold=function()return A.holdStandIn and A.holdStandIn()or nil end,
@@ -1830,14 +1845,7 @@ A.say(lines[i])
 end
 end
 local function reportSummary(format,season)
-if format~=nil and A.formatCounts()[format]==nil then
-local formats=A.formats()
-if#formats>0 then
-A.say(("no stored match has format %q. stored: %s")
-:format(format,table.concat(formats,", ")))
-else
-A.say(("no stored match has format %q, and nothing is stored"):format(format))
-end
+if A.refuseUnstoredFormat(format)then
 return
 end
 local character=A.windowCharacter()
@@ -2156,14 +2164,7 @@ return table.concat(parts,", ")
 end
 local function reportCsvExport(filter,part)
 local format=filter.format
-if format~=nil and A.formatCounts()[format]==nil then
-local formats=A.formats()
-if#formats>0 then
-A.say(("no stored match has format %q. stored: %s")
-:format(format,table.concat(formats,", ")))
-else
-A.say(("no stored match has format %q, and nothing is stored"):format(format))
-end
+if A.refuseUnstoredFormat(format)then
 return
 end
 local text,rows,matches,taken,parts=A.csvExport(filter,part)
@@ -2393,7 +2394,9 @@ or nil
 local maps=tableView~=nil
 local overview=shown.body=="stats"and shown.format==nil and not maps
 local specs=shown.body=="stats"and type(A.specsShowing)=="function"and A.specsShowing()
-if tableView=="bests"then
+if tableView=="zones"then
+viewLabel="Stats, Where you fight"
+elseif tableView=="bests"then
 viewLabel="Stats, the Bests view"
 elseif tableView=="builds"then
 viewLabel="Stats, the Builds view"
@@ -2407,11 +2410,13 @@ elseif shown.body=="stats"then
 viewLabel="Stats, "..cardTitle(shown.card)
 end
 A.say(("showing %s, %s, %s"):format(A.formatLabel(shown.format),viewLabel,scopeLabel(shown.scope)))
+A.trace("scopeline",{format=shown.format,lineScope=tostring(shown.scope),
+boxScope=tostring(type(A.paintedScope)=="function"and A.paintedScope()or nil)},"ui")
 local asked=want.card or(want.view=="comps"and"comp")or nil
 if asked~=nil and shown.body=="stats"and not overview and asked~=shown.card then
 A.say(("%s draws nothing on this tab, so %s is lit"):format(cardTitle(asked),cardTitle(shown.card)))
 end
-if want.scope~=nil and want.scope~=shown.scope then
+if want.scope~=nil and want.scope~=(shown.stored or shown.scope)then
 A.say(("this tab has no ladder, so it reads the season as all time and %s was not stored")
 :format(scopeLabel(want.scope)))
 end
@@ -3173,7 +3178,7 @@ local state=A.holdPreviewState()
 if drawn=="off"then
 A.say("hold preview off")
 elseif drawn~=nil and state~=nil then
-A.say(("hold preview: %s, over a stand-in at the centre of the screen. Nothing stored")
+A.say(("hold preview: %s, over a stand-in at the center of the screen. Nothing stored")
 :format(state.text or drawn))
 elseif why=="holding"then
 A.say("the exit is held for a match now, so no preview is drawn over it")
@@ -3485,7 +3490,7 @@ local USAGE={
 "/pvph options close  closes the window from the settings, as Escape does",
 "/pvph options find [words]  sets the settings' find box for this session; bare clears it",
 "/pvph options slot <latest|pinned>  the copy the restore card reads, for this session",
-"/pvph about          the window on its About tab: the name, the version and the licence",
+"/pvph about          the window on its About tab: the name, the version and the license",
 "/pvph about copy     the About tab with the website's copy box open",
 "/pvph appearance     which appearance draws. game or dark holds one for this session, stored ends it",
 "/pvph tab            whether the window opens on the tab last selected. remember or all",
@@ -3524,12 +3529,13 @@ local USAGE={
 "/pvph list [format]  the stored matches, newest first",
 "/pvph search <text>  narrow the match list to names, specs or a map; commas join terms, - excludes. No text clears it",
 "/pvph filter result <all|won|lost|even>  narrow the match list by result; all widens it again",
-"/pvph filter spec <spec|all>  narrow it to the spec you played. /pvph filter prints both choices and the count",
+"/pvph filter spec <spec|all>  narrow it to the spec you played. /pvph filter prints the choices and the count",
+"/pvph filter zone <zone|all>  narrow the World PvP list and its strip to one zone; all widens it again",
 "/pvph summary [fmt]  what a format adds up to: rating, win rate, length, counts, for the window's character and range",
 "/pvph summary <fmt> <n>  the same figures for one season",
 "/pvph comps [fmt] [n]  the enemy comps you have faced, worst first. n opens a row",
 "/pvph bests [fmt]    your bests per spec on a tab: damage, healing, peak rating and MMR, fastest win",
-"/pvph ask [format]   the four cards the Stats half answers, over the stored scope",
+"/pvph ask [format]   the cards the Stats half draws on that tab, over the stored scope",
 "/pvph ask sort <card> <met|won|default>  reorder one card's table, as a header click does",
 "/pvph ask open [n]   open row n of the lit card's table; no number closes it; refused under Maps or the All overview",
 "/pvph ask under <on|off>  show the rows under the floor after the ranked rows, for this session; refused under Maps or the All overview",
@@ -3902,16 +3908,20 @@ return
 end
 local which=words[2]and words[2]:lower()or nil
 if which==nil then
-local result,spec,shown,scoped=A.matchFilter()
-A.say(("result %s, spec %s"):format(result or"all",spec or"all"))
+local result,spec,shown,scoped,zone=A.matchFilter()
+A.say(("result %s, spec %s, zone %s"):format(result or"all",spec or"all",zone or"all"))
 A.say(A.searchCountLine(shown,scoped))
 return
 end
-if which=="result"or which=="spec"then
+if which=="result"or which=="spec"or which=="zone"then
 local choice=rest(msg,2)
 if choice==""then
-A.say(which=="result"and"result takes all, won, lost or even"
-or"spec takes a spec as the list spells it, or all")
+local usage={
+result="result takes all, won, lost or even",
+spec="spec takes a spec as the list spells it, or all",
+zone="zone takes a zone as the World PvP list spells it, or all",
+}
+A.say(usage[which])
 return
 end
 local shown,scoped=A.setMatchFilter(which,choice,"word")
@@ -3922,7 +3932,7 @@ end
 A.say(A.searchCountLine(shown,scoped))
 return
 end
-A.say(("unknown filter word %q. result, spec, or nothing for both choices"):format(which))
+A.say(("unknown filter word %q. result, spec, zone, or nothing for the choices"):format(which))
 return
 end
 if first=="window"then

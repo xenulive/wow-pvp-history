@@ -1,4 +1,4 @@
--- WowPvpHistory 0.68.22
+-- WowPvpHistory 0.68.35
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -9,6 +9,12 @@ local OPPONENT_ROWS=4
 local READING_ROWS=7
 function A.readingRows()
 return READING_ROWS
+end
+function A.statsHeadline(format,summary)
+if format=="world"then
+return"standing"
+end
+return type(summary)=="table"and summary.rating~=nil or false
 end
 function A.summaryHeight(headline)
 return A.stripHeight(headline)+A.metric("stripGap")+A.readingReserve()
@@ -198,6 +204,14 @@ lastStrip={where=opts.where,blocks=blocks}
 end
 return blocks
 end
+local VIEW_PILLS={
+{"graph","graphToggle","toggle","graph control"},
+{"specs","specsToggle","specs","specs control"},
+{"maps","mapsToggle","maps","maps control"},
+{"builds","buildsToggle","builds","builds control"},
+{"bests","bestsToggle","bests","bests control"},
+{"details","details","control","details control"},
+}
 function A.viewRowBlocks(opts)
 opts=type(opts)=="table"and opts or{}
 local function figure(name)
@@ -215,27 +229,15 @@ blocks[#blocks+1]={kind="track",name="scope track",
 from=edge-figure("track"),to=edge}
 edge=edge-figure("track")-A.metric("pillGap")
 end
-if figure("control")>0 then
-blocks[#blocks+1]={kind="control",name="details control",
-from=edge-figure("control"),to=edge}
-edge=edge-figure("control")-A.metric("pillGap")
+for i=#VIEW_PILLS,1,-1 do
+local held=figure(VIEW_PILLS[i][3])
+if held>0 then
+blocks[#blocks+1]={kind="control",name=VIEW_PILLS[i][4],from=edge-held,to=edge}
+edge=edge-held-A.metric("pillGap")
 end
-if figure("toggle")>0 then
-blocks[#blocks+1]={kind="control",name="graph control",
-from=edge-figure("toggle"),to=edge}
-edge=edge-figure("toggle")-A.metric("pillGap")
-end
-if figure("specs")>0 then
-blocks[#blocks+1]={kind="control",name="specs control",
-from=edge-figure("specs"),to=edge}
-edge=edge-figure("specs")-A.metric("pillGap")
-end
-if figure("maps")>0 then
-blocks[#blocks+1]={kind="control",name="maps control",
-from=edge-figure("maps"),to=edge}
 end
 return blocks,A.stripCluster(figure("track"),figure("control"),figure("toggle"),figure("specs"),
-figure("maps"))
+figure("maps"),figure("builds"),figure("bests"))
 end
 function A.lastStripRow()
 if type(lastStrip)~="table"then
@@ -243,7 +245,7 @@ return nil
 end
 return lastStrip.blocks,lastStrip.where
 end
-function A.stripCluster(track,control,toggle,specs,maps)
+function A.stripCluster(track,control,toggle,specs,maps,builds,bests)
 local widths={}
 local function hold(width)
 if type(width)=="number"and width>0 then
@@ -255,6 +257,8 @@ hold(control)
 hold(toggle)
 hold(specs)
 hold(maps)
+hold(builds)
+hold(bests)
 if#widths==0 then
 return 0
 end
@@ -894,6 +898,8 @@ local gap=A.metric("standingGap")
 local reason,drawn,layout
 if reading.shape=="rated"or reading.shape=="all"then
 drawn,reason,layout=standing.paintCells(strip,reading,width)
+elseif type(reading.hero)=="table"and reading.hero.kind=="world"and strip.hero then
+drawn,layout=standing.paintWorld(strip,strip.hero,reading.hero,width)
 elseif type(reading.hero)=="table"then
 drawn=standing.paintHero(strip,reading.hero,width)
 else
@@ -918,6 +924,29 @@ return{shape=reading.shape,bars=drawn,reason=reason,ground=ground,
 tones=#tones>0 and table.concat(tones,",")or nil,
 tiles=reading.shape=="all"and math.min(#(reading.tiles or{}),#strip.tiles)or nil,
 layout=layout}
+end
+function standing.traceStrip(summary,reading,drew,height)
+if type(A.trace)~="function"or type(drew)~="table"or type(reading)~="table"then
+return
+end
+local lastFigure=nil
+for _,figure in ipairs(reading.figures or{})do
+if figure.label=="LAST PLAYED"then
+lastFigure=figure
+end
+end
+local layout=type(drew.layout)=="table"and drew.layout or{}
+pcall(A.trace,"strip",{format=summary.format,shape=drew.shape,bars=drew.bars,
+reason=drew.reason,total=height,ground=drew.ground,tones=drew.tones,
+last=lastFigure and lastFigure.drawn or nil,
+lastFit=lastFigure and lastFigure.fit or nil,
+stripSeason=reading.stripSeason,n=drew.tiles,
+record=reading.shape=="ladderless"
+and(reading.recordKind or(reading.record and"record")or"none")or nil,
+labels=layout.labels,widths=layout.widths,rules=layout.rules,rate=layout.rate,
+centre=layout.centre,shed=layout.shed,edge=layout.edge,trend=layout.trend,
+inset=layout.inset,barWidth=layout.barWidth,
+cells=layout.cells,outings=layout.outings},"ui")
 end
 standing.CHIPS=6
 standing.SQUARES=10
@@ -963,7 +992,125 @@ hero.chips={}
 for i=1,standing.CHIPS do
 hero.chips[i]={ground=texture("BORDER"),text=text("bodyText","text")}
 end
+hero.worldCells={}
+for i=1,4 do
+hero.worldCells[i]={label=text("stripLabel","label"),rating=text("stripFigure","bright"),
+tier=text("stripTier","dim")}
+end
+hero.worldRules={}
+for i=1,4 do
+hero.worldRules[i]=texture()
+end
+hero.worldLine=texture()
+hero.killBars,hero.deathBars={},{}
+for i=1,standing.WORLD_TREND do
+hero.killBars[i]=texture()
+hero.deathBars[i]=texture()
+end
 strip.hero=hero
+end
+standing.WORLD_TREND=20
+function standing.worldRule(strip,held,index,x)
+local rule=held.worldRules[index]
+rule:ClearAllPoints()
+rule:SetPoint("TOPLEFT",strip,"TOPLEFT",x,0)
+rule:SetSize(1,A.metric("standingStrip")-1)
+rule:SetColorTexture(A.color("insetEdge"))
+rule:Show()
+end
+function standing.worldTrend(strip,held,bars,from,to)
+local count=math.min(#bars,#held.killBars)
+local frame=to-from
+local gap=A.metric("standingBarGap")
+local scale=0
+for i=1,count do
+scale=math.max(scale,bars[i].kills or 0,bars[i].deaths or 0)
+end
+if count==0 or frame<count then
+return 0
+end
+local height=A.metric("standingStrip")
+local mid=math.floor(height*0.5)
+local reach=mid-A.metric("standingTrendInset")
+local bar=math.max(1,math.min(A.metric("standingBar"),math.floor((frame-gap*(count-1))/count)))
+held.worldLine:ClearAllPoints()
+held.worldLine:SetPoint("TOPLEFT",strip,"TOPLEFT",from,-mid)
+held.worldLine:SetSize(frame,1)
+held.worldLine:SetColorTexture(A.color("hairline"))
+held.worldLine:Show()
+for i=1,count do
+local x=from+(i-1)*(bar+gap)
+local pair=bars[i]
+for _,side in ipairs({{held.killBars[i],pair.kills or 0,"win",true},
+{held.deathBars[i],pair.deaths or 0,"loss",false}})do
+local texture,figure=side[1],side[2]
+if figure>0 and scale>0 then
+local tall=math.max(1,math.floor(reach*figure/scale+0.5))
+texture:ClearAllPoints()
+texture:SetPoint("TOPLEFT",strip,"TOPLEFT",x,side[4]and-(mid-tall)or-(mid+1))
+texture:SetSize(bar,tall)
+texture:SetColorTexture(A.color(side[3]))
+texture:Show()
+end
+end
+end
+return count
+end
+function standing.paintWorld(strip,held,data,width)
+local statWidth=A.metric("standingStat")
+local tallied=(data.tallied or 0)>0
+local outings=data.outings or 0
+local cells={
+{label="WORLD PVP",figure=tallied and A.kdPairText(data.kills,data.deaths)or"-",
+tier=("%d %s"):format(outings,outings==1 and"outing"or"outings")},
+{label="KILLS PER DEATH",figure=data.ratio or"-",figureTone=data.ratio and data.ratioTone or"dim",
+tier=data.best},
+{label="TIME OUT",figure=data.timeOut or"-",figureTone=data.timeOut and"bright"or"dim",
+tier=data.average},
+{label="LAST OUT",figure=data.lastOut or"-",figureTone=data.lastOut and"bright"or"dim",
+tier=data.lastSub},
+}
+local first=held.worldCells[1]
+local m=standing.fill(first,cells[1])
+local firstWidth=math.max(m.natural,A.metric("standingCellFloor"))
+standing.placeCell(strip,first,cells[1],m,0,firstWidth)
+local right=width-statWidth*3-3
+local labels={cells[1].label}
+local rules=0
+for i=2,4 do
+local x=right+(i-2)*(statWidth+1)
+rules=rules+1
+standing.worldRule(strip,held,rules,x)
+local cellHeld=held.worldCells[i]
+local cell=cells[i]
+if cell.label=="LAST OUT"and type(data.lastForms)=="table"and#data.lastForms>0 then
+cell.figure=A.fittedForm(cellHeld.rating,statWidth-A.metric("standingPad")*2,data.lastForms)
+or data.lastForms[#data.lastForms]
+end
+standing.placeCell(strip,cellHeld,cell,standing.fill(cellHeld,cell),x+1,statWidth)
+labels[#labels+1]=cell.label
+end
+local gap=A.metric("standingGap")
+rules=rules+1
+standing.worldRule(strip,held,rules,firstWidth)
+local from,to=firstWidth+1+gap,right-gap
+local drawn=standing.worldTrend(strip,held,data.bars or{},from,to)
+strip.edge:SetColorTexture(A.color("insetEdge"))
+strip.edge:Show()
+local shownCells=drawn>0 and 1 or 0
+for i=1,4 do
+if held.worldCells[i].rating:IsShown()then
+shownCells=shownCells+1
+end
+end
+return drawn,{
+labels=table.concat(labels,","),
+rules=rules,
+edge="strip",
+trend=math.max(0,to-from),
+cells=shownCells,
+outings=outings,
+}
 end
 function standing.paintOther(strip,held,data,width)
 local each=170
@@ -1213,7 +1360,7 @@ row.name:SetTextColor(A.classColor(token))
 else
 A.style(row.name,"bodyMedium","text")
 end
-local last=entry.lastAt and A.shortDayText(entry.lastAt)or nil
+local last=entry.lastAt and A.shortDay(entry.lastAt)or nil
 local sub={}
 sub[#sub+1]=entry.realm
 sub[#sub+1]=last and("last "..last)or nil
@@ -2084,18 +2231,40 @@ return row
 end
 local function paintOpponents(region,rows)
 local shown=math.min(#rows,OPPONENT_ROWS)
+local keys={}
+for i=1,shown do
+if rows[i].key~=nil then
+keys[rows[i].key]=true
+end
+end
+local classes=type(A.classTokens)=="function"and A.classTokens(keys)or{}
+local colored=0
 for i=1,OPPONENT_ROWS do
 local row=region.opponents[i]
 local entry=i<=shown and rows[i]or nil
 if entry then
-row.name:SetText(entry.name)
-row.record:SetText(("%d W  %d L"):format(entry.wins,entry.losses))
+local bare,realm=A.nameParts(entry.name)
+local token=entry.key~=nil and classes[entry.key]or nil
+local name=bare
+if token~=nil and bare~=""then
+local r,g,b=A.classColor(token)
+name=("|cff%s%s|r"):format(A.colorHex(r,g,b):sub(1,6),bare)
+colored=colored+1
+end
+row.name:SetText(realm and(name.."  "..A.colorEscape("dim")..realm.."|r")or name)
+setColor(row.name,"text")
+local held={wins=entry.wins,decided=entry.wins+entry.losses+(entry.draws or 0),
+draws=entry.draws or 0}
+row.record:SetText(A.winRecordText(held,"duel")or"-")
 setColor(row.record,entry.wins==entry.losses and"dim"
 or(entry.wins>entry.losses and"win"or"loss"))
 row:Show()
 else
 row:Hide()
 end
+end
+if type(A.trace)=="function"then
+A.trace("fought",{rows=shown,classColored=colored},"ui")
 end
 return shown
 end
@@ -2440,6 +2609,8 @@ control=controlWidth(region.details),
 toggle=controlWidth(region.graphToggle),
 specs=controlWidth(region.specsToggle),
 maps=controlWidth(region.mapsToggle),
+builds=controlWidth(region.buildsToggle),
+bests=controlWidth(region.bestsToggle),
 })
 end
 function A.viewRowHeadRoom(region)
@@ -2453,6 +2624,8 @@ control=controlWidth(region.details),
 toggle=controlWidth(region.graphToggle),
 specs=controlWidth(region.specsToggle),
 maps=controlWidth(region.mapsToggle),
+builds=controlWidth(region.buildsToggle),
+bests=controlWidth(region.bestsToggle),
 })
 return width-(type(cluster)=="number"and cluster or 0)
 end
@@ -2661,6 +2834,56 @@ end
 end
 return controlDraws
 end
+local function soleView(summary,lines,season,bound,region)
+if type(summary)~="table"then
+return nil
+end
+local fmt=summary.format
+local offered={}
+if type(region)=="table"then
+for _,each in ipairs(VIEW_PILLS)do
+local pill=region[each[2]]
+if pill and pill:IsShown()then
+offered[#offered+1]=each[1]
+end
+end
+if#offered==1 and(offered[1]=="graph"or offered[1]=="details")then
+return offered[1]
+end
+return nil
+end
+if seriesDrawable(summary.series)and summary.rating~=nil or barsDrawable(summary)then
+offered[#offered+1]="graph"
+end
+if type(A.compRounds)=="function"and A.compRounds(fmt)then
+offered[#offered+1]="specs"
+end
+if type(A.mapsViewOffered)=="function"and A.mapsViewOffered(fmt,season,bound)then
+offered[#offered+1]="maps"
+end
+for _,offer in ipairs({A.bestsViewOffered,A.buildsViewOffered})do
+if type(offer)=="function"and offer(fmt)then
+offered[#offered+1]="table"
+end
+end
+local bands=A.summaryBands({lines=lines,headline=summary.rating~=nil})
+if A.bandShown(bands[1])and A.bandShown(bands[2])then
+offered[#offered+1]="details"
+end
+if#offered==1 and(offered[1]=="graph"or offered[1]=="details")then
+return offered[1]
+end
+return nil
+end
+function A.statsFolds(summary,lines,season,bound,collapsed,graphFolded,region)
+local sole=soleView(summary,lines,season,bound,region)
+if sole=="details"then
+collapsed=false
+elseif sole=="graph"then
+graphFolded=false
+end
+return collapsed,graphFolded,sole
+end
 local function paintReading(region,summary,lines,collapsed)
 local shown=#lines
 if shown>READING_ROWS then
@@ -2776,7 +2999,7 @@ strip=strip,
 plot=plot,
 reading=read,
 lines=type(lines)=="number"and lines or 0,
-head=headline~=false,
+head=headline~=false and headline~="standing",
 tiles=A.tileHeight(),
 note=noteRow,
 noteAt=noteAt,
@@ -3057,6 +3280,17 @@ room=A.unitFigure(plan.room),
 },"ui")
 end
 end
+function A.paintStandingStrip(region,summary,reading)
+if not(region and type(summary)=="table"and type(reading)=="table")then
+return nil
+end
+local height=A.metric("standingStrip")
+region:SetHeight(height)
+local drew=standing.paint(region,reading)
+standing.traceStrip(summary,reading,drew,height)
+region.standingShape=type(drew)=="table"and drew.shape or nil
+return drew
+end
 function A.paintSummaryRegion(region,summary,scope,reading)
 if not(region and type(summary)=="table")then
 return false
@@ -3065,6 +3299,7 @@ local notRated=type(reading)=="table"and reading.notRated or nil
 local collapsed=type(reading)=="table"and reading.collapsed==true or false
 local grow=A.summaryGrowth(type(reading)=="table"and reading.frameHeight or nil)
 lastGrowth=grow
+region.paintedScope=scope
 if region.scope then
 region.scope:SetShown(true)
 if type(A.setDropdownChoices)=="function"and type(A.scopeChoicesFor)=="function"then
@@ -3075,97 +3310,57 @@ end
 end
 paintHeadline(region,summary)
 paintDelta(region,summary)
+local worldStrip=type(reading)=="table"and reading.stripOnly~=true
+and type(reading.standing)=="table"and type(reading.standing.hero)=="table"
+and reading.standing.hero.kind=="world"
+local headline=worldStrip and"standing"or(summary.rating~=nil)
 local lines=A.readingLines(summary,notRated,true)
-paintDetails(region,#lines,summary.rating~=nil,collapsed)
+paintDetails(region,#lines,headline,collapsed)
 local graphFolded=type(reading)=="table"and reading.graphFolded==true
 and(seriesDrawable(summary.series)and summary.rating~=nil or barsDrawable(summary))or false
 paintGraphToggle(region,summary,graphFolded)
 local showMmr=A.mmrLineOffered(summary)==true
 local clusterHost=region.controlHost or region
-if region.details and region.details:IsShown()then
-region.details:ClearAllPoints()
-if region.scope and region.scope:IsShown()then
-region.details:SetPoint("RIGHT",region.scope,"LEFT",-A.metric("pillGap"),0)
-else
-region.details:SetPoint("TOPRIGHT",clusterHost,"TOPRIGHT",0,
--A.metric("segmentTrackPad"))
-end
-end
-if region.graphToggle and region.graphToggle:IsShown()then
-region.graphToggle:ClearAllPoints()
-if region.details and region.details:IsShown()then
-region.graphToggle:SetPoint("RIGHT",region.details,"LEFT",-A.metric("pillGap"),0)
-elseif region.scope and region.scope:IsShown()then
-region.graphToggle:SetPoint("RIGHT",region.scope,"LEFT",-A.metric("pillGap"),0)
-else
-region.graphToggle:SetPoint("TOPRIGHT",clusterHost,"TOPRIGHT",0,
--A.metric("segmentTrackPad"))
-end
-end
 if region.specsToggle then
 local rounds=type(A.compRounds)=="function"and A.compRounds(summary.format)or false
 region.specsToggle:SetShown(rounds and true or false)
-if rounds then
-local outside=nil
-for _,control in ipairs({region.graphToggle,region.details,region.scope})do
-if outside==nil and control and control:IsShown()then
-outside=control
-end
-end
-region.specsToggle:ClearAllPoints()
-if outside~=nil then
-region.specsToggle:SetPoint("RIGHT",outside,"LEFT",-A.metric("pillGap"),0)
-else
-region.specsToggle:SetPoint("TOPRIGHT",clusterHost,"TOPRIGHT",0,
--A.metric("segmentTrackPad"))
-end
-local on=type(A.specsViewShown)=="function"and A.specsViewShown()
-A.setPillSelected(region.specsToggle,on)
-end
 end
 if region.mapsToggle then
 local offered=type(A.mapsViewOffered)=="function"
 and A.mapsViewOffered(summary.format,
 type(reading)=="table"and reading.season or nil,type(reading)=="table"and reading.bound or nil)
 region.mapsToggle:SetShown(offered and true or false)
-if region.mapsToggle:IsShown()then
-local outside=nil
-for _,control in ipairs({region.specsToggle,region.graphToggle,region.details,region.scope})do
-if outside==nil and control and control:IsShown()then
-outside=control
-end
-end
-region.mapsToggle:ClearAllPoints()
-if outside~=nil then
-region.mapsToggle:SetPoint("RIGHT",outside,"LEFT",-A.metric("pillGap"),0)
-else
-region.mapsToggle:SetPoint("TOPRIGHT",clusterHost,"TOPRIGHT",0,-A.metric("segmentTrackPad"))
-end
-A.setPillSelected(region.mapsToggle,type(A.mapsViewShown)=="function"and A.mapsViewShown())
-end
 end
 for _,pair in ipairs({{region.bestsToggle,A.bestsViewOffered},{region.buildsToggle,A.buildsViewOffered}})do
-local pill,offeredOn=pair[1],pair[2]
-if pill then
-local offered=type(offeredOn)=="function"and offeredOn(summary.format)or false
-pill:SetShown(offered and true or false)
-if offered then
-local outside=nil
-for _,control in ipairs({region.bestsToggle,region.mapsToggle,
-region.specsToggle,region.graphToggle,region.details,region.scope})do
-if outside==nil and control and control~=pill and control:IsShown()then
-outside=control
+if pair[1]then
+local offered=type(pair[2])=="function"and pair[2](summary.format)or false
+pair[1]:SetShown(offered and true or false)
 end
 end
+local sole
+collapsed,graphFolded,sole=A.statsFolds(summary,#lines,nil,nil,collapsed,graphFolded,region)
+region.soleView=sole
+if sole=="graph"and region.graphToggle then
+region.graphToggle:Hide()
+elseif sole=="details"and region.details then
+region.details:Hide()
+end
+local outside=region.scope and region.scope:IsShown()and region.scope or nil
+local order={}
+for i=#VIEW_PILLS,1,-1 do
+local pill=region[VIEW_PILLS[i][2]]
+if pill and pill:IsShown()then
 pill:ClearAllPoints()
 if outside~=nil then
 pill:SetPoint("RIGHT",outside,"LEFT",-A.metric("pillGap"),0)
 else
 pill:SetPoint("TOPRIGHT",clusterHost,"TOPRIGHT",0,-A.metric("segmentTrackPad"))
 end
+outside=pill
+table.insert(order,1,VIEW_PILLS[i][1])
 end
 end
-end
+region.pillOrder=#order>0 and table.concat(order,",")or"none"
 local tableHeld=type(A.tableViewShown)=="function"and A.tableViewShown()or nil
 local view=A.statsPillView({
 maps=region.mapsToggle and region.mapsToggle:IsShown()and type(A.mapsViewShown)=="function"
@@ -3177,26 +3372,35 @@ and A.specsViewShown(),
 graph=region.graphToggle and region.graphToggle:IsShown()and not graphFolded,
 details=region.details and region.details:IsShown()and not collapsed,
 })
-local pills={{"maps",region.mapsToggle},{"bests",region.bestsToggle},
-{"builds",region.buildsToggle},{"specs",region.specsToggle},
-{"graph",region.graphToggle},{"details",region.details}}
 local selected={}
-for _,pair in ipairs(pills)do
-if pair[2]then
-A.setPillSelected(pair[2],pair[1]==view)
-if pair[2].controlSelected and pair[2]:IsShown()then
-selected[#selected+1]=pair[1]
+for _,each in ipairs(VIEW_PILLS)do
+local pill=region[each[2]]
+if pill then
+A.setPillSelected(pill,each[1]==view)
+if pill.controlSelected and pill:IsShown()then
+selected[#selected+1]=each[1]
 end
 end
 end
 if type(A.trace)=="function"then
 A.trace("statspills",{selected=#selected>0 and table.concat(selected,",")or"none",
-pillView=view or"none"},"ui")
+pillView=view or"none",pillOrder=region.pillOrder,soleView=sole or"none"},"ui")
 end
-local short=paintTiles(region,summary,
+local short=nil
+if worldStrip then
+for i=1,#region.tiles do
+region.tiles[i]:Hide()
+region.tiles[i].tooltipLines=nil
+region.tiles[i].opens,region.tiles[i].opensKind=nil,nil
+end
+standing.traceStrip(summary,reading.standing,standing.paint(region,reading.standing),
+A.metric("standingStrip"))
+else
+short=paintTiles(region,summary,
 type(reading)=="table"and reading.season or nil,
 type(reading)=="table"and reading.bound or nil,
 type(reading)=="table"and reading.stripOnly~=true)
+end
 region.stripShort=short
 region.stripBare=nil
 if type(reading)=="table"and reading.stripOnly==true and type(reading.standing)=="table"then
@@ -3211,41 +3415,16 @@ region.tiles[i].opens,region.tiles[i].opensKind=nil,nil
 end
 region.reading:Hide()
 region.plot:Hide()
-local height=A.metric("standingStrip")
-region:SetHeight(height)
-local drew=standing.paint(region,reading.standing)
-if type(A.trace)=="function"and type(drew)=="table"then
-local lastFigure=nil
-for _,figure in ipairs(reading.standing.figures or{})do
-if figure.label=="LAST PLAYED"then
-lastFigure=figure
-end
-end
-pcall(A.trace,"strip",{format=summary.format,shape=drew.shape,bars=drew.bars,
-reason=drew.reason,total=height,ground=drew.ground,tones=drew.tones,
-last=lastFigure and lastFigure.drawn or nil,
-lastFit=lastFigure and lastFigure.fit or nil,
-stripSeason=reading.standing.stripSeason,n=drew.tiles,
-record=reading.standing.shape=="ladderless"
-and(reading.standing.recordKind or(reading.standing.record and"record")or"none")or nil,
-labels=drew.layout and drew.layout.labels or nil,
-widths=drew.layout and drew.layout.widths or nil,
-rules=drew.layout and drew.layout.rules or nil,
-rate=drew.layout and drew.layout.rate or nil,
-centre=drew.layout and drew.layout.centre or nil,
-shed=drew.layout and drew.layout.shed or nil,
-edge=drew.layout and drew.layout.edge or nil,
-trend=drew.layout and drew.layout.trend or nil,
-inset=drew.layout and drew.layout.inset or nil,
-barWidth=drew.layout and drew.layout.barWidth or nil},"ui")
-end
-region.standingShape=type(drew)=="table"and drew.shape or nil
+A.paintStandingStrip(region,summary,reading.standing)
 return true
 end
+if worldStrip then
+region.standingShape="world"
+else
 standing.hide(region)
 region.standingShape=nil
+end
 if type(reading)=="table"and reading.stripOnly==true then
-local headline=summary.rating~=nil
 local strip=A.stripHeight(headline)
 region.reading:Hide()
 region.plot:Hide()
@@ -3292,7 +3471,7 @@ local last=region.opponents[math.max(1,math.min(shown,OPPONENT_ROWS))]
 region.foughtNote:SetPoint("TOPLEFT",last,"BOTTOMLEFT",0,-4)
 region.foughtNote:SetPoint("TOPRIGHT",last,"BOTTOMRIGHT",0,-4)
 setRegionPlot(region,"fought",A.summaryHeightFought(shown,fought~=nil,
-summary.rating~=nil,readingHeight),summary.format,summary.rating~=nil,
+headline,readingHeight),summary.format,headline,
 readingHeight,readingCount)
 return true
 end
@@ -3332,7 +3511,7 @@ if branch=="folded"then
 if region.plotSpan then
 region.plotSpan:SetText(A.plotSpanText(summary.series)or"")
 end
-setRegionPlot(region,"folded",nil,summary.format,summary.rating~=nil,readingHeight,
+setRegionPlot(region,"folded",nil,summary.format,headline,readingHeight,
 readingCount,grow,false)
 hideLinesFrom(region.plot,1)
 paintPlotKeys(region,false)
@@ -3340,7 +3519,7 @@ setPlotNote(region,nil)
 return true
 end
 setRegionPlot(region,branch,nil,summary.format,
-summary.rating~=nil,readingHeight,readingCount,grow,false)
+headline,readingHeight,readingCount,grow,false)
 region.plot.format=summary.format
 local drawn,mmrDrawn=drawSeries(region.plot,summary.series,showMmr,nil)
 local tier=region.plot.tierReading
@@ -3351,7 +3530,7 @@ asides=region.stripAsides,moment=region.stripMoment},"ui")
 end
 local plotBands=A.summaryBands({
 lines=type(readingCount)=="number"and readingCount or 0,
-headline=summary.rating~=nil,
+headline=headline,
 reading=readingHeight,
 plot=true,
 marks=drawn,
@@ -3395,7 +3574,7 @@ season,bound=held,since
 end
 end
 local ok,summary=pcall(A.paintWalk,"summarize",fmt,season,A.windowCharacter(),bound)
-local headline=ok and type(summary)=="table"and summary.rating~=nil or false
+local headline=A.statsHeadline(fmt,ok and summary or nil)
 local strip=A.stripHeight(headline)
 local gap=A.metric("stripGap")
 local notRated
@@ -3406,10 +3585,11 @@ local lines=ok and type(summary)=="table"
 and A.readingLines(summary,notRated,true)or{}
 local every=ok and type(summary)=="table"
 and A.readingLines(summary,notRated)or{}
-local collapsed=type(A.readingCollapsed)=="function"and A.readingCollapsed()or false
-local reading=A.readingHeight(#lines,collapsed)
-local branch,fought=plotBranch(fmt,ok and summary or nil,
+local collapsed,graphFolded=A.statsFolds(ok and summary or nil,#lines,season,bound,
+type(A.readingCollapsed)=="function"and A.readingCollapsed()or false,
 type(A.graphFolded)=="function"and A.graphFolded()or false)
+local reading=A.readingHeight(#lines,collapsed)
+local branch,fought=plotBranch(fmt,ok and summary or nil,graphFolded)
 local drawing,legend=A.plotShape(branch)
 local noteAt,_,ownLine=plotNoteAnchor(drawing,legend)
 local body
@@ -3716,11 +3896,12 @@ if#lines>A.readingRows()then
 fault("clause-dropped",name,
 ("%d clauses over a pool of %d"):format(#lines,A.readingRows()))
 end
-local collapsed=type(A.readingCollapsed)=="function"and A.readingCollapsed()or false
-local reading=A.readingHeight(#lines,collapsed)
-local headline=summary.rating~=nil
-local branch=plotBranch(fmt,summary,
+local collapsed,graphFolded=A.statsFolds(summary,#lines,season,bound,
+type(A.readingCollapsed)=="function"and A.readingCollapsed()or false,
 type(A.graphFolded)=="function"and A.graphFolded()or false)
+local reading=A.readingHeight(#lines,collapsed)
+local headline=A.statsHeadline(fmt,summary)
+local branch=plotBranch(fmt,summary,graphFolded)
 for _,said in ipairs(A.bandFaults(A.summaryBands({
 lines=#lines,
 headline=headline,
@@ -3936,6 +4117,8 @@ local OVERVIEW_BLOCK=8
 local OVERVIEW_BLOCK_GAP=2
 local OVERVIEW_RUN=20
 local OVERVIEW_WEEK_MIN=6
+local WEEK_BAR_CAP=24
+local WEEK_LABEL_GAP=8
 local OVERVIEW_CELL_MIN=14
 local OVERVIEW_CHART_MIN=20
 local OVERVIEW_CHART_MAX=96
@@ -4293,7 +4476,15 @@ local foot=A.fontSize("note")*2+6
 local chart=math.min(OVERVIEW_CHART_MAX,math.max(OVERVIEW_CHART_MIN,room-label-8-foot))
 local axisY=blocksTop-label-8-math.floor(chart/2)
 local column=#weeks>0 and math.max(OVERVIEW_WEEK_MIN,math.floor((half-pad)/#weeks))or 0
-local step=math.max(1,math.ceil(64/math.max(1,column)))
+local barWidth=math.max(2,math.min(WEEK_BAR_CAP,math.floor(column*0.7)))
+local barInset=math.floor((column-barWidth)/2)
+local widestLabel=0
+for i=1,#weeks do
+local week=overviewWeek(host,i)
+A.style(week.label,"note","dimmer")
+widestLabel=math.max(widestLabel,A.textRoom(week.label,weeks[i].label))
+end
+local step=math.max(1,math.ceil((widestLabel+WEEK_LABEL_GAP)/math.max(1,column)))
 host.axis:ClearAllPoints()
 host.axis:SetPoint("TOPLEFT",host,"TOPLEFT",pad,axisY)
 host.axis:SetSize(half-pad,1)
@@ -4301,8 +4492,7 @@ host.axis:SetColorTexture(A.color("dimmer"))
 for i=1,#weeks do
 local held=weeks[i]
 local week=overviewWeek(host,i)
-local x=pad+(i-1)*column
-local barWidth=math.max(2,math.floor(column*0.7))
+local x=pad+(i-1)*column+barInset
 local scale=tallest>0 and(chart/2-2)/tallest or 0
 week.up:ClearAllPoints()
 week.up:SetPoint("BOTTOMLEFT",host,"TOPLEFT",x,axisY)
@@ -4481,11 +4671,13 @@ end
 local figures={weeks=weekFits and#weeks or 0,cells=drawn,blank=blank,draws=record.draws or 0,
 n=#formats,drew=table.concat(drew,","),withdrawn=table.concat(withdrawn,","),
 rowHeights=table.concat(heightsText,","),nameForm=namesFit and"long"or"short",
-ratingForm=tiersFit and"tier"or"rating",chart=chart,cell=cellHeight}
+ratingForm=tiersFit and"tier"or"rating",chart=chart,cell=cellHeight,
+weekBar=weekFits and#weeks>0 and barWidth or nil,weekStep=weekFits and#weeks>0 and step or nil}
 A.trace("stats-overview",{weeks=figures.weeks,cells=figures.cells,blank=figures.blank,
 draws=figures.draws,n=figures.n,drew=figures.drew~=""and figures.drew or"none",
 withdrawn=figures.withdrawn~=""and figures.withdrawn or nil,rowHeights=figures.rowHeights,
 nameForm=figures.nameForm,ratingForm=figures.ratingForm,chart=chart,cell=cellHeight,
+weekBar=figures.weekBar,weekStep=figures.weekStep,
 height=measured and A.unitFigure(hostHeight)or nil},"ui")
 host.figures=figures
 host.paintedHeight=measured and hostHeight or nil

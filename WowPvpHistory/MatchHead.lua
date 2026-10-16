@@ -1,4 +1,4 @@
--- WowPvpHistory 0.68.22
+-- WowPvpHistory 0.68.35
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -223,10 +223,8 @@ GameTooltip:Show()
 end)
 A.trace("build-hover",{id=self.recordId,n=self.index},"ui")
 end)
-icon:SetScript("OnLeave",function()
-if GameTooltip then
-pcall(GameTooltip.Hide,GameTooltip)
-end
+icon:SetScript("OnLeave",function(self)
+A.hideOwnedTooltip(self)
 end)
 icon.index=i
 line.buildIcons[i]=icon
@@ -561,7 +559,7 @@ line.buildKey:SetText("BUILD")
 line.buildKey:Show()
 line.buildText:ClearAllPoints()
 line.buildText:SetPoint("LEFT",line.buildKey,"RIGHT",A.metric("chipGap"),0)
-A.style(line.buildText,"bodyText","text")
+A.style(line.buildText,"bodyText",h.unnamed and"dim"or"text")
 line.buildText:SetText(h.label or"")
 line.buildText:Show()
 local size=A.metric("rowHeight")
@@ -592,6 +590,44 @@ end
 A.trace("matchbuild",{id=h.id,pvpTalents=type(h.pvp)=="table"and#h.pvp or 0,icons=drawn,
 copyShown=line.buildCopy~=nil},"ui")
 end
+local function paintTally(line,h)
+local cells=type(h.cells)=="table"and h.cells or{}
+local width=type(h.available)=="number"and h.available or A.detailWindowBody()
+local gap,pad=A.metric("roundCardGap"),A.metric("roundCardPad")
+local count=math.min(#cells,#line.roundCards)
+local cardWidth=count>0 and math.floor((width-gap*(count-1))/count)or 0
+local height=A.outingCellsHeight()
+for c=1,count do
+local card,held=line.roundCards[c],cells[c]
+card.bg:ClearAllPoints()
+card.bg:SetPoint("TOPLEFT",line,"TOPLEFT",(c-1)*(cardWidth+gap),0)
+card.bg:SetSize(cardWidth,height)
+card.bg:SetColorTexture(A.color("panelDeep"))
+card.bg:Show()
+card.edge:ClearAllPoints()
+card.edge:SetPoint("TOPLEFT",card.bg,"TOPLEFT",0,0)
+card.edge:SetSize(cardWidth,A.metric("roundCardEdge"))
+card.edge:SetColorTexture(A.color(held.tone or"dim"))
+card.edge:Show()
+local y=-(A.metric("roundCardEdge")+pad)
+A.style(card.title,"label","dim")
+card.title:SetText(held.label)
+card.title:ClearAllPoints()
+card.title:SetPoint("TOPLEFT",card.bg,"TOPLEFT",pad,y)
+card.title:Show()
+local value=card.names[1]
+A.style(value,"number",held.tone or"dim")
+value:SetText(held.value or"-")
+value:ClearAllPoints()
+value:SetPoint("TOPLEFT",card.bg,"TOPLEFT",pad,y-A.fontSize("label")-A.metric("roundCardLine"))
+value:SetWidth(math.max(1,cardWidth-pad*2))
+value:Show()
+end
+end
+function A.outingCellsHeight()
+return A.metric("roundCardPad")*2+A.metric("roundCardEdge")+A.fontSize("label")
++A.metric("roundCardLine")+A.fontSize("number")
+end
 function A.paintMatchHead(line,h,paintCrest)
 local game=A.matchHeadGame()
 if h.kind=="heading"then
@@ -602,6 +638,8 @@ elseif h.kind=="ladder"and type(h.ladder)=="table"then
 paintLadder(line,h)
 elseif h.kind=="cards"then
 paintCards(line,h)
+elseif h.kind=="tally"then
+paintTally(line,h)
 elseif h.kind=="build"then
 paintBuild(line,h)
 end

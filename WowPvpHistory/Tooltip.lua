@@ -1,4 +1,4 @@
--- WowPvpHistory 0.68.22
+-- WowPvpHistory 0.68.35
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -115,10 +115,23 @@ if guid:find("^Player%-")then
 A.trace("tooltip",{reason="none",n=0},"data")
 end
 end
-local sampleUp=false
+local sample={frame=nil,up=false}
+local function sampleFrame()
+if sample.frame==nil and type(CreateFrame)=="function"then
+local ok,frame=pcall(CreateFrame,"GameTooltip","WowPvpHistorySampleTooltip",UIParent,
+"GameTooltipTemplate")
+if ok and type(frame)=="table"and type(frame.SetOwner)=="function"then
+sample.frame=frame
+end
+end
+return sample.frame
+end
+function A.tooltipSampleShown()
+return sample.up and sample.frame or nil
+end
 function A.tooltipSample(guid,name)
-local tooltip=GameTooltip
-if type(tooltip)~="table"or type(tooltip.SetOwner)~="function"then
+local tooltip=sampleFrame()
+if tooltip==nil then
 return nil
 end
 tooltip:SetOwner(UIParent,"ANCHOR_NONE")
@@ -129,7 +142,7 @@ end
 tooltip:SetText(name,1,1,1,1,false)
 local n,drew=A.tooltipBlock(tooltip,guid)
 tooltip:Show()
-sampleUp=true
+sample.up=true
 A.trace("tooltip",{source="sample",reason=n>0 and"appended"or"none",n=n,
 switch=A.tooltipEnabled()and"on"or"off",header=drew and drew.header,
 pairs=drew and drew.pairs,noteLine=drew and drew.noteLine,tagLine=drew and drew.tagLine,
@@ -137,10 +150,10 @@ lastSeen=drew and drew.lastSeen},"data")
 return n
 end
 function A.tooltipSampleHide()
-local was=sampleUp
-sampleUp=false
-if was and type(GameTooltip)=="table"and type(GameTooltip.Hide)=="function"then
-GameTooltip:Hide()
+local was=sample.up
+sample.up=false
+if was and sample.frame~=nil then
+sample.frame:Hide()
 end
 return was
 end
