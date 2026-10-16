@@ -1,4 +1,4 @@
--- WowPvpHistory 0.68.22
+-- WowPvpHistory 0.68.35
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -101,6 +101,7 @@ local MEMO_WALKERS={
 summarize=true,
 compTally=true,
 specTally=true,
+specMatchTally=true,
 formatCounts=true,
 cardTrend=true,
 }
@@ -1073,7 +1074,7 @@ function A.weekLabel(monday)
 if type(monday)~="number"then
 return nil
 end
-return("w/c %d %s"):format(tonumber(date("%d",monday)),date("%b",monday))
+return("Week of %s %d"):format(date("%b",monday),tonumber(date("%d",monday)))
 end
 function A.weekOpening(at)
 if type(at)~="number"then
@@ -1284,6 +1285,8 @@ if outcome=="win"then
 row.wins=row.wins+1
 elseif outcome=="loss"then
 row.losses=row.losses+1
+elseif outcome=="draw"then
+row.draws=(row.draws or 0)+1
 end
 elseif format~=nil then
 missing=missing+1
@@ -1358,7 +1361,150 @@ end
 end
 return out
 end
-local COMP_FORMATS={arena=true,arena2=true,arena3=true,shuffle=true}
+local function className(token,stored)
+local count=type(GetNumClasses)=="function"and GetNumClasses()or 0
+if type(GetClassInfo)=="function"and type(count)=="number"then
+for classID=1,count do
+local ok,name,held=pcall(GetClassInfo,classID)
+if ok and held==token and type(name)=="string"and name~=""then
+return name
+end
+end
+end
+if type(stored)=="string"and stored~=""then
+return stored
+end
+return tostring(token)
+end
+function A.duelClassTally(season,character,bound)
+local rows,read={},{counted=0,skipped=0,undecided=0}
+local db=A.db()
+if not(db and type(db.matches)=="table")then
+return rows,read
+end
+local held,keys={},{}
+for i=1,#db.matches do
+local record=db.matches[i]
+if type(record)=="table"and record.format=="duel"
+and(season==nil or A.recordSeason(record)==season)
+and A.recordedBy(record,character)and A.recordSince(record,bound)then
+local outcome=A.recordVerdict(record)
+if outcome=="win"or outcome=="loss"then
+local key=A.duelOpponentKey(record)
+held[#held+1]={record=record,key=key,won=outcome=="win"}
+if key~=nil then
+keys[key]=true
+end
+else
+read.undecided=read.undecided+1
+end
+end
+end
+local tokens=A.classTokens(keys)
+local byToken={}
+for i=1,#held do
+local duel=held[i]
+local token=duel.key and tokens[duel.key]or nil
+if token==nil then
+read.skipped=read.skipped+1
+else
+read.counted=read.counted+1
+local row=byToken[token]
+if not row then
+local p=duel.record.participants[duel.key]
+local name=className(token,type(p)=="table"and p.class or nil)
+row={key=token,classToken=token,class=name,name=name,matches={},
+against={rounds=0,wins=0,losses=0}}
+byToken[token]=row
+rows[#rows+1]=row
+end
+local side=row.against
+side.rounds=side.rounds+1
+if duel.won then
+side.wins=side.wins+1
+else
+side.losses=side.losses+1
+end
+if duel.record.id~=nil then
+row.matches[#row.matches+1]=duel.record.id
+end
+end
+end
+for i=1,#rows do
+local side=rows[i].against
+side.winRate=side.wins/side.rounds
+end
+return rows,read
+end
+local function killDeathRatio(kills,deaths)
+if kills==0 and deaths==0 then
+return nil
+end
+if deaths==0 then
+return kills
+end
+return kills/deaths
+end
+function A.zoneTally(season,character,bound)
+local rows,unplaced,read={},0,0
+local db=A.db()
+if not(db and type(db.matches)=="table")then
+return rows,unplaced,read
+end
+local byZone={}
+for i=1,#db.matches do
+local record=db.matches[i]
+if type(record)=="table"and record.format=="world"
+and(season==nil or A.recordSeason(record)==season)
+and A.recordedBy(record,character)and A.recordSince(record,bound)then
+read=read+1
+local zone=type(record.map)=="table"and record.map.name or nil
+if type(zone)~="string"or zone==""then
+unplaced=unplaced+1
+else
+local row=byZone[zone]
+if not row then
+row={key=zone,name=zone,outings=0,kills=0,deaths=0,tallied=0,
+ids={},order=#rows+1}
+byZone[zone]=row
+rows[#rows+1]=row
+end
+row.outings=row.outings+1
+local kills,deaths=A.worldCounts(record)
+if kills~=nil then
+row.kills,row.deaths,row.tallied=row.kills+kills,row.deaths+deaths,row.tallied+1
+end
+if record.id~=nil then
+row.ids[#row.ids+1]=record.id
+end
+end
+end
+end
+for i=1,#rows do
+if rows[i].tallied==0 then
+rows[i].kills,rows[i].deaths=nil,nil
+else
+rows[i].ratio=killDeathRatio(rows[i].kills,rows[i].deaths)
+end
+end
+table.sort(rows,function(a,b)
+if a.ratio~=b.ratio then
+if a.ratio==nil then
+return false
+end
+if b.ratio==nil then
+return true
+end
+return a.ratio>b.ratio
+end
+if a.outings~=b.outings then
+return a.outings>b.outings
+end
+return a.order<b.order
+end)
+return rows,unplaced,read
+end
+local COMP_FORMATS={arena=true,arena2=true,arena3=true,["arena-unrated"]=true,shuffle=true}
 local ROUND_FORMATS={shuffle=true}
 local ROUND_ENEMIES=3
 local function keyMembers(members)
@@ -1682,6 +1828,9 @@ end
 if row.durationCount>0 then
 row.avgDuration=math.floor(row.durationTotal/row.durationCount)
 end
+if not A.movesRating(format)then
+row.ratingDelta=nil
+end
 rows[#rows+1]=row
 end
 end
@@ -1860,6 +2009,109 @@ return a.order<b.order
 end)
 return against,alongside,readable,undecided,metIn,unsettled
 end
+local MATCH_SPEC_FORMATS={
+bg=true,rbg=true,blitz=true,["blitz-unrated"]=true,
+arena=true,arena2=true,arena3=true,["arena-unrated"]=true,
+}
+function A.specMatchFormat(format)
+return type(format)=="string"and MATCH_SPEC_FORMATS[format]==true
+end
+function A.specMatchTally(format,season,character,bound)
+local against,alongside,readable,undecided={},{},0,0
+local read={against={counted=0,skipped=0},alongside={counted=0,skipped=0},
+members=0}
+local metIn={}
+if not A.specMatchFormat(format)then
+return against,alongside,readable,undecided,metIn,{},read
+end
+local db=A.db()
+if not(db and type(db.matches)=="table")then
+return against,alongside,readable,undecided,metIn,{},read
+end
+local byKey={against={},alongside={}}
+local order={against=against,alongside=alongside}
+local function fold(side,entries,won,recordId,own)
+local _,allBots=A.botCount(entries)
+if allBots then
+return false
+end
+local seen,any={},false
+for i=1,#entries do
+local entry=entries[i]
+local p=entry.p
+local spec=type(p)=="table"and type(p.spec)=="string"and p.spec~=""and p.spec or nil
+if entry.guid==own then
+spec=false
+elseif spec==nil or A.isBotGuid(entry.guid)then
+read.members=read.members+1
+spec=false
+end
+if spec then
+any=true
+local key=spec.."/"..tostring(p.classToken)
+if not seen[key]then
+seen[key]=true
+local row=byKey[side][key]
+if not row then
+row={key=key,spec=spec,classToken=p.classToken,class=p.class,
+rounds=0,wins=0,losses=0,order=#order[side]+1}
+byKey[side][key]=row
+order[side][#order[side]+1]=row
+end
+row.rounds=row.rounds+1
+if won then
+row.wins=row.wins+1
+else
+row.losses=row.losses+1
+end
+local met=metIn[key]
+if not met then
+met={ids={},seen={}}
+metIn[key]=met
+end
+if recordId~=nil and not met.seen[recordId]then
+met.seen[recordId]=true
+met.ids[#met.ids+1]=recordId
+end
+end
+end
+end
+return any
+end
+for i=1,#db.matches do
+local record=db.matches[i]
+local held=type(record)=="table"and record.format==format
+and(season==nil or A.recordSeason(record)==season)
+and A.recordedBy(record,character)
+and A.recordSince(record,bound)
+if held then
+if record.result~="win"and record.result~="loss"then
+undecided=undecided+1
+else
+readable=readable+1
+local won=record.result=="win"
+local split=type(A.rosterSplit)=="function"and A.rosterSplit(record)or nil
+for _,pair in ipairs({{"against","enemy"},{"alongside","own"}})do
+local entries=type(split)=="table"and split[pair[2]]or nil
+local gave=type(entries)=="table"and fold(pair[1],entries,won,record.id,record.character)
+local tally=read[pair[1]]
+if gave then
+tally.counted=tally.counted+1
+else
+tally.skipped=tally.skipped+1
+end
+end
+end
+end
+end
+for _,list in ipairs({against,alongside})do
+for i=1,#list do
+local row=list[i]
+row.winRate=row.rounds>0 and row.wins/row.rounds or nil
+end
+end
+return against,alongside,readable,undecided,metIn,{},read
+end
 local ROUND_CELL={
 id=function(row)
 if row.id==nil then
@@ -2024,8 +2276,14 @@ function A.specCardFloor()
 return A.rankFloor("specs")
 end
 function A.specMerged(format,season,character,bound,comp)
-local against,alongside,readable,undecided,metIn,unsettled=
+local against,alongside,readable,undecided,metIn,unsettled,read
+if not A.compRounds(format)and A.specMatchFormat(format)then
+against,alongside,readable,undecided,metIn,unsettled,read=
+A.paintWalk("specMatchTally",format,season,character,bound)
+else
+against,alongside,readable,undecided,metIn,unsettled=
 A.paintWalk("specTally",format,season,character,bound,comp)
+end
 local byKey,out={},{}
 local function slot(row)
 local held=byKey[row.key]
@@ -2045,7 +2303,7 @@ end
 for i=1,#alongside do
 slot(alongside[i]).alongside=alongside[i]
 end
-return out,readable,undecided
+return out,readable,undecided,read
 end
 local SPEC_SORTS={
 spec={field="name",
@@ -2286,7 +2544,7 @@ end
 return out
 end
 function A.specCards(format,season,character,bound,comp)
-local rows,readable,undecided=A.specMerged(format,season,character,bound,comp)
+local rows,readable,undecided,read=A.specMerged(format,season,character,bound,comp)
 local floor=A.specCardFloor()
 local out,missing={},{}
 for _,kind in ipairs(CARD_KINDS)do
@@ -2325,7 +2583,7 @@ else
 missing[kind]=noneCard(kind,floor)
 end
 end
-return cardRowOf(out,missing),floor,rows,readable,undecided
+return cardRowOf(out,missing),floor,rows,readable,undecided,read
 end
 local SPEC_ENDS={
 {kind="hardest",title="HARDEST AGAINST YOU",side="against",sort="againstRate",up=true},
@@ -3297,7 +3555,7 @@ local key,clause=A.compDivider(format)
 lines[#lines+1]=("  %s: %s"):format(key:lower(),clause)
 end
 local rate=row.winRate and("%d%%"):format(math.floor(row.winRate*100+0.5))or"no result"
-local delta=A.signedText(row.ratingDelta)or"0"
+local delta=A.signedText(row.ratingDelta)or(A.movesRating(format)and"0"or"none")
 local length=row.avgDuration and A.clockText(row.avgDuration)or"unknown"
 lines[#lines+1]=("  %d. %s -- %d %ss, %s, %s, rating %s, avg %s"):format(
 i,A.compText(row.members)or"unknown comp",
@@ -3576,7 +3834,7 @@ if type(A.readingLines)=="function"then
 local ok,lines=pcall(A.readingLines,summary,nil,true)
 if ok and type(lines)=="table"then
 for i=1,#lines do
-clause[lines[i].key]=lines[i].text
+clause[lines[i].key]=lines[i].clause or lines[i].text
 entry[lines[i].key]=lines[i]
 end
 end
@@ -3646,8 +3904,8 @@ local out={}
 if type(summary)~="table"then
 return out
 end
-local function put(key,text)
-out[#out+1]={key=key,text=text}
+local function put(key,text,figure)
+out[#out+1]={key=key,text=figure~=nil and(figure.." "..text)or text,clause=text}
 end
 local pair=A.winRecordText(summary,summary.format)
 if pair~=nil and select(4,A.winRecord(summary))~=nil then
@@ -3664,7 +3922,7 @@ text=text..(", %s %s entered by hand"):format(
 byHand==1 and"one"or tostring(byHand),
 byHand==1 and"result"or"results")
 end
-put("WIN RATE",text)
+put("WIN RATE",text,A.percentText(select(4,A.winRecord(summary))))
 end
 if summary.factions~=nil and(summary.factionDecided or 0)>0 then
 local parts,sides={},{}
@@ -3766,8 +4024,9 @@ put("MMR",gapText)
 end
 local basis=A.lengthBasis(summary)
 if basis~=nil then
-put("AVG LENGTH",pane and basis or("the mean is over %d of %d matches, the rest recording no duration")
-:format(summary.durationCount,summary.matches))
+local text=pane and basis or("mean over %d of %d matches, the rest recording no duration")
+:format(summary.durationCount,summary.matches)
+put("AVG LENGTH",text,A.clockText(summary.avgDuration))
 end
 if not pane and type(notRated)=="number"and notRated>0 then
 put("NOT RATED",("%d %s named a composition and settled no winner")

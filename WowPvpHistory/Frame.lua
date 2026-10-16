@@ -1,4 +1,4 @@
--- WowPvpHistory 0.68.22
+-- WowPvpHistory 0.68.35
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -38,9 +38,9 @@ return TITLE_CREDIT_CLASS
 end
 local repaintEverything
 local matchWindowOpenOn
-local ROW_CELL_SLOTS=11
 local darkList={PIP_SLOTS=6,GRIDHOVER_TRACES=20,gridHoverN=0}
-local ROW_MARK_SLOTS=6
+darkList.ROW_CELL_SLOTS=11
+darkList.ROW_MARK_SLOTS=6
 local function columnWidths(columns)
 local widths={}
 for i=1,#columns do
@@ -366,23 +366,23 @@ end
 end
 return nil
 end
-local SEARCH_COUNT_SAMPLE="000 of 000 matches"
-local SEARCH_BOX_SAMPLE="Name-Realm"
-local SEARCH_PLACEHOLDER="search names, specs, maps"
+filterBand.SEARCH_COUNT_SAMPLE="000 of 000 matches"
+filterBand.SEARCH_BOX_SAMPLE="Name-Realm"
+filterBand.SEARCH_PLACEHOLDER="search names, specs, maps"
 function A.listSearchBand()
 return A.metric("searchHeight")+A.metric("paneGap")
 end
 function A.listSearchCountWidth()
-return A.headerFloor(SEARCH_COUNT_SAMPLE)
+return A.headerFloor(filterBand.SEARCH_COUNT_SAMPLE)
 end
 function A.listSearchClearWidth()
 return A.headerFloor("clear")+A.metric("entryInsetX")*2
 end
 function A.listSearchBoxWidth()
-return A.metric("entryInsetX")+A.headerFloor(SEARCH_PLACEHOLDER)+A.listSearchClearWidth()
+return A.metric("entryInsetX")+A.headerFloor(filterBand.SEARCH_PLACEHOLDER)+A.listSearchClearWidth()
 end
 function A.listSearchBoxFloor()
-return A.metric("entryInsetX")*2+A.headerFloor(SEARCH_BOX_SAMPLE)+A.listSearchClearWidth()
+return A.metric("entryInsetX")*2+A.headerFloor(filterBand.SEARCH_BOX_SAMPLE)+A.listSearchClearWidth()
 end
 filterBand.RESULT_SAMPLE="All results"
 filterBand.SPEC_SAMPLE="Frost Death Knight  000"
@@ -397,6 +397,8 @@ want=most
 end
 return want
 end
+filterBand.ZONE_SAMPLE="Isle of Dorn  000"
+filterBand.ZONE_PLACEHOLDER="search zones"
 filterBand.SCOPE_SAMPLE="Last 6 months"
 function A.listFilterBandWidth()
 return A.metric("rowCellGap")+A.listFilterWidth(filterBand.SPEC_SAMPLE)
@@ -592,6 +594,9 @@ hideChip(row.chips[i])
 end
 for i=1,#row.pips do
 row.pips[i]:Hide()
+end
+for i=1,#(row.kdMarks or{})do
+row.kdMarks[i]:Hide()
 end
 row.changeAxis:Hide()
 row.changeBar:Hide()
@@ -860,6 +865,42 @@ return
 end
 end
 end
+function A.layoutRowTalents(row,data,columns,offsets)
+row.talentIcons=row.talentIcons or{}
+for i=1,#row.talentIcons do
+row.talentIcons[i]:Hide()
+end
+row.talentIconsShown=0
+local held=type(data)=="table"and type(data.row)=="table"and data.row or nil
+if held==nil or not held.iconsDrawn or type(held.pvpIcons)~="table"then
+return 0
+end
+for c=1,#columns do
+local cell=row.cells[c]
+if columns[c].key=="name"and cell~=nil and type(offsets[c])=="number"then
+local size,gap=A.metric("rowTalentIcon"),A.metric("rowTalentGap")
+local x=offsets[c]+A.textRoom(cell,cell:GetText()or"")
+local drop=-math.floor((A.metric("rowHeight")-size)/2)
+for i=1,#held.pvpIcons do
+local icon=row.talentIcons[i]
+if icon==nil then
+icon=row:CreateTexture(nil,"ARTWORK")
+row.talentIcons[i]=icon
+end
+x=x+gap
+icon:ClearAllPoints()
+icon:SetPoint("TOPLEFT",row,"TOPLEFT",x,drop)
+icon:SetSize(size,size)
+icon:SetTexture(held.pvpIcons[i])
+icon:Show()
+x=x+size
+end
+row.talentIconsShown=#held.pvpIcons
+return row.talentIconsShown
+end
+end
+return 0
+end
 function darkList.layoutRow(row,data,columns,widths,offsets,top)
 darkList.hideRow(row)
 if row.selfChip==nil or type(data)~="table"or not data.flat then
@@ -928,6 +969,11 @@ end
 if played>0 then
 shiftCell(i,played*(pip+gap)+A.metric("rowCellGap"))
 end
+elseif key=="tally"and type(data.tally)=="table"and row.kdMarks~=nil then
+local used=darkList.placeMarks(row,row.kdMarks,x,height,data.tally.kills,data.tally.deaths)
+if used>0 then
+shiftCell(i,used+A.metric("rowCellGap"))
+end
 elseif key=="result"and data.crest~=nil and row.crest~=nil
 and type(A.factionCrest)=="function"then
 local atlas=A.factionCrest(data.crest)
@@ -970,6 +1016,39 @@ end
 end
 darkList.layoutExtras(row,data,columns,widths,offsets)
 end
+function darkList.markPool(owner)
+local pool={}
+for i=1,A.kdMarkCap()*2 do
+local mark=owner:CreateTexture(nil,"ARTWORK")
+mark:Hide()
+pool[i]=mark
+end
+return pool
+end
+function darkList.placeMarks(owner,pool,x,height,kills,deaths)
+for i=1,#pool do
+pool[i]:Hide()
+end
+local killMarks,deathMarks=A.kdMarks(kills,deaths)
+local mark,gap,tall=A.metric("kdMark"),A.metric("kdMarkGap"),A.metric("kdMarkHeight")
+local top=-math.max(0,math.floor((height-tall)*0.5))
+local n,at=0,x
+for _,run in ipairs({{killMarks,"win"},{deathMarks,"loss"}})do
+for _=1,run[1]do
+n=n+1
+local texture=pool[n]
+if texture~=nil then
+texture:ClearAllPoints()
+texture:SetPoint("TOPLEFT",owner,"TOPLEFT",at,top)
+texture:SetSize(mark,tall)
+texture:SetColorTexture(A.color(run[2]))
+texture:Show()
+at=at+mark+gap
+end
+end
+end
+return n>0 and(at-x-gap)or 0,n
+end
 function darkList.hideGrid(row)
 local grid=row.grid
 if grid==nil then
@@ -990,6 +1069,10 @@ grid.more:Hide()
 grid.summary:Hide()
 grid.summaryHover:Hide()
 grid.summaryHover.lines=nil
+grid.ratio:Hide()
+for i=1,#grid.kdMarks do
+grid.kdMarks[i]:Hide()
+end
 end
 function darkList.gridEnter(self)
 local lines=self.lines
@@ -1057,6 +1140,10 @@ grid.summary=row:CreateFontString(nil,"ARTWORK","GameFontHighlightSmall")
 grid.summary:SetJustifyH("LEFT")
 grid.summary:SetWordWrap(false)
 grid.summaryHover=hoverFrame()
+grid.ratio=row:CreateFontString(nil,"ARTWORK","GameFontHighlightSmall")
+grid.ratio:SetJustifyH("RIGHT")
+grid.ratio:SetWordWrap(false)
+grid.kdMarks=darkList.markPool(row)
 row.grid=grid
 return grid
 end
@@ -1303,6 +1390,27 @@ hover:ClearAllPoints()
 hover:SetPoint("TOPLEFT",row,"TOPLEFT",x,0)
 hover:SetSize(math.max(1,width),height)
 hover:SetShown(hover.lines~=nil)
+elseif column.key=="tally"then
+local held=type(data.tally)=="table"and data.tally or nil
+local used,drew=0,0
+if held then
+used,drew=darkList.placeMarks(row,grid.kdMarks,x,height,held.kills,held.deaths)
+end
+A.style(grid.summary,"numberSmall","text")
+grid.summary:ClearAllPoints()
+grid.summary:SetPoint("TOPLEFT",row,"TOPLEFT",x+(used>0 and used+gap or 0),middle("numberSmall"))
+grid.summary:SetWidth(math.max(1,width-(used>0 and used+gap or 0)))
+grid.summary:SetText(A.kdPairText(held and held.kills,held and held.deaths))
+grid.summary:Show()
+row.gridMarks=drew
+elseif column.key=="ratio"then
+local held=type(data.tally)=="table"and data.tally or nil
+A.style(grid.ratio,"numberSmall",A.kdTone(held and held.kills,held and held.deaths))
+grid.ratio:ClearAllPoints()
+grid.ratio:SetPoint("TOPLEFT",row,"TOPLEFT",x,middle("numberSmall"))
+grid.ratio:SetWidth(math.max(1,width))
+grid.ratio:SetText(A.kdText(held and held.kills,held and held.deaths)or"-")
+grid.ratio:Show()
 elseif column.key=="matches"then
 row.dayCount:ClearAllPoints()
 row.dayCount:SetPoint("TOPRIGHT",row,"TOPLEFT",x+width,middle("rowClock"))
@@ -1424,14 +1532,37 @@ end
 end
 layoutRowBar(row,data,columns,widths,offsets)
 A.layoutRowIcon(row,data,columns,widths,offsets)
+A.layoutRowTalents(row,data,columns,offsets)
 layoutRowCrest(row,data,columns,widths,offsets)
 layoutRowSecond(row,data,columns,widths,offsets,trail)
 darkList.layoutRow(row,data,columns,widths,offsets,top)
+darkList.layoutKdCell(row,data,columns,widths,offsets,top)
 return true
 end
+function darkList.layoutKdCell(row,data,columns,widths,offsets,top)
+row.kdMarksDrawn=nil
+if type(data)~="table"or data.flat or type(data.kdCell)~="table"or row.kdMarks==nil then
+return
+end
+for i=1,#columns do
+local x,width=offsets[i],widths[i]
+if columns[i].key=="tally"and type(x)=="number"and type(width)=="number"then
+local used,drew=darkList.placeMarks(row,row.kdMarks,x,A.metric("rowHeight"),
+data.kdCell.kills,data.kdCell.deaths)
+row.kdMarksDrawn=drew
+local cell=row.cells[i]
+if used>0 and cell~=nil then
+local shift=used+A.metric("rowCellGap")
+cell:ClearAllPoints()
+cell:SetPoint("TOPLEFT",row,"TOPLEFT",x+shift,top)
+cell:SetWidth(math.max(1,width-shift))
+end
+end
+end
+end
 local paintLineFace
-local metRowPaint,metRowTraced=0,nil
 local rowSurface={TOOLTIP_TRACES=20,tooltipShown=0,tooltipOn=nil,WHEEL_TRACES=30,wheelN=0}
+rowSurface.metRowPaint,rowSurface.metRowTraced=0,nil
 function rowSurface.traceWheel(scroller,fields)
 if type(A.trace)~="function"or scroller~=(window and window.list)then
 return
@@ -1794,7 +1925,7 @@ askband={span="askBandSpan"},
 }
 local function buildMatchRowRegions(row)
 row.cells={}
-for i=1,ROW_CELL_SLOTS do
+for i=1,darkList.ROW_CELL_SLOTS do
 local cell=row:CreateFontString(nil,"ARTWORK","GameFontHighlightSmall")
 cell:SetJustifyH("LEFT")
 cell:SetWordWrap(false)
@@ -1836,7 +1967,7 @@ row.lobbyAgainst:SetJustifyH("LEFT")
 row.lobbyAgainst:SetWordWrap(false)
 row.lobbyAgainst:Hide()
 row.marks={}
-for i=1,ROW_MARK_SLOTS do
+for i=1,darkList.ROW_MARK_SLOTS do
 local mark=row:CreateTexture(nil,"ARTWORK")
 mark:Hide()
 row.marks[i]=mark
@@ -1861,6 +1992,7 @@ local pip=row:CreateTexture(nil,"ARTWORK")
 pip:Hide()
 row.pips[i]=pip
 end
+row.kdMarks=darkList.markPool(row)
 row.changeAxis=row:CreateTexture(nil,"ARTWORK")
 row.changeAxis:Hide()
 row.changeBar=row:CreateTexture(nil,"OVERLAY")
@@ -2025,6 +2157,7 @@ for i=1,#row.cells do
 row.cells[i]:Hide()
 end
 hideRowBar(row)
+A.layoutRowTalents(row,nil,{},{})
 hideRowSecond(row)
 if data.names then
 row.dayRule:Hide()
@@ -2122,6 +2255,7 @@ for i=1,#row.cells do
 row.cells[i]:Hide()
 end
 hideRowBar(row)
+A.layoutRowTalents(row,nil,{},{})
 hideRowSecond(row)
 end
 row.flatGround:SetShown(data.flat==true)
@@ -2184,7 +2318,7 @@ end
 function darkList.metRowLayout(line,data,room)
 local names=data.kind=="specMetNames"and data or data.names
 names=type(names)=="table"and names or nil
-if names~=nil and names.laid~=nil and names.laidPaint==metRowPaint and names.laidRoom==room then
+if names~=nil and names.laid~=nil and names.laidPaint==rowSurface.metRowPaint and names.laidRoom==room then
 return names.laid
 end
 local own=type(data.look)=="table"and type(data.look.cells)=="table"and data.look.cells or{}
@@ -2206,8 +2340,8 @@ whenNeed=width
 end
 end
 local widths=A.metRowWidths(room,roundsNeed,whereNeed,whenNeed)
-if metRowTraced~=metRowPaint then
-metRowTraced=metRowPaint
+if rowSurface.metRowTraced~=rowSurface.metRowPaint then
+rowSurface.metRowTraced=rowSurface.metRowPaint
 A.trace("met-row",{roundsRoom=A.unitFigure(widths.rounds),
 roundsNeed=roundsNeed and A.unitFigure(roundsNeed)or nil,
 roundsMeasured=roundsNeed~=nil,
@@ -2215,7 +2349,7 @@ whereRoom=A.unitFigure(widths.where),whereNeed=A.unitFigure(whereNeed),
 whenRoom=A.unitFigure(widths.when)},"ui")
 end
 if names~=nil then
-names.laid,names.laidPaint,names.laidRoom=widths,metRowPaint,room
+names.laid,names.laidPaint,names.laidRoom=widths,rowSurface.metRowPaint,room
 end
 return widths
 end
@@ -2472,8 +2606,8 @@ face:SetPoint("BOTTOMRIGHT",row,"BOTTOMRIGHT",-A.metric("rowLabelPad"),0)
 face:Show()
 initSpecLine(face,line,room)
 end
-local OBJECTIVE_CELLS=4
-local PACE_ROWS=8
+darkList.OBJECTIVE_CELLS=4
+darkList.PACE_ROWS=8
 local function hideAll(regions)
 for i=1,#regions do
 regions[i]:Hide()
@@ -3493,7 +3627,7 @@ label:SetWidth(A.metric("objectivesSide"))
 label:SetJustifyH("LEFT")
 label:SetWordWrap(false)
 local cells={}
-for c=1,OBJECTIVE_CELLS do
+for c=1,darkList.OBJECTIVE_CELLS do
 local cell={}
 cell.value=line:CreateFontString(nil,"ARTWORK","GameFontNormalLarge")
 cell.value:SetJustifyH("RIGHT")
@@ -3532,7 +3666,7 @@ A.metric("objectivesPad"),-A.metric("objectivesPad"))
 line.paceTitle:SetJustifyH("LEFT")
 line.paceTitle:SetWordWrap(false)
 line.paceRows={}
-for i=1,PACE_ROWS do
+for i=1,darkList.PACE_ROWS do
 local row={}
 row.label=line:CreateFontString(nil,"ARTWORK","GameFontDisableSmall")
 row.label:SetWidth(A.metric("paceLabel"))
@@ -5013,6 +5147,9 @@ end
 if held=="builds"and type(A.buildsViewOffered)=="function"and A.buildsViewOffered(activeFormat)then
 return"builds"
 end
+if activeFormat=="world"then
+return"zones"
+end
 return nil
 end
 function A.specsShowing()
@@ -5020,8 +5157,8 @@ return activeBody=="stats"and type(A.specsViewShown)=="function"and A.specsViewS
 and type(A.compRounds)=="function"and A.compRounds(activeFormat)and true or false
 end
 function A.askShowing()
-if A.askQuestion(activeAsk)==nil then
-return A.askDefault()
+if A.askQuestion(activeAsk)==nil or not A.askOffered(activeAsk,activeFormat)then
+return A.askDefault(activeFormat)
 end
 return activeAsk
 end
@@ -5929,6 +6066,14 @@ frame.roster=A.pill(frame.editRow,"Note this roster",nil,A.metric("actionMin"))
 frame.roster:SetPoint("BOTTOMLEFT",frame.editRow,"BOTTOMLEFT",6,2)
 frame.editNote:SetPoint("BOTTOMLEFT",frame.roster,"BOTTOMRIGHT",A.metric("pillGap"),0)
 frame.roster:SetScript("OnClick",function()
+local held=frame.recordKind=="match"and frame.recordId and A.match(frame.recordId)or nil
+if type(held)=="table"and held.format=="world"then
+pcall(function()
+frame.editNote:SetFocus()
+frame.editNote:SetCursorPosition(frame.editNote:GetNumLetters()or 0)
+end)
+return
+end
 if frame.recordKind=="match"and frame.recordId
 and A.showNotesForMatch(frame.recordId)then
 return
@@ -6040,6 +6185,65 @@ out[#out+1]={value=filterBand.spec,label=("%s  0"):format(filterBand.spec)}
 end
 return out
 end
+function filterBand.zoned()
+return activeFormat=="world"
+end
+function filterBand.nouns()
+if activeFormat=="world"then
+return{"outing","outings"}
+end
+return{"match","matches"}
+end
+function filterBand.narrowing()
+if#searchTerms>0 then
+return true
+end
+if filterBand.zoned()then
+return filterBand.zone~=nil
+end
+return filterBand.result~=nil or filterBand.spec~=nil
+end
+function filterBand.passes(entry)
+local record=entry.kind~="incomplete"and entry.subject or nil
+if not A.searchMatches(entry.subject,searchTerms)then
+return false
+end
+if filterBand.zoned()then
+return A.zoneFilterPasses(record,filterBand.zone)
+end
+return A.resultFilterPasses(record,filterBand.result)and A.specFilterPasses(record,filterBand.spec)
+end
+function filterBand.worldRecords(season,bound)
+local entries=A.listEntries("world",A.windowCharacter(),season,bound)
+local out={}
+for i=1,#entries do
+if entries[i].kind~="incomplete"and filterBand.passes(entries[i])then
+out[#out+1]=entries[i].subject
+end
+end
+return out
+end
+function filterBand.zoneChoices()
+local out={{value=nil,label="All zones"}}
+local _,season,bound=A.windowScope()
+local records={}
+for _,entry in ipairs(A.listEntries("world",A.windowCharacter(),season,bound))do
+if entry.kind~="incomplete"then
+records[#records+1]=entry.subject
+end
+end
+local held=false
+for _,row in ipairs(A.recordZones(records))do
+out[#out+1]={value=row.zone,label=("%s  %d"):format(row.zone,row.count)}
+if row.zone==filterBand.zone then
+held=true
+end
+end
+if filterBand.zone~=nil and not held then
+out[#out+1]={value=filterBand.zone,label=("%s  0"):format(filterBand.zone)}
+end
+return out
+end
 local function buildListSearch(frame)
 local host=frame.listHost
 local gap=A.metric("rowCellGap")
@@ -6075,6 +6279,18 @@ if ok and spec then
 frame.filterSpec=spec
 chain(spec)
 end
+local okZone,zone=pcall(A.dropdown,host,filterBand.zoneChoices(),function(value)
+A.setMatchFilter("zone",value,"pick")
+end)
+if okZone and zone then
+frame.filterZone=zone
+if frame.filterScope then
+zone:SetPoint("RIGHT",frame.filterScope,"LEFT",-gap,0)
+else
+zone:SetPoint("RIGHT",host,"TOPRIGHT",-A.metric("rowLabelPad"),middle)
+end
+zone:Hide()
+end
 end
 frame.searchBox=A.entry(host)
 frame.searchBox:SetHeight(A.metric("searchHeight"))
@@ -6096,7 +6312,7 @@ end
 local ok,text=pcall(self.GetText,self)
 A.setMatchSearch(ok and text or nil,"typed")
 end)
-A.entryPlaceholder(frame.searchBox,SEARCH_PLACEHOLDER)
+A.entryPlaceholder(frame.searchBox,filterBand.SEARCH_PLACEHOLDER)
 frame.searchBox:SetScript("OnEnterPressed",function(self)
 pcall(self.ClearFocus,self)
 end)
@@ -6250,7 +6466,7 @@ frame.listHead:SetPoint("TOPRIGHT",frame.listHost,"TOPRIGHT",0,-A.listSearchBand
 frame.listHead:Hide()
 buildListSearch(frame)
 frame.listHeadNames={}
-for i=1,ROW_CELL_SLOTS do
+for i=1,darkList.ROW_CELL_SLOTS do
 local name=frame.listHead:CreateFontString(nil,"ARTWORK","GameFontDisableSmall")
 name:SetJustifyH("LEFT")
 name:SetWordWrap(false)
@@ -6319,7 +6535,7 @@ frame.listPin.names:SetPoint("BOTTOMLEFT",frame.listPin,"BOTTOMLEFT",0,0)
 frame.listPin.names:SetPoint("BOTTOMRIGHT",frame.listPin,"BOTTOMRIGHT",0,0)
 frame.listPin.names:SetHeight(A.metric("rowHeadRow"))
 frame.listPin.names.cells={}
-for i=1,ROW_CELL_SLOTS do
+for i=1,darkList.ROW_CELL_SLOTS do
 local name=frame.listPin.names:CreateFontString(nil,"ARTWORK","GameFontDisableSmall")
 name:SetJustifyH("LEFT")
 name:SetWordWrap(false)
@@ -6440,7 +6656,7 @@ frame.compGroupHead:SetPoint("TOPLEFT",frame.compHeading,"BOTTOMLEFT",0,-4)
 frame.compGroupHead:SetPoint("TOPRIGHT",frame.compHeading,"BOTTOMRIGHT",0,-4)
 frame.compGroupHead:Hide()
 frame.compGroupNames={}
-for i=1,ROW_CELL_SLOTS do
+for i=1,darkList.ROW_CELL_SLOTS do
 local name=frame.compGroupHead:CreateFontString(nil,"ARTWORK","GameFontDisableSmall")
 name:SetJustifyH("LEFT")
 name:SetWordWrap(false)
@@ -6456,7 +6672,7 @@ frame.compPaneHead:SetPoint("TOPRIGHT",frame.compHeading,"BOTTOMRIGHT",0,-4)
 frame.compPaneHead:Hide()
 frame.compPaneHeadNames={}
 frame.compPaneHeadSorts={}
-for i=1,ROW_CELL_SLOTS do
+for i=1,darkList.ROW_CELL_SLOTS do
 local name=frame.compPaneHead:CreateFontString(nil,"ARTWORK","GameFontDisableSmall")
 name:SetJustifyH("LEFT")
 name:SetWordWrap(false)
@@ -6631,7 +6847,7 @@ frame.askPaneHead:SetPoint("TOPRIGHT",frame.askPaneHeading,"BOTTOMRIGHT",0,-4)
 frame.askPaneHead:Hide()
 frame.askPaneHeadNames={}
 frame.askPaneHeadSorts={}
-for i=1,ROW_CELL_SLOTS do
+for i=1,darkList.ROW_CELL_SLOTS do
 local name=frame.askPaneHead:CreateFontString(nil,"ARTWORK","GameFontDisableSmall")
 name:SetJustifyH("LEFT")
 name:SetWordWrap(false)
@@ -6685,7 +6901,7 @@ frame.askBandHead:SetHeight(A.metric("rowHeadRow"))
 frame.askBandHead:SetPoint("TOPLEFT",frame.askMatchBand,"TOPLEFT",0,-A.metric("rowHeight"))
 frame.askBandHead:SetPoint("TOPRIGHT",frame.askMatchBand,"TOPRIGHT",0,-A.metric("rowHeight"))
 frame.askBandHeadNames={}
-for i=1,ROW_CELL_SLOTS do
+for i=1,darkList.ROW_CELL_SLOTS do
 local name=frame.askBandHead:CreateFontString(nil,"ARTWORK","GameFontDisableSmall")
 name:SetJustifyH("LEFT")
 name:SetWordWrap(false)
@@ -6753,10 +6969,11 @@ local function emptyBecause(stored,admitted,held)
 if admitted>0 or held>0 then
 return nil
 end
+local noun=filterBand.nouns()[2]
 if stored==0 then
-return"No matches yet."
+return("No %s yet."):format(noun)
 end
-return"No matches."
+return("No %s."):format(noun)
 end
 local function rowRoom()
 local frame=window
@@ -6882,6 +7099,16 @@ end
 if tone then
 style.verdict={tone=tone}
 end
+local tally=nil
+if record and subject.format=="world"then
+local kills,deaths=A.worldCounts(subject)
+tone=A.worldEdgeTone(subject)
+style.ratio={tone=A.kdTone(kills,deaths)}
+if not(type(subject.map)=="table"and type(subject.map.name)=="string"and subject.map.name~="")then
+style.where={tone="dim"}
+end
+tally=kills~=nil and{kills=kills,deaths=deaths}or nil
+end
 style.how={tone="dim"}
 style.time={tone="dim"}
 style.span={tone="dim"}
@@ -6922,6 +7149,7 @@ crest=record and A.recordFaction(subject)or nil,
 selfChip=record and A.rowSelfChip(subject)or nil,
 chips=A.rowChips(subject,kind),
 rounds=rounds,
+tally=tally,
 change=change,
 changeScale=scale,
 height=A.metric("rowListRow"),
@@ -6935,6 +7163,10 @@ darkList.grid=nil
 local drawn=nil
 if not flatList then
 local gridColumns,gridRest,gridFold=A.sessionGrid(entries,A.listTableWidth(),activeFormat)
+local world=activeFormat=="world"and A.worldSessionGrid(columns)or nil
+if world~=nil then
+gridColumns,gridRest,gridFold=world,{},false
+end
 darkList.grid={columns=gridColumns,rest=gridRest,fold=gridFold}
 drawn={}
 end
@@ -7044,7 +7276,7 @@ end
 end
 local ticks,over=A.sessionTicks(listed)
 if drawn then
-drawn[#drawn+1]={key=session.key,newest=s==1,listed=#listed}
+drawn[#drawn+1]={key=session.key,newest=s==1,listed=#listed,open=open}
 end
 rows[#rows+1]={
 separator=true,
@@ -7061,6 +7293,7 @@ gridColumns=grid.columns,
 gridCells=cells,
 gridSummary=summary,
 gridSummaryLines=summaryLine and{summaryLine}or nil,
+tally=activeFormat=="world"and A.worldSessionTally(listed)or nil,
 ticks=ticks,
 ticksOver=over,
 fold=grid.fold or nil,
@@ -7103,6 +7336,22 @@ end
 addRecord(entries[i])
 rows[#rows].noDay=true
 end
+end
+if activeFormat=="world"and drawn~=nil and activeBody~="stats"then
+local outingRows,marks=0,0
+for _,line in ipairs(drawn)do
+if line.open then
+outingRows=outingRows+line.listed
+end
+end
+for i=1,#rows do
+local tally=rows[i].grid and rows[i].tally or nil
+if type(tally)=="table"then
+local killMarks,deathMarks=A.kdMarks(tally.kills,tally.deaths)
+marks=marks+killMarks+deathMarks
+end
+end
+A.trace("worldgrid",{n=#drawn,rows=outingRows,outings=#entries,marks=marks},"ui")
 end
 darkList.sessionsEntry=nil
 if activeBody~="stats"then
@@ -7254,14 +7503,11 @@ window.list.pinHeight=A.metric("rowDayRow")
 +(darkList.namesInList and A.metric("rowHeadRow")or 0)
 end
 searchScoped=#entries
-local narrowing=#searchTerms>0 or filterBand.result~=nil or filterBand.spec~=nil
+local narrowing=filterBand.narrowing()
 if narrowing then
 local kept,keptLeft={},0
 for i=1,#entries do
-local record=entries[i].kind~="incomplete"and entries[i].subject or nil
-if A.searchMatches(entries[i].subject,searchTerms)
-and A.resultFilterPasses(record,filterBand.result)
-and A.specFilterPasses(record,filterBand.spec)then
+if filterBand.passes(entries[i])then
 kept[#kept+1]=entries[i]
 if entries[i].kind=="incomplete"then
 keptLeft=keptLeft+1
@@ -7339,7 +7585,9 @@ window.list.selectedAt=selectedAt
 end
 local empty
 if#searchTerms>0 then
-empty=#entries==0 and("No matches for %s."):format(searchText)or nil
+empty=#entries==0 and("No %s for %s."):format(filterBand.nouns()[2],searchText)or nil
+elseif narrowing and filterBand.zoned()then
+empty=#entries==0 and("No outings in %s."):format(tostring(filterBand.zone))or nil
 elseif narrowing then
 empty=#entries==0 and("No %smatches%s."):format(
 filterBand.result~=nil and(filterBand.result.." ")or"",
@@ -7359,12 +7607,13 @@ contents=rowCount or 0,
 })
 end
 function A.searchCountLine(shown,scoped)
-return("%d of %d %s"):format(shown or 0,scoped or 0,scoped==1 and"match"or"matches")
+local nouns=filterBand.nouns()
+return("%d of %d %s"):format(shown or 0,scoped or 0,scoped==1 and nouns[1]or nouns[2])
 end
 function filterBand.heldFits()
 local held=filterBand.held
 if held==nil or held.format~=activeFormat or held.character~=A.windowCharacter()
-or held.spec~=filterBand.spec or held.scope~=A.summaryScope()then
+or held.spec~=filterBand.spec or held.zone~=filterBand.zone or held.scope~=A.summaryScope()then
 return false
 end
 return type(A.storeMarkSame)=="function"and A.storeMarkSame(held.mark,A.storeMark())
@@ -7375,6 +7624,20 @@ return
 end
 if frame.filterResult then
 A.setDropdownChoices(frame.filterResult,filterBand.RESULT_CHOICES,filterBand.result)
+end
+local zoned=filterBand.zoned()
+if frame.filterResult then
+frame.filterResult:SetShown(not zoned)
+end
+if frame.filterSpec then
+frame.filterSpec:SetShown(not zoned)
+end
+if frame.filterZone then
+frame.filterZone:SetShown(zoned)
+end
+if frame.searchBox and frame.searchBox.controlPlaceholder then
+pcall(frame.searchBox.controlPlaceholder.SetText,frame.searchBox.controlPlaceholder,
+zoned and filterBand.ZONE_PLACEHOLDER or filterBand.SEARCH_PLACEHOLDER)
 end
 if not(reuse and filterBand.heldFits())then
 filterBand.held=nil
@@ -7387,9 +7650,14 @@ filterBand.held={
 format=activeFormat,character=A.windowCharacter(),spec=filterBand.spec,
 scope=A.summaryScope(),mark=type(A.storeMark)=="function"and A.storeMark()or nil,
 specChoices=specChoices,scopeChoices=okScope and scopeChoices or nil,
+zone=filterBand.zone,
+zoneChoices=(frame.filterZone and zoned)and filterBand.zoneChoices()or nil,
 }
 end
 local held=filterBand.held
+if frame.filterZone and zoned and held.zoneChoices then
+A.setDropdownChoices(frame.filterZone,held.zoneChoices,filterBand.zone)
+end
 if frame.filterSpec and held.specChoices then
 A.setDropdownChoices(frame.filterSpec,held.specChoices,filterBand.spec)
 end
@@ -7413,6 +7681,10 @@ local controls={
 {name="result",control=frame.filterResult,sample=filterBand.RESULT_SAMPLE},
 {name="spec",control=frame.filterSpec,sample=filterBand.SPEC_SAMPLE},
 }
+if filterBand.zoned()then
+controls[2]={name="zone",control=frame.filterZone,sample=filterBand.ZONE_SAMPLE}
+controls[3]=nil
+end
 for i=1,#controls do
 local held=controls[i]
 if held.control then
@@ -7485,7 +7757,7 @@ local function paintSearchCount(frame,reuse)
 if not(frame and frame.searchCount)then
 return
 end
-local active=#searchTerms>0 or filterBand.result~=nil or filterBand.spec~=nil
+local active=filterBand.narrowing()
 frame.searchCount:SetText(active and A.searchCountLine(searchShown,searchScoped)or"")
 frame.searchCount:SetShown(active)
 if frame.searchClear then
@@ -7509,9 +7781,35 @@ window.listEmpty:SetText(emptyWhy or"")
 A.style(window.listEmpty,"note","dimmer")
 window.listEmpty:SetShown(listing and emptyWhy~=nil and#rows==0)
 end
+function filterBand.paintWorldStrip()
+local held=filterBand.strip
+if not(window and window.summary and type(held)=="table"and held.format==activeFormat
+and held.character==A.windowCharacter()and held.scope==A.summaryScope()
+and type(A.storeMarkSame)=="function"and A.storeMarkSame(held.mark,A.storeMark()))then
+return false
+end
+local _,season,bound=A.windowScope()
+local okListed,records=pcall(filterBand.worldRecords,season,bound)
+if not okListed then
+return false
+end
+local reading={}
+for key,value in pairs(held.reading)do
+reading[key]=value
+end
+reading.hero=A.worldReading(records,(type(A.scopeNow)=="function"and A.scopeNow())or time())
+return A.paintStandingStrip(window.summary,held.summary,reading)~=nil
+end
 local function paintSearchedList(reuse)
 if not(window and window.list)then
 return false
+end
+if activeFormat=="world"and activeBody~="stats"then
+local okStrip,painted=pcall(A.withPaintScope,filterBand.paintWorldStrip)
+if not(okStrip and painted)then
+A.refreshWindow()
+return true
+end
 end
 return A.withPaintScope(function()
 local listing=activeBody~="stats"
@@ -7540,7 +7838,7 @@ A.trace("filter",{filter=filter,choice=choice or"all",shown=searchShown,
 scoped=searchScoped,via=via},"ui")
 end
 function A.setMatchFilter(filter,choice,via)
-if filter~="result"and filter~="spec"then
+if filter~="result"and filter~="spec"and filter~="zone"then
 return nil
 end
 if type(choice)=="string"then
@@ -7567,6 +7865,9 @@ end
 end
 filterBand.result=choice
 traced=choice
+elseif filter=="zone"then
+filterBand.zone=choice
+traced=choice~=nil and"zone"or nil
 else
 if choice~=nil then
 local matched
@@ -7585,10 +7886,10 @@ function A.matchFilter()
 if window==nil then
 pcall(listRows)
 end
-return filterBand.result,filterBand.spec,searchShown,searchScoped
+return filterBand.result,filterBand.spec,searchShown,searchScoped,filterBand.zone
 end
-local SEARCH_SETTLE=0.6
-local searchGeneration=0
+filterBand.SEARCH_SETTLE=0.6
+filterBand.searchGeneration=0
 local function traceSearch(via)
 local excluding=0
 for i=1,#searchTerms do
@@ -7617,11 +7918,11 @@ end
 if not paintSearchedList(true)then
 pcall(listRows)
 end
-searchGeneration=searchGeneration+1
+filterBand.searchGeneration=filterBand.searchGeneration+1
 if via=="typed"and type(C_Timer)=="table"and type(C_Timer.After)=="function"then
-local generation=searchGeneration
-C_Timer.After(SEARCH_SETTLE,function()
-if generation==searchGeneration then
+local generation=filterBand.searchGeneration
+C_Timer.After(filterBand.SEARCH_SETTLE,function()
+if generation==filterBand.searchGeneration then
 pcall(traceSearch,via)
 end
 end)
@@ -7755,8 +8056,8 @@ h.available=body
 rows[i]={head=h,text=lines[i],height=A.metric("rowHeight")}
 elseif h and h.kind=="pacing"then
 local drawn=#(h.pacing and h.pacing.rounds or{})
-if drawn>PACE_ROWS then
-drawn=PACE_ROWS
+if drawn>darkList.PACE_ROWS then
+drawn=darkList.PACE_ROWS
 end
 rows[i]={head=h,text=lines[i],height=A.paceHeight(drawn)}
 elseif h and h.kind=="lobbyGroup"then
@@ -7780,10 +8081,15 @@ end
 rows[i]={head=h,text=lines[i],height=height}
 elseif h and h.kind=="build"then
 rows[i]={head=h,text=lines[i],height=A.metric("participantRow")}
-elseif h and(h.kind=="ladder"or h.kind=="cards")then
+elseif h and(h.kind=="ladder"or h.kind=="cards"or h.kind=="tally")then
 h.available=body
-rows[i]={head=h,text=lines[i],
-height=h.kind=="ladder"and A.ladderHeight()or A.roundCardsHeight(h.cards)}
+local height=A.roundCardsHeight(h.cards)
+if h.kind=="ladder"then
+height=A.ladderHeight()
+elseif h.kind=="tally"then
+height=A.outingCellsHeight()
+end
+rows[i]={head=h,text=lines[i],height=height}
 else
 local stamps=(h~=nil and h.kind=="stamps")or nil
 local text=lines[i]
@@ -7809,7 +8115,8 @@ A.style(window.askOver,"label","dim")
 window.askFormat:SetText(activeFormat==nil and"All formats"or A.formatLabel(activeFormat))
 A.style(window.askFormat,"bodyText","text")
 local matches,_,undated=A.askPopulation(activeFormat,season,character,bound)
-local count=("%d %s"):format(matches,matches==1 and"match"or"matches")
+local nouns=filterBand.nouns()
+local count=("%d %s"):format(matches,matches==1 and nouns[1]or nouns[2])
 if(undated or 0)>0 then
 count=("%s, %d undated"):format(count,undated)
 end
@@ -7942,8 +8249,9 @@ A.drawSpec({icon=card.icon,name=card.name},face.classToken,face.spec,subjectWidt
 else
 card.icon:Hide()
 card.name:SetPoint("TOPLEFT",card,"TOPLEFT",cardPad,-rowPlan.drop)
-card.name:SetText(face.name or(face.empty and"none yet")or"")
-A.style(card.name,"nameMedium",(faint and"underText")or(face.empty and"dimmer")or"text")
+card.name:SetText(face.name or(face.empty and(face.emptyText or"none yet"))or"")
+A.style(card.name,"nameMedium",(faint and"underText")
+or(face.empty and(face.emptyTone or"dimmer"))or"text")
 card.name:SetWidth(math.max(1,subjectWidth))
 card.name:SetShown(subject or face.empty==true)
 end
@@ -8039,7 +8347,11 @@ shownUnder=A.askUnderShown(),
 asides=window.askCards[i]and window.askCards[i]:IsShown()and window.askCards[i].overDrawn or nil,
 overGap=overGap,
 overGapFrom=overGapFrom,
-cardDrew=cards[i]and(cards[i].empty and"none"or cards[i].faint and"fallback"or"lead")or nil,
+cardDrew=cards[i]and((cards[i].noLoss and"noLoss")or(cards[i].empty and"none")
+or(cards[i].faint and"fallback")or"lead")or nil,
+cardSet=table.concat(A.askKeys(activeFormat),","),
+samplesRead=answer.samplesRead,
+samplesSkipped=answer.samplesSkipped,
 },"ui")
 end
 end
@@ -8059,8 +8371,30 @@ A.trace("stats-bests",{statsView="bests",format=activeFormat,rows=#held.rows,
 bestCols=type(held.bestKeys)=="table"and#held.bestKeys or 0,leftOutWins=held.leftOut or 0},"ui")
 elseif tableMode=="builds"then
 held=A.buildsAnswer(activeFormat,season,character,bound)
+if window.buildMeasure==nil then
+window.buildMeasure=window:CreateFontString(nil,"ARTWORK","GameFontHighlightSmall")
+window.buildMeasure:Hide()
+end
+A.style(window.buildMeasure,"bodyText","text")
+local measured={}
+for i=1,#held.rows do
+measured[i]={name=A.textRoom(window.buildMeasure,held.rows[i].name),
+icons=#(held.rows[i].pvpIcons or{})}
+end
+local buildColumns=A.rowColumns(held.columns)
+local form,_,rowIcons=A.buildIconsForm(
+type(buildColumns)=="table"and columnWidths(buildColumns)[1]or nil,measured)
+for i=1,#held.rows do
+held.rows[i].iconsDrawn=form=="icons"and#(held.rows[i].pvpIcons or{})>0 or nil
+end
 A.trace("stats-builds",{statsView="builds",format=activeFormat,rows=#held.rows,
-buildSpecs=held.specs or 0,beforeBuilds=held.before or 0,unreadBuilds=held.unread or 0},"ui")
+buildSpecs=held.specs or 0,beforeBuilds=held.before or 0,unreadBuilds=held.unread or 0,
+numbered=held.numbered or 0,rowIcons=rowIcons},"ui")
+end
+if tableMode=="zones"then
+held=A.zonesAnswer(season,character,bound)
+A.trace("stats-zones",{statsView="zones",format=activeFormat,rows=#held.rows,
+unplaced=held.unplaced or 0,n=held.read or 0},"ui")
 end
 if tableMode=="maps"then
 held=A.mapsAnswer(activeFormat,season,character,bound)
@@ -8085,7 +8419,7 @@ end
 A.style(window.askPaneHeading,"label","dim")
 window.askPaneHeading:SetText(held.group or"")
 window.askPaneHeading:Show()
-local columns=A.rowColumns(held.columns)
+local columns=A.askHeaderColumns(held)
 local shown={}
 for field,value in pairs(held)do
 shown[field]=value
@@ -8156,43 +8490,23 @@ end
 local bandHeadRow=metLook and 1 or A.metric("rowHeadRow")
 window.askBandHead:SetHeight(bandHeadRow)
 local bandTop=A.metric("rowHeight")+bandHeadRow
-local cardsFoot=2+(drawn>0 and(at-A.metric("cardGap"))or 0)
-local wideNote=compTextHeight(noteText,"note",A.listHostWidth(false)-A.metric("rowLabelPad"))
 if noteRoom>0 then
 noteRoom=noteRoom+noteLift
 end
-if wideNote>0 then
-wideNote=wideNote+noteLift
-end
-local function bandRoomFor(beside,note)
-if#bandIds==0 or type(paneHost)~="number"then
-return 0
-end
-local rows=A.askBandRoom(paneHost-bandTop,{
+local bandRoom=0
+if#bandIds>0 and type(paneHost)=="number"then
+local fits=A.askBandRoom(paneHost-bandTop,{
 heading=A.fontSize("label"),
 head=headRoom,
-note=note,
+note=noteRoom,
 wanted=(#bandIds+(metLook and 1 or 0))*A.metric("rowHeight"),
-beside=beside,
 })
-return rows>0 and(rows+bandTop)or 0
+bandRoom=fits>0 and(fits+bandTop)or 0
 end
-local bandRoom=bandRoomFor(cardsFoot,wideNote)
-local bandWide=bandRoom>0
-if bandWide then
-noteRoom=wideNote
-else
-bandRoom=bandRoomFor(nil,noteRoom)
-end
-window.askBandWide=bandRoom>0 and bandWide or nil
 local bandBlock=bandRoom>0 and(bandRoom+A.metric("paneGap"))or 0
 if answered then
 window.askNote:ClearAllPoints()
-if bandWide then
-window.askNote:SetPoint("BOTTOMLEFT",window.askHost,"BOTTOMLEFT",A.metric("rowLabelPad"),noteLift)
-else
 window.askNote:SetPoint("BOTTOMLEFT",window.askPaneHost,"BOTTOMLEFT",A.metric("rowLabelPad"),noteLift)
-end
 window.askNote:SetPoint("BOTTOMRIGHT",window.askPaneHost,"BOTTOMRIGHT",0,noteLift)
 end
 window.askMatchBand:ClearAllPoints()
@@ -8254,8 +8568,16 @@ window.askBandHeadRule,bandColumns)or nil
 window.askBandHeadRule:SetColorTexture(A.color("hairline"))
 window.askBandHeadRule:Show()
 end
-metRowPaint=metRowPaint+1
+rowSurface.metRowPaint=rowSurface.metRowPaint+1
 A.setRows(window.askMatches,bandRows)
+local bandMatchRows=0
+for i=1,#bandRows do
+if bandRows[i].kind~="specMetNames"then
+bandMatchRows=bandMatchRows+1
+end
+end
+A.trace("ask-band",{card=held.key,bandSpan=bandRoom>0 and"half"or"none",rows=bandMatchRows,
+graphFolded=A.graphFolded()},"ui")
 if bandRoom>0 and type(A.noteViewport)=="function"then
 local _,bandWhy=A.bandHeight(window.askMatches.box)
 A.noteViewport("the answer's matches",bandRoom-bandTop,A.metric("rowHeight"),false,bandWhy,
@@ -8326,7 +8648,7 @@ return nil,held
 end
 local function detailElements(lines,width)
 local out={}
-metRowPaint=metRowPaint+1
+rowSurface.metRowPaint=rowSurface.metRowPaint+1
 local room=type(width)=="number"
 and(width-A.metric("rowNamePad")*2-A.metric("rowLabelPad"))or nil
 for i=1,#lines do
@@ -8777,7 +9099,8 @@ end
 if id==nil then
 return"Match"
 end
-local words={("Match #%s"):format(A.matchIdText(id))}
+local noun=record.format=="world"and"Outing"or"Match"
+local words={("%s #%s"):format(noun,A.matchIdText(id))}
 local label=record.format and A.formatLabel(record.format)or nil
 if label~=nil and label~=""then
 words[#words+1]=label
@@ -9502,6 +9825,7 @@ compTally,compSkipped,compConsidered,compRanked=walked[1],walked[2],walked[4],wa
 end)
 local regionStarted
 darkList.hero,darkList.duelClasses=nil,nil
+filterBand.strip=nil
 local painted,painting=pcall(function()
 if window.summary and type(A.summarize)=="function"then
 local scope,season,bound=A.windowScope()
@@ -9515,12 +9839,23 @@ if type(A.readingContext)=="function"then
 notRated=A.readingContext(activeFormat,season,A.windowCharacter(),bound)
 end
 local standingReading=nil
-if activeBody~="stats"and type(A.standingReading)=="function"then
+local worldStats=activeBody=="stats"and activeFormat=="world"
+if(activeBody~="stats"or worldStats)and type(A.standingReading)=="function"then
 local heroStarted=A.switchClock()
+local listed=nil
+if activeFormat=="world"and not worldStats then
+local okListed,records=pcall(filterBand.worldRecords,season,bound)
+listed=okListed and records or nil
+end
 local okStanding,held=pcall(A.standingReading,activeFormat,season,A.windowCharacter(),
-bound,summary,(type(A.scopeNow)=="function"and A.scopeNow())or time())
+bound,summary,(type(A.scopeNow)=="function"and A.scopeNow())or time(),listed)
 A.switchPhase("hero",heroStarted)
 standingReading=okStanding and held or nil
+if listed~=nil and standingReading~=nil then
+filterBand.strip={format=activeFormat,character=A.windowCharacter(),
+scope=A.summaryScope(),mark=type(A.storeMark)=="function"and A.storeMark()or nil,
+summary=summary,reading=standingReading}
+end
 if not okStanding then
 A.trace("strip",{format=activeFormat,reason="threw"},"ui")
 end
@@ -9797,8 +10132,12 @@ typedScope=want.scope
 A.holdScope(true)
 end
 A.showWindow()
-return{format=activeFormat,body=activeBody,card=A.askShowing(),scope=A.summaryScope(),
-table=window and window.tableShowing or nil}
+local scope=A.windowScope()
+return{format=activeFormat,body=activeBody,card=A.askShowing(),scope=scope,
+stored=A.summaryScope(),table=window and window.tableShowing or nil}
+end
+function A.paintedScope()
+return window and window.summary and window.summary.paintedScope or nil
 end
 function A.showWindowState(want)
 want=type(want)=="table"and want or{}
@@ -9860,13 +10199,8 @@ GameTooltip:AddLine("Click to open the match history.",1,1,1)
 GameTooltip:Show()
 end)
 end
-function WowPvpHistory_OnAddonCompartmentLeave()
-if not GameTooltip then
-return
-end
-pcall(function()
-GameTooltip:Hide()
-end)
+function WowPvpHistory_OnAddonCompartmentLeave(_,button)
+A.hideOwnedTooltip(button)
 end
 BINDING_HEADER_WOWPVPHISTORY="PvP History"
 BINDING_NAME_WOWPVPHISTORY_TOGGLE="Open the match history"

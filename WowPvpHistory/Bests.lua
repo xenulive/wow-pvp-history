@@ -1,4 +1,4 @@
--- WowPvpHistory 0.68.22
+-- WowPvpHistory 0.68.35
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -94,6 +94,7 @@ local admitted,states={},{}
 for i=1,#db.matches do
 local record=db.matches[i]
 if type(record)=="table"and(format==nil or record.format==format)
+and A.bestsViewOffered(record.format)
 and(season==nil or A.recordSeason(record)==season)
 and A.recordedBy(record,character)and A.recordSince(record,bound)
 and ownRow(record)~=nil and not botVenue(record)then

@@ -1,4 +1,4 @@
--- WowPvpHistory 0.68.22
+-- WowPvpHistory 0.68.35
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -21,7 +21,7 @@ version=read(A.version),
 description=(type(A.description)=="string"and A.description~="")and A.description or nil,
 rows={
 {key="BY",value=read(credit)},
-{key="LICENCE",value=read(A.license)},
+{key="LICENSE",value=read(A.license)},
 {key="WEBSITE",value=read(A.website)},
 },
 }

@@ -1,4 +1,4 @@
--- WowPvpHistory 0.68.22
+-- WowPvpHistory 0.68.35
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -8,7 +8,7 @@ local canaccesstable=canaccesstable
 local REASON_SECRET="secret"
 local REASON_NO_CONFIG="no-config"
 local REASON_ERROR="error"
-local UNNAMED="Unnamed build"
+local UNNAMED="No loadout name"
 local function ask(fn,...)
 if type(fn)~="function"then
 return"absent"
@@ -122,13 +122,14 @@ end
 function A.talentsLabel(record)
 local block=type(record)=="table"and record.talents or nil
 if type(block)~="table"or type(block.string)~="string"then
-return nil
+return nil,nil
 end
-local parts={type(block.loadout)=="string"and block.loadout or UNNAMED}
+local unnamed=type(block.loadout)~="string"
+local parts={unnamed and UNNAMED or block.loadout}
 if type(block.heroName)=="string"then
 parts[#parts+1]=block.heroName
 end
-return table.concat(parts,", ")
+return table.concat(parts,", "),unnamed
 end
 function A.pvpTalentInfo(id)
 if type(GetPvpTalentInfoByID)~="function"or type(id)~="number"then
@@ -162,7 +163,7 @@ end
 return line
 end
 function A.buildHead(record)
-local label=A.talentsLabel(record)
+local label,unnamed=A.talentsLabel(record)
 if label==nil then
 return nil
 end
@@ -176,7 +177,7 @@ local text="BUILD  "..label
 if#names>0 then
 text=text.."  "..table.concat(names,", ")
 end
-return{kind="build",text=text,label=label,pvp=pvp,id=record.id}
+return{kind="build",text=text,label=label,pvp=pvp,id=record.id,unnamed=unnamed or nil}
 end
 function A.talentsString(record)
 local block=type(record)=="table"and record.talents or nil
@@ -229,6 +230,7 @@ end
 for i=1,#db.matches do
 local record=db.matches[i]
 local admitted=type(record)=="table"and(format==nil or record.format==format)
+and A.buildsViewOffered(record.format)
 and(season==nil or A.recordSeason(record)==season)
 and A.recordedBy(record,character)and A.recordSince(record,bound)
 if admitted then
@@ -262,6 +264,13 @@ if row.newest==nil or(type(stamp)=="string"and stamp>=row.newest)then
 row.newest=type(stamp)=="string"and stamp or row.newest
 row.loadout=type(block.loadout)=="string"and block.loadout or nil
 row.heroName=type(block.heroName)=="string"and block.heroName or nil
+local pvp={}
+for _,id in ipairs(type(block.pvp)=="table"and block.pvp or{})do
+if type(id)=="number"then
+pvp[#pvp+1]=id
+end
+end
+row.pvp=pvp
 end
 local outcome,_,derived=A.recordVerdict(record)
 if outcome~=nil then
@@ -298,20 +307,38 @@ return answer
 end
 local mixed=(specCount or 0)>1
 local rows={}
+local seen,numbered={},0
 for i=1,#order do
 local row=order[i]
 local wins,losses=A.winRecord(row)
-local name=row.loadout or UNNAMED
+local loadout=row.loadout or UNNAMED
+local same=table.concat({loadout,row.heroName or"",mixed and tostring(row.spec or"")or""},"\n")
+seen[same]=(seen[same]or 0)+1
+local number=seen[same]>1 and seen[same]or nil
+if number then
+loadout=("%s %d"):format(loadout,number)
+numbered=numbered+1
+end
+local name=loadout
 if row.heroName then
 name=("%s, %s"):format(name,row.heroName)
 end
 if mixed and type(row.spec)=="string"then
 name=("%s (%s)"):format(name,row.spec)
 end
+local icons={}
+for _,id in ipairs(row.pvp or{})do
+local _,icon=A.pvpTalentInfo(id)
+if icon~=nil then
+icons[#icons+1]=icon
+end
+end
 rows[i]={key=row.key,name=name,met=row.played,wins=wins or 0,losses=losses or 0,
-winRate=row.winRate,ids=row.ids,spec=row.spec}
+winRate=row.winRate,ids=row.ids,spec=row.spec,number=number,
+unnamed=row.loadout==nil or nil,pvp=row.pvp or{},pvpIcons=icons}
 end
 answer.rows,answer.under=rows,{}
+answer.numbered=numbered
 answer.group=mixed and"YOUR BUILDS, BY SPEC"or"YOUR BUILDS"
 answer.considered=considered
 answer.before=before
@@ -330,6 +357,20 @@ if#rows==0 then
 answer.reason=(before or 0)>0 and answer.note or"no matches here yet"
 end
 return answer
+end
+function A.buildIconsForm(room,rows)
+local step=A.metric("rowTalentIcon")+A.metric("rowTalentGap")
+local widest,total=0,0
+for i=1,#(rows or{})do
+local icons=type(rows[i].icons)=="number"and rows[i].icons or 0
+local need=(type(rows[i].name)=="number"and rows[i].name or 0)+icons*step
+widest=math.max(widest,need)
+total=total+icons
+end
+if type(room)~="number"or room<=0 or widest>room then
+return"names",widest,0
+end
+return"icons",widest,total
 end
 function A.buildsViewOffered(format)
 return format~="duel"and format~="world"

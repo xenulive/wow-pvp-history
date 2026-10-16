@@ -1,4 +1,4 @@
--- WowPvpHistory 0.68.22
+-- WowPvpHistory 0.68.35
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -21,6 +21,7 @@ faint={0.239,0.263,0.290},
 accent={1,0.820,0},
 win={0.310,0.780,0.470},
 loss={0.880,0.360,0.340},
+level={0.620,0.640,0.670},
 horde={0.784,0.180,0.220},
 alliance={0.380,0.600,0.960},
 cardMatches={0.435,0.659,0.863},
@@ -484,7 +485,7 @@ return DEFAULT_THEME
 end
 function A.themeChoices()
 return{
-{value="blizzard",label="Match the game",tooltip="Keep the client's frame art and colours."},
+{value="blizzard",label="Match the game",tooltip="Keep the client's frame art and colors."},
 {value="flat",label="Dark panel",tooltip="The addon's own flat dark window."},
 }
 end
@@ -968,6 +969,8 @@ rowMatchRow=34,
 rowListRow=32,
 rowChip=20,
 rowChipGap=3,
+rowTalentIcon=14,
+rowTalentGap=3,
 rowPip=6,
 rowPipGap=2,
 rowChangeHalf=18,
@@ -1059,6 +1062,11 @@ gridTick=7,
 gridTickHeight=12,
 gridTickGap=2,
 gridDot=3,
+kdMark=3,
+kdMarkGap=1,
+kdMarkHeight=12,
+rowColTally=150,
+rowColKd=56,
 standingStrip=84,
 standingPad=18,
 standingLineGap=4,
@@ -1630,12 +1638,6 @@ end
 if spare<room then
 room=spare
 end
-if type(parts.beside)=="number"and parts.beside>0 then
-local under=host-parts.beside-METRICS.paneGap-held(parts.note)-METRICS.paneGap
-if under<room then
-room=under
-end
-end
 if room<METRICS.rowHeight then
 return 0
 end
@@ -1877,6 +1879,9 @@ end
 return math.floor(scaled+0.5)/100
 end
 function A.stripHeight(headline)
+if headline=="standing"then
+return A.metric("standingStrip")
+end
 local tiles=A.tileHeight()
 if headline==false then
 return tiles

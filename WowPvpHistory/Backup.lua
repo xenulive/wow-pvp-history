@@ -1,4 +1,4 @@
--- WowPvpHistory 0.68.22
+-- WowPvpHistory 0.68.35
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -329,7 +329,45 @@ return true
 end
 local RESTORE_SLOTS={current=true,pinned=true}
 local RESTORE_KEEPS={"pruneLog"}
-local function refill(db,value,keep)
+local function backupEntryWins(live,backup)
+if type(backup)~="table"then
+return false
+end
+if type(live)~="table"then
+return true
+end
+local liveStamped,backupStamped=type(live.at)=="string",type(backup.at)=="string"
+if liveStamped and backupStamped then
+return backup.at>live.at
+end
+return backupStamped and not liveStamped
+end
+local function mergeCharacters(live,backup)
+live=type(live)=="table"and live or nil
+backup=type(backup)=="table"and backup or nil
+if live==nil and backup==nil then
+return nil,0,0,0
+end
+local merged,kept,taken,both={},0,0,0
+for guid,entry in pairs(live or{})do
+local other=backup and backup[guid]
+if other==nil then
+merged[guid]=entry
+kept=kept+1
+else
+merged[guid]=backupEntryWins(entry,other)and other or entry
+both=both+1
+end
+end
+for guid,entry in pairs(backup or{})do
+if merged[guid]==nil then
+merged[guid]=entry
+taken=taken+1
+end
+end
+return merged,kept,taken,both
+end
+local function refill(db,value,keep,mergeRegistry)
 local repairs=A.repairStore(value)
 for i=1,#repairs do
 A.trace("repair",{
@@ -342,6 +380,7 @@ local kept={}
 for _,key in ipairs(keep or{})do
 kept[key]=db[key]
 end
+local liveCharacters=mergeRegistry and db.characters or nil
 for key in pairs(db)do
 db[key]=nil
 end
@@ -350,6 +389,10 @@ db[key]=held
 end
 for _,key in ipairs(keep or{})do
 db[key]=kept[key]
+end
+local charsKept,charsTaken,charsBoth
+if mergeRegistry then
+db.characters,charsKept,charsTaken,charsBoth=mergeCharacters(liveCharacters,db.characters)
 end
 if type(db.schema)~="number"or db.schema<A.schema then
 db.schema=A.schema
@@ -376,6 +419,7 @@ db.players={}
 db.playerIndexVersion=nil
 A.rebuildIndex()
 pcall(A.noteCanary)
+return charsKept,charsTaken,charsBoth
 end
 function A.restorePreview(which)
 if not codec then
@@ -423,10 +467,16 @@ traceBackup("restore","refused","no-database")
 return nil,"no database"
 end
 local before=#db.matches
-refill(db,preview.payload,RESTORE_KEEPS)
+local charsKept,charsTaken,charsBoth=refill(db,preview.payload,RESTORE_KEEPS,true)
 pcall(A.notePrune,"restore",before)
 A.storeReplaced()
-traceBackup("restore","applied",nil,#db.matches)
+A.trace("restore",{
+state="applied",
+n=#db.matches,
+charsKept=charsKept,
+charsTaken=charsTaken,
+charsBoth=charsBoth,
+},"data")
 return{matches=#db.matches,replaced=before,at=preview.entry.at}
 end
 function A.exportString()

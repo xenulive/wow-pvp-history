@@ -1,4 +1,4 @@
--- WowPvpHistory 0.68.22
+-- WowPvpHistory 0.68.35
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -33,6 +33,7 @@ local FIELDS={
 "kept",
 "keptIn",
 "skipped",
+"charsKept","charsTaken","charsBoth",
 "attempt","off",
 "format","rated","bracket","source","reason","id","n","build","version",
 "fromId",
@@ -167,8 +168,14 @@ local FIELDS={
 "height","srcBottom",
 "floor","ranked","under","shownUnder","spec","class","ends",
 "weeks","cells","blank","draws",
+"weekBar","weekStep",
+"bandSpan","graphFolded",
 "cellTexts",
 "cardDrew",
+"cardSet","samplesRead","samplesSkipped",
+"soleView",
+"lineScope","boxScope",
+"classColored",
 "labels","widths","rules","rate","centre","shed","edge","trend","inset","barWidth",
 "asides","moment",
 "overGap","overGapFrom",
@@ -176,6 +183,8 @@ local FIELDS={
 "rowHeights","nameForm","ratingForm","chart","cell",
 "statsView",
 "selected","pillView",
+"pillOrder",
+"numbered","rowIcons",
 "ratedRows",
 "seasonBreaks","icons","squares",
 "stripSeason",
@@ -222,6 +231,8 @@ local FIELDS={
 "bestCols","leftOutWins",
 "buildSpecs","beforeBuilds","unreadBuilds",
 "copyShown",
+"tabLabel","tabAsked","tabFloor","tabWidth",
+"outings","marks",
 }
 function A.debugFields()
 local out={}
@@ -241,7 +252,7 @@ FIELD_TYPES[keys[i]]=set
 end
 end
 typed("number",{
-"restriction","rounds","rows","kept","skipped","attempt","off","bracket","n","season",
+"restriction","rounds","rows","kept","skipped","charsKept","charsTaken","charsBoth","attempt","off","bracket","n","season",
 "arena","winner","winnerOdd","out","from","gap","mmr","noRow","noGuid","secretGuid",
 "left","seg","total","strip","plot","reading","lines","players","notes","incomplete",
 "drops","stored","shown","tagLines","tagCut","noteMarks","readAgainst","readWith",
@@ -260,7 +271,7 @@ typed("number",{
 "unratedPlayers","rounded","breaks","stripRoom","namesRows","delta","offset","landed",
 "firstAfter","content","extent","snapTo","wheelN","d","tries","measured","drawnWidth",
 "reserved","roundsRoom","roundsNeed","height","srcBottom","floor","ranked","under",
-"weeks","cells","blank","draws","rules","rate","centre","trend","inset","barWidth",
+"weeks","cells","blank","draws","weekBar","weekStep","rules","rate","centre","trend","inset","barWidth",
 "overGap","need","needShort","chart","cell","ratedRows","seasonBreaks","icons","squares",
 "stripSeason","stripFloor","bodyWidth","bodyFloor","over1","over5","over10","over50",
 "over100","over500","over1000","drainMean","drainMax","samples","peak","session","foldUs",
@@ -271,6 +282,9 @@ typed("number",{
 "tiles","note","column","noted","drawn","ratingFigure","openedGen","currentGen",
 "placedScreen","windowsOpen","windows","objectiveRows","sortSlot","first",
 "pvpTalents","earlier","bestCols","leftOutWins","buildSpecs","beforeBuilds","unreadBuilds",
+"numbered","rowIcons",
+"tabAsked","tabFloor","tabWidth","outings","marks",
+"samplesRead","samplesSkipped","classColored",
 })
 typed("string",{
 "state","keptIn","format","source","reason","build","version","ids","tint","noteAt",
@@ -283,21 +297,22 @@ typed("string",{
 "ladder","with","against","matchWith","matchAgainst","sort","fmt","sortDir","tileForms",
 "lead","repBars","empty","last","result","heads","listHead","headColor","namesColor",
 "grid","gridFold","line","tok","cols","spec","class","ends","cellTexts","cardDrew",
-"labels","widths","shed","edge","asides","moment","overGapFrom","chips","rowHeights",
-"nameForm","ratingForm","statsView","selected","pillView","widthFrom","record","window",
+"labels","widths","shed","edge","bandSpan","asides","moment","overGapFrom","chips","rowHeights",
+"nameForm","ratingForm","statsView","selected","pillView","pillOrder","widthFrom","record","window",
 "cardMetLast","chipFrom","nameClass","cardIndex","cardNames","verdict","chip",
 "switch","alerts","groupNotes","today","title","counts","find","meter","band",
 "meterRoom","bests","firstWeek","lastWeek","fontRole","gameFaces","ownFaces","field",
 "foundType","clientEvent","modifiers","tabFrom","sideFilter",
 "screen","windowsReset","sides","to","slot","tileValues","descForm","sortColumn",
-"rateSign","bestsSet",
+"rateSign","bestsSet","tabLabel",
+"cardSet","soleView","lineScope","boxScope",
 })
 typed("boolean",{
 "rangeRead","scrollRead",
 "rated","capped","head","named","pinned","evicted","listTook","met","dossier","panel",
 "listUp","metUp","bandUp","bare","typed","shared","held","unlocked","lockdown",
 "storeLockdown","saved","groundShown","noteLine","tagLine","lastSeen","marked","search",
-"lastFit","cls","roundsMeasured","shownUnder","cardNote","reached","cards","teamCards",
+"lastFit","cls","roundsMeasured","shownUnder","graphFolded","cardNote","reached","cards","teamCards",
 "default","copy","created","hidden",
 "rating","carriesNote","columnDrawn","rateClause",
 "loadoutRead","heroRead","copyShown",

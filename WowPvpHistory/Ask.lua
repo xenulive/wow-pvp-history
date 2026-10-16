@@ -1,4 +1,4 @@
--- WowPvpHistory 0.68.22
+-- WowPvpHistory 0.68.35
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -39,8 +39,35 @@ end
 end
 return nil
 end
-function A.askDefault()
-return QUESTIONS[1].key
+local DUEL_CARDS={beats=true,where=true}
+local BATTLEGROUND_CARDS={beats=true,worth=true,where=true}
+local CARD_SETS={
+world={},
+["shuffle-unrated"]={where=true},
+duel=DUEL_CARDS,
+bg=BATTLEGROUND_CARDS,
+rbg=BATTLEGROUND_CARDS,
+blitz=BATTLEGROUND_CARDS,
+["blitz-unrated"]=BATTLEGROUND_CARDS,
+}
+function A.askOffered(key,format)
+if A.askQuestion(key)==nil then
+return false
+end
+local set=type(format)=="string"and CARD_SETS[format]or nil
+return set==nil or set[key]==true
+end
+function A.askKeys(format)
+local out={}
+for i=1,#QUESTIONS do
+if A.askOffered(QUESTIONS[i].key,format)then
+out[#out+1]=QUESTIONS[i].key
+end
+end
+return out
+end
+function A.askDefault(format)
+return A.askKeys(format)[1]or QUESTIONS[1].key
 end
 local ASK_SORT_DEFAULT={
 beats={column="rate",ascending=true},
@@ -62,18 +89,32 @@ return summary.matches or 0,summary.decided or 0,summary.undated or 0
 end
 local NOTHING="none yet"
 local UNREADABLE="this couldn't be read: try /reload"
+local function countsMatches(format)
+return not(type(A.compRounds)=="function"and A.compRounds(format))
+and(format=="duel"or(type(A.specMatchFormat)=="function"and A.specMatchFormat(format)))
+end
 local function specReadings(format,season,character,bound,comp)
-if type(A.compRounds)~="function"or not A.compRounds(format)then
-return nil,nil,"only Solo Shuffle can answer this: pick that tab"
+local rounds=type(A.compRounds)=="function"and A.compRounds(format)
+local matches=type(A.specMatchFormat)=="function"and A.specMatchFormat(format)
+if not rounds and not matches then
+return nil,nil,"this tab keeps no spec readings"
 end
 if type(A.specCards)~="function"then
 return nil,nil,UNREADABLE,nil,"the comp readings did not load"
 end
-local ok,cards,floor,rows=pcall(A.specCards,format,season,character,bound,comp)
+local ok,cards,floor,rows,_,_,read=pcall(A.specCards,format,season,character,bound,comp)
 if not ok then
 return nil,nil,UNREADABLE,nil,"the comp readings could not be taken"
 end
-return type(cards)=="table"and cards or{},type(rows)=="table"and rows or{},nil,floor
+return type(cards)=="table"and cards or{},type(rows)=="table"and rows or{},nil,floor,nil,
+type(read)=="table"and read or nil
+end
+local function readFigures(answer,read,which)
+local side=type(read)=="table"and read[which]or nil
+if type(side)=="table"then
+answer.samplesRead,answer.samplesSkipped=side.counted,side.skipped
+end
+return answer
 end
 local function cardFor(cards,kind)
 if type(cards)~="table"then
@@ -135,35 +176,59 @@ end
 table.sort(under,underOrder)
 return ranked,under,floor
 end
+local function answerDuelBeats(season,character,bound)
+if type(A.duelClassTally)~="function"then
+return{reason=UNREADABLE,fault="the class readings did not load",preview=NOTHING}
+end
+local ok,rows,read=pcall(A.duelClassTally,season,character,bound)
+if not ok or type(rows)~="table"then
+return{reason=UNREADABLE,fault="the class readings could not be taken",preview=NOTHING}
+end
+local ranked,under,floor=specSides(rows,"against","againstRate",true)
+local answer={rows=ranked,under=under,preview=ranked[1]and ranked[1].name or NOTHING,
+lead=ranked[1],floor=floor,samplesRead=read.counted,samplesSkipped=read.skipped}
+if#ranked==0 and#under==0 then
+answer.reason=(read.skipped or 0)>0
+and("no class was found for the opponent in %d %s"):format(read.skipped,
+read.skipped==1 and"duel"or"duels")
+or"no class has been against you yet"
+elseif#ranked==0 then
+answer.reason=("no class has been against you %d times yet"):format(floor)
+end
+return answer
+end
 local function answerBeats(format,season,character,bound,comp)
-local _,rows,reason,_,fault=specReadings(format,season,character,bound,comp)
+if format=="duel"then
+return answerDuelBeats(season,character,bound)
+end
+local _,rows,reason,_,fault,read=specReadings(format,season,character,bound,comp)
 if reason then
 return{reason=reason,fault=fault,preview=NOTHING}
 end
 local ranked,under,floor=specSides(rows,"against","againstRate",true)
 if#ranked==0 and#under==0 then
-return{reason="no spec has been against you yet",preview=NOTHING}
+return readFigures({reason="no spec has been against you yet",preview=NOTHING},read,"against")
 end
-return{
+return readFigures({
 rows=ranked,
 under=under,
 preview=ranked[1]and ranked[1].name or NOTHING,
 lead=ranked[1],
 reason=#ranked==0 and("no spec has been against you %d times yet"):format(floor)or nil,
 floor=floor,
-}
+},read,"against")
 end
 local function answerWorth(format,season,character,bound,comp)
-local cards,rows,reason,_,fault=specReadings(format,season,character,bound,comp)
+local cards,rows,reason,_,fault,read=specReadings(format,season,character,bound,comp)
 if reason then
 return{reason=reason,fault=fault,preview=NOTHING}
 end
 local ranked,under,floor=specSides(rows,"alongside","alongRate",false)
 if#ranked==0 and#under==0 then
-return{reason="no spec has been beside you yet",preview=NOTHING}
+return readFigures({reason="no spec has been beside you yet",preview=NOTHING},read,"alongside")
 end
 local swing=cardFor(cards,"swing")
-return{
+return readFigures({
 rows=ranked,
 under=under,
 preview=ranked[1]and ranked[1].name or NOTHING,
@@ -171,7 +236,7 @@ lead=ranked[1],
 reason=#ranked==0 and("no spec has been beside you %d times yet"):format(floor)or nil,
 floor=floor,
 note=(#ranked>0 and swing)and("%s swings %s"):format(swing.name,swing.rate)or nil,
-}
+},read,"alongside")
 end
 function A.mapEntries(rows)
 local floor=A.rankFloor("maps")
@@ -327,6 +392,24 @@ end
 end
 return best
 end
+local function lostRows(rows,under)
+local decided=false
+for _,list in ipairs({rows or{},under or{}})do
+local lost={}
+for _,row in ipairs(list)do
+if(row.wins or 0)+(row.losses or 0)>0 then
+decided=true
+end
+if(row.losses or 0)>=1 then
+lost[#lost+1]=row
+end
+end
+if#lost>0 then
+return lost,list==rows,nil
+end
+end
+return{},false,decided or nil
+end
 local ANSWERS={
 beats=answerBeats,
 where=answerWhere,
@@ -354,18 +437,39 @@ if key=="where"and comp==nil then
 answer.unit={"decided","decided"}
 answer.floorUnit="decided matches"
 end
-if key=="comp"and not(type(A.compRounds)=="function"and A.compRounds(format))then
+if(key=="comp"and not(type(A.compRounds)=="function"and A.compRounds(format)))
+or((key=="beats"or key=="worth")and countsMatches(format))then
 answer.unit={"match","matches"}
 answer.floorUnit="decided matches"
+end
+if(key=="beats"or key=="worth")and countsMatches(format)then
+answer.headerNames={met="GAMES"}
+if format=="duel"then
+answer.headerNames.name="CLASS"
+answer.noun={"class","classes"}
+end
 end
 if key=="comp"and type(A.compCountName)=="function"then
 answer.countName=A.compCountName(format)
 end
+if key=="beats"and format=="duel"then
+answer.group="THE CLASSES YOU MEET"
+end
 answer.table=question.table
 answer.comp=comp
+local lossOnly=key=="beats"or key=="where"
+if lossOnly and type(answer.lead)=="table"and(answer.lead.losses or 0)<1 then
+answer.lead=nil
+answer.preview=NOTHING
+answer.reason=answer.reason or"nothing has beaten you yet"
+end
 if answer.lead==nil then
 local ranked=type(answer.rows)=="table"and#answer.rows>0
-answer.fallback=fallbackRow(ranked and answer.rows or answer.under,key)
+local pool=ranked and answer.rows or answer.under
+if lossOnly then
+pool,ranked,answer.noLoss=lostRows(answer.rows,answer.under)
+end
+answer.fallback=fallbackRow(pool,key)
 answer.fallbackUnder=answer.fallback~=nil and not ranked or nil
 end
 return answer
@@ -412,8 +516,31 @@ return askUnderShown
 end
 function A.askAnswers(format,season,character,bound,comp)
 local out={}
-for i=1,#QUESTIONS do
-out[#out+1]=A.askAnswer(QUESTIONS[i].key,format,season,character,bound,comp)
+local keys=A.askKeys(format)
+for i=1,#keys do
+out[#out+1]=A.askAnswer(keys[i],format,season,character,bound,comp)
+end
+return out
+end
+function A.askHeaderColumns(answer)
+if type(answer)~="table"or answer.columns==nil or type(A.rowColumns)~="function"then
+return nil
+end
+local columns=A.rowColumns(answer.columns)
+if type(columns)~="table"then
+return columns
+end
+local renamed=type(answer.headerNames)=="table"and answer.headerNames or{}
+local out={}
+for i=1,#columns do
+local copy={}
+for field,value in pairs(columns[i])do
+copy[field]=value
+end
+if renamed[copy.key]~=nil then
+copy.name=renamed[copy.key]
+end
+out[i]=copy
 end
 return out
 end
@@ -428,12 +555,30 @@ if(undated or 0)>0 then
 lines[#lines+1]=("  %d record%s carried no date, so a range left %s out"):format(
 undated,undated==1 and""or"s",undated==1 and"it"or"them")
 end
+if format=="world"then
+local zones=A.zonesAnswer(season,character,bound)
+lines[#lines+1]=("Where you fight: %d %s"):format(#zones.rows,#zones.rows==1 and"zone"or"zones")
+if zones.reason then
+lines[#lines+1]="  "..zones.reason
+end
+local function counted(figure,one,many)
+return("%s %s"):format(figure,figure=="1"and one or many)
+end
+for i=1,#zones.rows do
+local row=zones.rows[i]
+lines[#lines+1]=("  %s: %s, %s, %s, K/D %s"):format(row.name,counted(row.outings,"outing","outings"),
+counted(row.kills,"kill","kills"),counted(row.deaths,"death","deaths"),row.kd)
+end
+end
 local answers=A.askAnswers(format,season,character,bound)
 for i=1,#answers do
 local answer=answers[i]
 local groups=type(answer.rows)=="table"and#answer.rows or 0
 lines[#lines+1]=("%s: %d %s, %s"):format(answer.title,groups,
 groups==1 and"row"or"rows",tostring(answer.preview))
+if answer.group then
+lines[#lines+1]="  table "..tostring(answer.group)
+end
 if answer.reason then
 lines[#lines+1]="  "..answer.reason
 end
@@ -444,7 +589,7 @@ local card=A.askCard(answer)
 if card==nil then
 lines[#lines+1]="  no card"
 elseif card.empty then
-lines[#lines+1]=("  card %s: none yet"):format(card.title)
+lines[#lines+1]=("  card %s: %s"):format(card.title,card.emptyText or NOTHING)
 else
 lines[#lines+1]=("  card %s: %s %s %s%s%s"):format(card.title,card.name,
 card.rate,card.record,card.over and(" "..card.over)or"",card.faint and", faint"or"")
@@ -523,7 +668,8 @@ rate=function(row)
 return A.percentText(row.winRate)or"-"
 end,
 }
-for _,key in ipairs({"damage","healing","rating","mmr","fastest"})do
+for _,key in ipairs({"damage","healing","rating","mmr","fastest","outings","kills","deaths","kd",
+"tally"})do
 ASK_CELL[key]=function(row)
 return type(row[key])=="string"and row[key]or"-"
 end
@@ -562,8 +708,17 @@ style={rate={role="bodyText",tone=A.winRateTone(row.winRate)or"dim"}}
 end
 bar={record=row.winRate}
 end
+if row.unnamed and not faint then
+style=style or{}
+style.name={role="bodyText",tone="dim"}
+end
+if row.kdTone~=nil and not faint then
+style=style or{}
+style.kd={role="bodyText",tone=row.kdTone}
+end
 return{row=row,cells=cells,cellTint=tint,cellStyle=style,
 cellBar=bar,askKey=answer.key,faint=faint or nil,
+kdCell=type(row.kdCounts)=="table"and row.kdCounts or nil,
 askRow=(A.askRowOpens(answer)and type(row.ids)=="table"and#row.ids>0)
 and A.askRowKey(row)or nil}
 end
@@ -639,8 +794,10 @@ end
 if#met==0 then
 return out
 end
+local outings=key=="OUTINGS"
 out[1]={kind="specMetHead",key=key,
-text=("%d %s"):format(#met,#met==1 and"match"or"matches")}
+text=("%d %s"):format(#met,#met==1 and(outings and"outing"or"match")
+or(outings and"outings"or"matches"))}
 if key=="MET IN"and type(A.metNamesLine)=="function"then
 out[#out+1]=A.metNamesLine(met)
 end
@@ -721,6 +878,11 @@ row=answer.fallback
 faint=true
 end
 if row==nil then
+if answer.noLoss then
+return{key=answer.key,title=title,empty=true,noLoss=true,
+emptyText=answer.key=="beats"and"Nothing has beaten you yet"or"No losses yet",
+emptyTone="dim"}
+end
 return{key=answer.key,title=title,empty=true}
 end
 local met=type(row.met)=="number"and row.met or 0
@@ -940,7 +1102,7 @@ local column=A.askSort(answer.key)
 local question=A.askQuestion(answer.key)
 local heading=column
 if question and(question.columns~=nil or answer.key=="comp")and type(A.rowColumns)=="function"then
-local columns=answer.key=="comp"and COMP_SORT_COLUMNS or A.rowColumns(question.columns)or{}
+local columns=answer.key=="comp"and COMP_SORT_COLUMNS or A.askHeaderColumns(answer)or{}
 for i=1,#columns do
 if columns[i].sort==column then
 heading=columns[i].name
@@ -1050,7 +1212,10 @@ end
 return shown
 end
 function A.mapsViewOffered(format,season,bound)
-if format~="duel"and format~="world"and format~="unknown"then
+if format=="world"then
+return false
+end
+if format~="duel"and format~="unknown"then
 return true
 end
 if type(A.mapTally)~="function"then
@@ -1059,6 +1224,53 @@ end
 local character=type(A.windowCharacter)=="function"and A.windowCharacter()or nil
 local ok,rows=pcall(A.mapTally,format,season,character,bound)
 return ok and type(rows)=="table"and#rows>=2
+end
+local ZONE_COLUMNS={
+{key="outings",name="OUTINGS"},
+{key="tally",name="KILLS AND DEATHS",metric="rowColTally",align="LEFT"},
+{key="kd",name="K/D"},
+}
+function A.zoneColumns()
+local room=type(A.askTableWidth)=="function"and A.askTableWidth()or 0
+local furniture=A.metric("rowLabelPad")*2+A.metric("rowCellGap")*#ZONE_COLUMNS
+local columns={{key="name",name="ZONE",metric="askName"}}
+local used=0
+for i=1,#ZONE_COLUMNS do
+local held=ZONE_COLUMNS[i]
+local share=held.metric and A.metric(held.metric)or math.floor(room/8)
+local width=math.max(share,A.headerFloor(held.name))
+columns[#columns+1]={key=held.key,name=held.name,metric="askRate",
+align=held.align or"RIGHT",width=width}
+used=used+width
+end
+columns[1].width=math.max(A.headerFloor("ZONE"),room-furniture-used)
+return columns
+end
+function A.zonesAnswer(season,character,bound)
+local answer={key="zones",title="Where you fight",group="WHERE YOU FIGHT",opens="OUTINGS",
+noun={"zone","zones"},columns=A.zoneColumns(),rows={},under={}}
+local ok,rows,unplaced,read=pcall(A.zoneTally,season,character,bound)
+if not ok or type(rows)~="table"then
+answer.reason=UNREADABLE
+return answer
+end
+for i=1,#rows do
+local row=rows[i]
+answer.rows[i]={key=row.key,name=row.name,met=row.outings,ids=row.ids,
+outings=tostring(row.outings),
+kills=row.kills~=nil and tostring(row.kills)or"-",
+deaths=row.deaths~=nil and tostring(row.deaths)or"-",
+tally=A.kdPairText(row.kills,row.deaths),
+kdCounts=row.kills~=nil and{kills=row.kills,deaths=row.deaths}or nil,
+kd=A.kdText(row.kills,row.deaths)or"-",kdTone=A.kdTone(row.kills,row.deaths)}
+end
+answer.unplaced,answer.read=unplaced,read
+if#answer.rows==0 then
+answer.reason=(unplaced or 0)>0
+and("no zone was recorded for %d %s"):format(unplaced,unplaced==1 and"outing"or"outings")
+or"no outings here yet"
+end
+return answer
 end
 local function bestFirst(a,b)
 if a.winRate~=b.winRate then
