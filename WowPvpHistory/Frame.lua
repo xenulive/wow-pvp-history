@@ -1,4 +1,4 @@
--- WowPvpHistory 0.68.35
+-- WowPvpHistory 0.68.47
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -1171,7 +1171,7 @@ end
 if frame.listHead and frame.listHead:IsShown()then
 entry.headColor=shownNameColor(frame.listHeadNames)
 end
-local drawn={}
+local drawn,labels,short={},{},0
 local box=frame.list and frame.list.box
 if box then
 pcall(box.ForEachFrame,box,function(element)
@@ -1181,7 +1181,18 @@ if okI and type(index)=="number"and okD and type(data)=="table"and data.names
 and element:IsShown()then
 drawn[#drawn+1]={index=index,cells=element.cells}
 end
+if okD and type(data)=="table"and data.grid and data.session and element.dayName
+and element:IsShown()then
+labels[#labels+1]=element.dayName
+if type(element.sessionFormAt)=="number"and element.sessionFormAt>1 then
+short=short+1
+end
+end
 end)
+end
+if entry.grid~=nil then
+entry.labelsCut=A.cutTexts(labels)
+entry.labelsShort=short
 end
 table.sort(drawn,function(a,b)
 return a.index<b.index
@@ -1213,6 +1224,11 @@ headColor=entry.headColor,
 namesColor=entry.namesColor,
 grid=entry.grid,
 gridFold=entry.gridFold,
+labelsCut=entry.labelsCut,
+labelsShort=entry.labelsShort,
+sessionNeed=entry.sessionNeed,
+sessionWidth=entry.sessionWidth,
+earlierLabels=entry.earlierLabels,
 },"ui")
 end
 function A.askCardLines()
@@ -1304,7 +1320,9 @@ row.dayName:ClearAllPoints()
 row.dayName:SetPoint("TOPLEFT",row,"TOPLEFT",x+caretW+gap,labelTop)
 row.dayName:SetWidth(math.max(1,room))
 local forms=type(data.textForms)=="table"and data.textForms or{data.text or""}
-row.dayName:SetText(A.fittedForm(row.dayName,room,forms)or forms[#forms]or"")
+local fitted,at=A.fittedForm(row.dayName,room,forms)
+row.dayName:SetText(fitted or forms[#forms]or"")
+row.sessionFormAt=at or#forms
 row.dayName:Show()
 if data.fold then
 row.sessionSpan:ClearAllPoints()
@@ -1537,7 +1555,48 @@ layoutRowCrest(row,data,columns,widths,offsets)
 layoutRowSecond(row,data,columns,widths,offsets,trail)
 darkList.layoutRow(row,data,columns,widths,offsets,top)
 darkList.layoutKdCell(row,data,columns,widths,offsets,top)
+darkList.layoutCellOpens(row,data,columns,widths,offsets,top)
 return true
+end
+function darkList.layoutCellOpens(row,data,columns,widths,offsets,top)
+local opens=type(data)=="table"and not data.flat and type(data.cellOpens)=="table"and data.cellOpens or nil
+row.cellButtons=row.cellButtons or{}
+local drawn=0
+for i=1,#columns do
+local id=opens and columns[i].key and opens[columns[i].key]or nil
+local button=row.cellButtons[i]
+if id~=nil and type(offsets[i])=="number"and type(widths[i])=="number"then
+if button==nil then
+button=CreateFrame("Button",nil,row)
+button:RegisterForClicks("LeftButtonUp")
+button.hover=button:CreateTexture(nil,"HIGHLIGHT")
+button.hover:SetAllPoints(button)
+button:SetScript("OnClick",function(self)
+if self.matchId~=nil then
+A.showMatchWindow("match",self.matchId,"bests")
+end
+end)
+row.cellButtons[i]=button
+end
+button.matchId=id
+button.hover:SetColorTexture(A.color("hover"))
+button:ClearAllPoints()
+button:SetPoint("TOPLEFT",row,"TOPLEFT",offsets[i],top)
+button:SetSize(widths[i],A.metric("rowHeight"))
+button:Show()
+drawn=drawn+1
+elseif button~=nil then
+button.matchId=nil
+button:Hide()
+end
+end
+for i=#columns+1,#row.cellButtons do
+if row.cellButtons[i]then
+row.cellButtons[i].matchId=nil
+row.cellButtons[i]:Hide()
+end
+end
+row.cellOpensDrawn=drawn
 end
 function darkList.layoutKdCell(row,data,columns,widths,offsets,top)
 row.kdMarksDrawn=nil
@@ -2440,16 +2499,16 @@ end
 if kind=="metGridHead"then
 local widths=A.metGridWidths(room,data.byRound==true)
 local gap=A.metric("rowCellGap")
-local match=cell(1,"MATCH","label","dim",widths.match)
+local match=cell(1,"MATCH","label","labelMuted",widths.match)
 match:SetPoint("LEFT",line,"LEFT",widths.lead,0)
 local before=match
 if data.byRound then
-before=cell(2,"ROUND","label","dim",widths.round)
+before=cell(2,"ROUND","label","labelMuted",widths.round)
 before:SetPoint("LEFT",match,"RIGHT",gap,0)
 end
-local side=cell(3,"YOUR SIDE","label","dim",widths.side)
+local side=cell(3,"YOUR SIDE","label","labelMuted",widths.side)
 side:SetPoint("LEFT",before,"RIGHT",gap,0)
-cell(4,"RESULT","label","dim",widths.result):SetPoint("RIGHT",line,"RIGHT",0,0)
+cell(4,"RESULT","label","labelMuted",widths.result):SetPoint("RIGHT",line,"RIGHT",0,0)
 line.text:SetText("")
 line.text:Hide()
 return
@@ -6459,6 +6518,11 @@ frame.measureRow:SetJustifyH("LEFT")
 frame.measureRow:SetWordWrap(true)
 frame.measureRow:Hide()
 A.style(frame.measureRow,"rowNote")
+frame.measureLabel=frame:CreateFontString(nil,"ARTWORK","GameFontHighlightSmall")
+frame.measureLabel:SetJustifyH("LEFT")
+frame.measureLabel:SetWordWrap(false)
+frame.measureLabel:Hide()
+A.style(frame.measureLabel,"label")
 frame.listHead=CreateFrame("Frame",nil,frame.listHost)
 frame.listHead:SetHeight(A.metric("rowHeadRow"))
 frame.listHead:SetPoint("TOPLEFT",frame.listHost,"TOPLEFT",0,-A.listSearchBand())
@@ -7155,15 +7219,55 @@ changeScale=scale,
 height=A.metric("rowListRow"),
 }
 end
+function darkList.columnWidth(columns,key)
+for _,column in ipairs(type(columns)=="table"and columns or{})do
+if column.key==key then
+return column.width
+end
+end
+return nil
+end
+function darkList.sessionLabelNeed(drawing,labelFormsOf)
+local measure=window and window.measureLabel
+local need=nil
+for _,session in ipairs(type(drawing)=="table"and drawing or{})do
+local forms=type(labelFormsOf)=="table"and labelFormsOf[session]or nil
+local width=type(forms)=="table"and A.clientTextWidth(measure,forms[1])or nil
+if width~=nil and(need==nil or width>need)then
+need=width
+end
+end
+return need
+end
 function darkList.rows(entries,sessions,unplaced,flatList,columns,room,rowEntries,lineRecords)
 local rows,selected,selectedIsLeft,selectedAt={},nil,false,nil
 local namesRows=0
 darkList.lastSessions=sessions
 darkList.grid=nil
 local drawn=nil
+local shown={}
+for i=1,#entries do
+shown[entries[i]]=true
+end
+local now=(type(A.scopeNow)=="function"and A.scopeNow())or time()
+local drawing={}
+for s=1,#sessions do
+for _,entry in ipairs(sessions[s].entries)do
+if shown[entry]then
+drawing[#drawing+1]=sessions[s]
+break
+end
+end
+end
+local labelFormsOf,earlierLabels=A.sessionGridLabelList(drawing,now)
+local sessionNeed=nil
 if not flatList then
-local gridColumns,gridRest,gridFold=A.sessionGrid(entries,A.listTableWidth(),activeFormat)
-local world=activeFormat=="world"and A.worldSessionGrid(columns)or nil
+sessionNeed=darkList.sessionLabelNeed(drawing,labelFormsOf)
+local sessionWidth=A.sessionColumnNeed(sessionNeed,
+A.clientTextWidth(window and window.measureLabel,"+"))
+local gridColumns,gridRest,gridFold=A.sessionGrid(entries,A.listTableWidth(),activeFormat,
+sessionWidth)
+local world=activeFormat=="world"and A.worldSessionGrid(columns,sessionWidth)or nil
 if world~=nil then
 gridColumns,gridRest,gridFold=world,{},false
 end
@@ -7185,10 +7289,8 @@ height=A.metric("rowHeadRow"),
 }
 namesRows=namesRows+1
 end
-local shown={}
 local scale=0
 for i=1,#entries do
-shown[entries[i]]=true
 if entries[i].kind~="incomplete"then
 local delta=select(3,A.recordLadderPair(entries[i].subject))
 if type(delta)=="number"and math.abs(delta)>scale then
@@ -7205,19 +7307,8 @@ if subject.id~=nil and subject.id==selectedId and entry.kind==selectedKind then
 selected,selectedIsLeft,selectedAt=subject,entry.kind=="incomplete",#rows
 end
 end
-local now=(type(A.scopeNow)=="function"and A.scopeNow())or time()
 local placed,folds,heads,gridOpen={},{},{},{}
 local roundsLeft,roundsPartial=0,0
-local drawing={}
-for s=1,#sessions do
-for _,entry in ipairs(sessions[s].entries)do
-if shown[entry]then
-drawing[#drawing+1]=sessions[s]
-break
-end
-end
-end
-local headFormsOf=A.sessionHeadList(drawing,now)
 for s=1,#sessions do
 local session=sessions[s]
 local listed={}
@@ -7238,7 +7329,7 @@ open and"open"or"folded",source)
 end
 if#listed>0 and grid~=nil then
 local headSpan=A.sessionSpanText(session)
-local forms=A.sessionGridLabelForms(session.startStamp,now)or headFormsOf[session]or{}
+local forms=labelFormsOf[session]or{}
 if#heads<30 then
 heads[#heads+1]=headSpan and("%s %s"):format(forms[1]or"",headSpan)or(forms[1]or"")
 end
@@ -7376,6 +7467,9 @@ end
 return out
 end)(),",")or nil,
 gridFold=grid and(grid.fold and"folded"or"column")or nil,
+earlierLabels=grid and earlierLabels or nil,
+sessionNeed=grid and A.unitFigure(sessionNeed)or nil,
+sessionWidth=grid and darkList.columnWidth(grid.columns,"session")or nil,
 }
 end
 return rows,selected,selectedIsLeft,selectedAt
@@ -8366,9 +8460,25 @@ if held==nil then
 held=answers[1]
 end
 if tableMode=="bests"then
-held=A.bestsAnswer(activeFormat,season,character,bound)
+if window.bestsMeasure==nil then
+window.bestsMeasure=window:CreateFontString(nil,"ARTWORK","GameFontHighlightSmall")
+window.bestsMeasure:Hide()
+end
+A.style(window.bestsMeasure,"bodyText","text")
+held=A.bestsAnswer(activeFormat,season,character,bound,function(text)
+return A.textRoom(window.bestsMeasure,text)
+end)
+local cellOpens=0
+for _,row in ipairs(held.rows)do
+for _,best in ipairs(held.bestKeys or{})do
+if type(row.cellOpens)=="table"and row.cellOpens[best]~=nil then
+cellOpens=cellOpens+1
+end
+end
+end
 A.trace("stats-bests",{statsView="bests",format=activeFormat,rows=#held.rows,
-bestCols=type(held.bestKeys)=="table"and#held.bestKeys or 0,leftOutWins=held.leftOut or 0},"ui")
+bestCols=type(held.bestKeys)=="table"and#held.bestKeys or 0,leftOutWins=type(held.leftOut)=="number"and held.leftOut or nil,
+cellOpens=cellOpens},"ui")
 elseif tableMode=="builds"then
 held=A.buildsAnswer(activeFormat,season,character,bound)
 if window.buildMeasure==nil then
@@ -8447,7 +8557,7 @@ window.askPane.box:ClearAllPoints()
 if headShown then
 local askWidths
 window.askTableSpan,askWidths=paintColumnHead(window.askPaneHead,window.askPaneHeadNames,
-window.askPaneHeadRule,columns,askSortColumn)
+window.askPaneHeadRule,columns,askSortColumn,"labelMuted")
 paintSortButtons(window.askPaneHeadSorts,window.askPaneHead,columns,askWidths)
 window.askPane.box:SetPoint("TOPLEFT",window.askPaneHead,"BOTTOMLEFT",0,0)
 window.askPane.box:SetPoint("TOPRIGHT",window.askPaneHead,"BOTTOMRIGHT",0,0)
@@ -8564,7 +8674,7 @@ window.askBandHeadRule:Hide()
 window.askBandSpan=nil
 else
 window.askBandSpan=bandRoom>0 and paintColumnHead(window.askBandHead,window.askBandHeadNames,
-window.askBandHeadRule,bandColumns)or nil
+window.askBandHeadRule,bandColumns,nil,"labelMuted")or nil
 window.askBandHeadRule:SetColorTexture(A.color("hairline"))
 window.askBandHeadRule:Show()
 end
@@ -9001,7 +9111,7 @@ if paneColumns then
 local paneWidths
 window.compPaneSpan,paneWidths=paintColumnHead(window.compPaneHead,
 window.compPaneHeadNames,window.compPaneHeadRule,paneColumns,
-paneKind=="spec"and specSort or nil)
+paneKind=="spec"and specSort or nil,"labelMuted")
 if groupShown then
 paintGroupHead(window.compGroupHead,window.compGroupNames,paneColumns,paneWidths)
 end
@@ -9180,8 +9290,8 @@ end
 frame.record=record
 local recordWidth=A.detailWindowWidth(not isLeft and record or nil)
 local screenW,screenH
-if type(A.screenSize)=="function"then
-screenW,screenH=A.screenSize()
+if type(A.screenSizeFor)=="function"then
+screenW,screenH=A.screenSizeFor(frame)
 end
 local width,widthFrom=recordWidth,"record"
 if type(frame.wantWidth)=="number"and frame.wantWidth>recordWidth then
@@ -9839,11 +9949,10 @@ if type(A.readingContext)=="function"then
 notRated=A.readingContext(activeFormat,season,A.windowCharacter(),bound)
 end
 local standingReading=nil
-local worldStats=activeBody=="stats"and activeFormat=="world"
-if(activeBody~="stats"or worldStats)and type(A.standingReading)=="function"then
+if type(A.standingReading)=="function"then
 local heroStarted=A.switchClock()
 local listed=nil
-if activeFormat=="world"and not worldStats then
+if activeFormat=="world"and activeBody~="stats"then
 local okListed,records=pcall(filterBand.worldRecords,season,bound)
 listed=okListed and records or nil
 end
@@ -9857,7 +9966,8 @@ scope=A.summaryScope(),mark=type(A.storeMark)=="function"and A.storeMark()or nil
 summary=summary,reading=standingReading}
 end
 if not okStanding then
-A.trace("strip",{format=activeFormat,reason="threw"},"ui")
+A.trace("strip",{format=activeFormat,reason="threw",
+stripBody=activeBody=="stats"and"stats"or"history"},"ui")
 end
 end
 local hero=standingReading and standingReading.hero or nil
@@ -10194,7 +10304,7 @@ return
 end
 pcall(function()
 GameTooltip:SetOwner(button,"ANCHOR_LEFT")
-GameTooltip:SetText("PvP History",1,0.82,0,1,true)
+GameTooltip:SetText(A.displayName(),1,0.82,0,1,true)
 GameTooltip:AddLine("Click to open the match history.",1,1,1)
 GameTooltip:Show()
 end)
@@ -10202,5 +10312,5 @@ end
 function WowPvpHistory_OnAddonCompartmentLeave(_,button)
 A.hideOwnedTooltip(button)
 end
-BINDING_HEADER_WOWPVPHISTORY="PvP History"
+BINDING_HEADER_WOWPVPHISTORY=A.displayName()
 BINDING_NAME_WOWPVPHISTORY_TOGGLE="Open the match history"

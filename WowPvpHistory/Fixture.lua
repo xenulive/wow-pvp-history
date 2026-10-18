@@ -1,4 +1,4 @@
--- WowPvpHistory 0.68.35
+-- WowPvpHistory 0.68.47
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -362,9 +362,19 @@ spec=SELF.spec,side="with"})},
 against,
 })
 end
+local okDay,today=pcall(date,"%Y-%m-%d",now)
+local y,m,d=(okDay and tostring(today)or""):match("^(%d+)%-(%d+)%-(%d+)$")
+local function twoBack(hour,minute)
+if y==nil then
+return nil
+end
+local ok,at=pcall(time,{year=tonumber(y),month=tonumber(m),day=tonumber(d)-2,
+hour=hour,min=minute})
+return ok and type(at)=="number"and at or nil
+end
 local outings={
-{ends=22680,duration=660,zone="Fixture Ridge",kills=4,deaths=1},
-{ends=20580,duration=900,zone="Fixture Plains",kills=7,deaths=3},
+{starts={17,20},ends=22680,duration=660,zone="Fixture Ridge",kills=4,deaths=1},
+{starts={19,0},ends=20580,duration=900,zone="Fixture Plains",kills=7,deaths=3},
 {ends=14100,duration=480,zone="Fixture Plains",kills=0,deaths=2},
 {ends=12360,duration=540,zone="Fixture Ridge",kills=1,deaths=4},
 {ends=6240,duration=720,zone="Fixture Ridge",kills=5,deaths=0},
@@ -372,7 +382,9 @@ local outings={
 {ends=3000,duration=840,zone="Fixture Plains",kills=3,deaths=1},
 }
 for _,outing in ipairs(outings)do
-local world=record({format="world",rated=false,epoch=now-outing.ends,
+local opened=outing.starts and twoBack(outing.starts[1],outing.starts[2])
+local closed=opened and opened+outing.duration or now-outing.ends
+local world=record({format="world",rated=false,epoch=closed,
 duration=outing.duration,map={name=outing.zone,instanceType="none"}})
 world.rounds=nil
 world.openedState=nil

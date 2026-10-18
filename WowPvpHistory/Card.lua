@@ -1,4 +1,4 @@
--- WowPvpHistory 0.68.35
+-- WowPvpHistory 0.68.47
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -58,6 +58,7 @@ return card
 end
 local ok,made=pcall(function()
 local f=CreateFrame("Frame",ADDON.."NameCard",UIParent)
+A.registerScaledWindow(f)
 f:SetFrameStrata("TOOLTIP")
 f:SetClampedToScreen(true)
 f:Hide()

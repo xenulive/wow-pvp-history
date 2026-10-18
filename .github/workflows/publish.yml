@@ -5,7 +5,10 @@
 # changelog. It takes CURSEFORGE_API_TOKEN, a secret on this repository, and a failed upload leaves
 # the GitHub release published and is retried alone with "Re-run failed jobs". A third job, wago,
 # uploads the same zip beside it to the Wago Addons project the ## X-Wago-ID: line names, a release
-# candidate as beta, taking WAGO_API_TOKEN, a secret on this repository, in the same way.
+# candidate as beta, taking WAGO_API_TOKEN, a secret on this repository, in the same way. A fourth
+# job, wowi, uploads a final release's zip to the WoWInterface project the ## X-WoWI-ID: line
+# names, taking WOWI_API_TOKEN, a secret on this repository, and uploads nothing for a release
+# candidate, since WoWInterface has no beta channel.
 #
 # A release arrives here as a pull request from release/v<version>, carrying the stripped addon,
 # LICENSE, wiki/ and this file, beside a draft release for v<version> with the zip attached. Merging
@@ -111,7 +114,7 @@ jobs:
           for ($page = 1; ; $page++) {
             # Trap: Invoke-RestMethod writes a JSON list as one object, so piping the call straight into
             # Where-Object hands it the whole list as one row. Assigned first, the list is walked row by row.
-            $answer = Invoke-RestMethod -Uri "$api/releases?per_page=100&page=$page" -Headers $headers
+            $answer = Invoke-RestMethod -Uri "$api/releases?per_page=100&page=$page" -TimeoutSec 60 -Headers $headers
             $rows = @($answer | Where-Object { $null -ne $_ })
             foreach ($row in $rows) { $all.Add($row) }
             if ($rows.Count -lt 100) { break }
@@ -124,7 +127,7 @@ jobs:
           }
           $tagAt = {
             $code = 0
-            $ref = Invoke-RestMethod -Uri "$api/git/ref/tags/$tag" -Headers $headers -SkipHttpErrorCheck -StatusCodeVariable code
+            $ref = Invoke-RestMethod -Uri "$api/git/ref/tags/$tag" -TimeoutSec 60 -Headers $headers -SkipHttpErrorCheck -StatusCodeVariable code
             if ($code -ne 200) { return '' }
             if ($ref.object.type -cne 'commit') { return "a $($ref.object.type) object" }
             return [string]$ref.object.sha
@@ -154,8 +157,8 @@ jobs:
             prerelease       = $prerelease
             make_latest      = if ($prerelease) { 'false' } else { 'true' }
           } | ConvertTo-Json
-          $null = Invoke-RestMethod -Method Patch -Uri "$api/releases/$($draft.id)" -Headers $headers -Body $body -ContentType 'application/json'
-          $read = Invoke-RestMethod -Uri "$api/releases/$($draft.id)" -Headers $headers
+          $null = Invoke-RestMethod -Method Patch -Uri "$api/releases/$($draft.id)" -TimeoutSec 60 -Headers $headers -Body $body -ContentType 'application/json'
+          $read = Invoke-RestMethod -Uri "$api/releases/$($draft.id)" -TimeoutSec 60 -Headers $headers
           $at = & $tagAt
           Write-Host "read back: release $($read.html_url), draft $($read.draft), pre-release $($read.prerelease), $(@($read.assets).Count) asset(s)"
           Write-Host "read back: $tag at $(if ($at) { $at } else { 'nothing' }) against $env:GITHUB_SHA pushed"
@@ -398,7 +401,7 @@ jobs:
             $api = "https://api.github.com/repos/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
             $headers = @{ Authorization = "Bearer $env:READ_TOKEN"; Accept = 'application/vnd.github+json'; 'X-GitHub-Api-Version' = '2022-11-28' }
             for ($n = 1; $n -lt $attempt; $n++) {
-              $jobs = Invoke-RestMethod -Uri "$api/attempts/$n/jobs?per_page=100" -Headers $headers
+              $jobs = Invoke-RestMethod -Uri "$api/attempts/$n/jobs?per_page=100" -TimeoutSec 60 -Headers $headers
               if (@($jobs.jobs | Where-Object { $_.name -ceq 'curseforge' -and $_.conclusion -ceq 'success' }).Count -gt 0) { $found = $n; break }
             }
           }
@@ -432,7 +435,7 @@ jobs:
           $cfHeaders = @{ 'X-Api-Token' = $env:CURSEFORGE_TOKEN }
           $code = 0
           # Trap: wrapped in @() the call's one-object list becomes a list of one, so it is assigned first.
-          $answer = Invoke-RestMethod -Uri "$cf/game/versions" -Headers $cfHeaders -SkipHttpErrorCheck -StatusCodeVariable code
+          $answer = Invoke-RestMethod -Uri "$cf/game/versions" -TimeoutSec 60 -Headers $cfHeaders -SkipHttpErrorCheck -StatusCodeVariable code
           $listed = @($answer)
           if ($code -ne 200) { Write-Host "::error title=curseforge::CurseForge's game version list answered $code. $finish"; exit 1 }
           $versionIds = [System.Collections.Generic.List[int]]::new()
@@ -445,12 +448,12 @@ jobs:
           }
           $api = "https://api.github.com/repos/$env:GITHUB_REPOSITORY"
           $headers = @{ Authorization = "Bearer $env:RELEASE_TOKEN"; Accept = 'application/vnd.github+json'; 'X-GitHub-Api-Version' = '2022-11-28' }
-          $release = Invoke-RestMethod -Uri "$api/releases/tags/v$env:VERSION" -Headers $headers
+          $release = Invoke-RestMethod -Uri "$api/releases/tags/v$env:VERSION" -TimeoutSec 60 -Headers $headers
           $assets = @($release.assets)
           if ($assets.Count -ne 1 -or -not ([string]$assets[0].name).EndsWith('.zip')) { Write-Host "::error title=curseforge::The release v$env:VERSION carries $($assets.Count) assets where the zip is one. $finish"; exit 1 }
           if ([string]::IsNullOrWhiteSpace($release.body)) { Write-Host "::error title=curseforge::The release v$env:VERSION carries no body to send as the changelog. $finish"; exit 1 }
           $zip = Join-Path $env:RUNNER_TEMP $assets[0].name
-          Invoke-WebRequest -Uri $assets[0].url -Headers @{ Authorization = "Bearer $env:RELEASE_TOKEN"; Accept = 'application/octet-stream' } -OutFile $zip
+          Invoke-WebRequest -Uri $assets[0].url -TimeoutSec 300 -Headers @{ Authorization = "Bearer $env:RELEASE_TOKEN"; Accept = 'application/octet-stream' } -OutFile $zip
           $size = (Get-Item -LiteralPath $zip).Length
           if ($size -ne [long]$assets[0].size) { Write-Host "::error title=curseforge::The zip downloaded at $size bytes and the release lists $($assets[0].size). $finish"; exit 1 }
           $sha = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -458,12 +461,12 @@ jobs:
           $metadata = [ordered]@{
             changelog     = [string]$release.body
             changelogType = 'markdown'
-            displayName   = "WoW PvP History $env:VERSION"
+            displayName   = "PvPHistory $env:VERSION"
             gameVersions  = [int[]]$versionIds.ToArray()
             releaseType   = $releaseType
           } | ConvertTo-Json -Depth 3 -Compress
           Write-Host "uploading: $($assets[0].name), $size bytes, sha256 $sha, $releaseType, game version ids $($versionIds -join ', ')"
-          $response = Invoke-RestMethod -Method Post -Uri "$cf/projects/$env:PROJECT/upload-file" -Headers $cfHeaders -Form @{ metadata = $metadata; file = Get-Item -LiteralPath $zip } -SkipHttpErrorCheck -StatusCodeVariable code
+          $response = Invoke-RestMethod -Method Post -Uri "$cf/projects/$env:PROJECT/upload-file" -TimeoutSec 300 -Headers $cfHeaders -Form @{ metadata = $metadata; file = Get-Item -LiteralPath $zip } -SkipHttpErrorCheck -StatusCodeVariable code
           $fileId = if ($null -ne $response -and $response -isnot [string] -and $response.PSObject.Properties['id']) { [string]$response.id } else { '' }
           if ($code -ne 200 -or $fileId -notmatch '^[1-9]\d*$') {
             $said = if ($response -is [string]) { $response } elseif ($null -ne $response) { $response | ConvertTo-Json -Depth 4 -Compress } else { 'an empty body' }
@@ -577,7 +580,7 @@ jobs:
             $api = "https://api.github.com/repos/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
             $headers = @{ Authorization = "Bearer $env:READ_TOKEN"; Accept = 'application/vnd.github+json'; 'X-GitHub-Api-Version' = '2022-11-28' }
             for ($n = 1; $n -lt $attempt; $n++) {
-              $jobs = Invoke-RestMethod -Uri "$api/attempts/$n/jobs?per_page=100" -Headers $headers
+              $jobs = Invoke-RestMethod -Uri "$api/attempts/$n/jobs?per_page=100" -TimeoutSec 60 -Headers $headers
               if (@($jobs.jobs | Where-Object { $_.name -ceq 'wago' -and $_.conclusion -ceq 'success' }).Count -gt 0) { $found = $n; break }
             }
           }
@@ -609,7 +612,7 @@ jobs:
             exit 1
           }
           $code = 0
-          $game = Invoke-RestMethod -Uri 'https://addons.wago.io/api/data/game' -SkipHttpErrorCheck -StatusCodeVariable code
+          $game = Invoke-RestMethod -Uri 'https://addons.wago.io/api/data/game' -TimeoutSec 60 -SkipHttpErrorCheck -StatusCodeVariable code
           if ($code -ne 200) { Write-Host "::error title=wago::Wago's game data answered $code. $finish"; exit 1 }
           $retail = @()
           if ($null -ne $game -and $game -isnot [string] -and $game.PSObject.Properties['patches'] -and $game.patches.PSObject.Properties['retail']) {
@@ -624,12 +627,12 @@ jobs:
           }
           $api = "https://api.github.com/repos/$env:GITHUB_REPOSITORY"
           $headers = @{ Authorization = "Bearer $env:RELEASE_TOKEN"; Accept = 'application/vnd.github+json'; 'X-GitHub-Api-Version' = '2022-11-28' }
-          $release = Invoke-RestMethod -Uri "$api/releases/tags/v$env:VERSION" -Headers $headers
+          $release = Invoke-RestMethod -Uri "$api/releases/tags/v$env:VERSION" -TimeoutSec 60 -Headers $headers
           $assets = @($release.assets)
           if ($assets.Count -ne 1 -or -not ([string]$assets[0].name).EndsWith('.zip')) { Write-Host "::error title=wago::The release v$env:VERSION carries $($assets.Count) assets where the zip is one. $finish"; exit 1 }
           if ([string]::IsNullOrWhiteSpace($release.body)) { Write-Host "::error title=wago::The release v$env:VERSION carries no body to send as the changelog. $finish"; exit 1 }
           $zip = Join-Path $env:RUNNER_TEMP $assets[0].name
-          Invoke-WebRequest -Uri $assets[0].url -Headers @{ Authorization = "Bearer $env:RELEASE_TOKEN"; Accept = 'application/octet-stream' } -OutFile $zip
+          Invoke-WebRequest -Uri $assets[0].url -TimeoutSec 300 -Headers @{ Authorization = "Bearer $env:RELEASE_TOKEN"; Accept = 'application/octet-stream' } -OutFile $zip
           $size = (Get-Item -LiteralPath $zip).Length
           if ($size -ne [long]$assets[0].size) { Write-Host "::error title=wago::The zip downloaded at $size bytes and the release lists $($assets[0].size). $finish"; exit 1 }
           $sha = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -643,7 +646,7 @@ jobs:
           $wagoHeaders = @{ Authorization = "Bearer $env:WAGO_TOKEN"; Accept = 'application/json' }
           Write-Host "uploading: $($assets[0].name), $size bytes, sha256 $sha, $stability, patches $($patches -join ', ')"
           # Trap: Wago redirects a refused upload, and a followed redirect answers 200 off the page it lands on, so no redirect is followed and a 3xx fails below.
-          $response = Invoke-RestMethod -Method Post -Uri "https://addons.wago.io/api/projects/$env:PROJECT/version" -Headers $wagoHeaders -Form @{ metadata = $metadata; file = Get-Item -LiteralPath $zip } -MaximumRedirection 0 -SkipHttpErrorCheck -StatusCodeVariable code
+          $response = Invoke-RestMethod -Method Post -Uri "https://addons.wago.io/api/projects/$env:PROJECT/version" -TimeoutSec 300 -Headers $wagoHeaders -Form @{ metadata = $metadata; file = Get-Item -LiteralPath $zip } -MaximumRedirection 0 -SkipHttpErrorCheck -StatusCodeVariable code
           if ($code -ne 200 -and $code -ne 201) {
             $said = if ($response -is [string]) { $response } elseif ($null -ne $response) { $response | ConvertTo-Json -Depth 4 -Compress } else { 'an empty body' }
             if ($said.Length -gt 500) { $said = $said.Substring(0, 500) }
@@ -678,6 +681,239 @@ jobs:
             elseif ($env:RERUN_UPLOADED -eq 'true') { $out += "wago: skipped, attempt $env:RERUN_ATTEMPT of this run uploaded the file" }
             elseif ($env:UPLOAD_OUTCOME -eq 'success') { $out += "wago: uploaded as $env:STABILITY, answered $env:UPLOAD_CODE", "zip      sha256 $env:ZIP_SHA" }
             else { $out += "wago: not uploaded, the upload step reads $(if ($env:UPLOAD_OUTCOME) { $env:UPLOAD_OUTCOME } else { 'not run' })" }
+          }
+          $out += '```'
+          $out | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          $out | Write-Host
+
+  # The WoWInterface upload: a final release's zip goes to the WoWInterface project the shipped
+  # .toc's ## X-WoWI-ID: line names. It runs on the same condition as the other two upload jobs and
+  # beside them, so a failure on one site leaves the others alone and "Re-run failed jobs" retries
+  # only the one that failed.
+  wowi:
+    name: wowi
+    needs: publish
+    if: needs.publish.outputs.state == 'published' || needs.publish.outputs.state == 'already'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+
+    steps:
+      - name: Check out the pushed commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # WoWInterface has no beta channel, so a candidate uploaded there would show as an ordinary
+      # release. A pre-release flag that is neither true nor false fails rather than reading as a final.
+      - name: Read whether the release is a candidate
+        id: wowi-candidate
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.publish.outputs.version }}
+          PRERELEASE: ${{ needs.publish.outputs.prerelease }}
+        run: |
+          if ($env:PRERELEASE -ceq 'true') {
+            Write-Host "wowi: skipped, v$env:VERSION is a release candidate"
+            'skip=true' | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+            exit 0
+          }
+          if ($env:PRERELEASE -cne 'false') {
+            Write-Host "::error title=wowi::The publish job's pre-release flag reads '$env:PRERELEASE', so whether v$env:VERSION is a candidate is not settled."
+            exit 1
+          }
+          Write-Host "wowi: v$env:VERSION is a final release"
+          'skip=false' | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      # The game versions are read off ## Interface: by the same digit pairs the other two jobs use.
+      - name: Read the WoWInterface project and game versions off the shipped .toc
+        id: wowi-toc
+        if: steps.wowi-candidate.outputs.skip == 'false'
+        shell: pwsh
+        run: |
+          $toc = 'WowPvpHistory/WowPvpHistory.toc'
+          if (-not (Test-Path -LiteralPath $toc -PathType Leaf)) {
+            Write-Host "::error title=wowi::This commit carries no $toc to read the WoWInterface project off."
+            exit 1
+          }
+          $lines = @(Get-Content -LiteralPath $toc)
+          $ids = @($lines | Where-Object { $_ -match '^##\s*X-WoWI-ID:' })
+          if ($ids.Count -ne 1) {
+            Write-Host "::error title=wowi::$toc carries $($ids.Count) ## X-WoWI-ID: lines where one was expected."
+            exit 1
+          }
+          if ($ids[0] -notmatch '^##\s*X-WoWI-ID:\s*([1-9]\d*)\s*$') {
+            Write-Host "::error title=wowi::The ## X-WoWI-ID: line of $toc names no numeric project."
+            exit 1
+          }
+          $project = $Matches[1]
+          $interfaces = @($lines | Where-Object { $_ -match '^##\s*Interface:' })
+          if ($interfaces.Count -ne 1) {
+            Write-Host "::error title=wowi::$toc carries $($interfaces.Count) ## Interface: lines where one was expected."
+            exit 1
+          }
+          $names = [System.Collections.Generic.List[string]]::new()
+          foreach ($value in (($interfaces[0] -replace '^##\s*Interface:', '').Trim() -split '\s*,\s*')) {
+            if ($value -notmatch '^[1-9]\d{4,5}$') {
+              Write-Host "::error title=wowi::The ## Interface: value '$value' is no interface number, so no game version can be named for it."
+              exit 1
+            }
+            $n = [int]$value
+            $name = '{0}.{1}.{2}' -f [int][math]::Truncate($n / 10000), ([int][math]::Truncate($n / 100) % 100), ($n % 100)
+            if (-not $names.Contains($name)) { $names.Add($name) }
+          }
+          Write-Host "wowi: project $project, game versions $($names -join ', ')"
+          "project=$project", "versions=$($names -join ',')" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      # WoWInterface's list of game versions has lagged the client (L1, 2026-10-16: newest 12.1.0
+      # against a client at 12.1.5), so a version it does not carry is left out and named rather than
+      # failing every release. Entries are matched on id, since older ones carry a null interface,
+      # and no lower version is sent in place of one left out.
+      - name: Keep the game versions WoWInterface lists
+        id: wowi-versions
+        if: steps.wowi-candidate.outputs.skip == 'false'
+        shell: pwsh
+        env:
+          VERSIONS: ${{ steps.wowi-toc.outputs.versions }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ([string]::IsNullOrWhiteSpace($env:VERSIONS)) { Write-Host "::error title=wowi::The game versions did not reach this step."; exit 1 }
+          $code = 0
+          # Trap: Invoke-RestMethod writes a JSON list as one object, so the answer is assigned before it is walked.
+          $answer = Invoke-RestMethod -Uri 'https://api.wowinterface.com/addons/compatible.json' -TimeoutSec 60 -SkipHttpErrorCheck -StatusCodeVariable code
+          $rows = @($answer | Where-Object { $null -ne $_ -and $_ -isnot [string] -and $_.PSObject.Properties['id'] -and $_.PSObject.Properties['game'] })
+          if ($code -ne 200 -or $rows.Count -eq 0) { Write-Host "::error title=wowi::WoWInterface's game version list answered $code with $($rows.Count) entries."; exit 1 }
+          $retail = @($rows | Where-Object { [string]$_.game -ceq 'Retail' } | ForEach-Object { [string]$_.id })
+          $kept = [System.Collections.Generic.List[string]]::new()
+          $dropped = [System.Collections.Generic.List[string]]::new()
+          foreach ($name in ($env:VERSIONS -split ',')) {
+            if ($retail -ccontains $name) { $kept.Add($name) } else { $dropped.Add($name) }
+          }
+          $sent = @($kept | Sort-Object -Property { [version]$_ } -Descending)
+          if ($sent.Count -eq 0) { Write-Host "::error title=wowi::WoWInterface lists none of $($env:VERSIONS -replace ',', ', '), of $($retail.Count) Retail versions listed."; exit 1 }
+          foreach ($name in $dropped) { Write-Host "wowi: $name is not on WoWInterface's list, sent $($sent -join ', ')" }
+          Write-Host "wowi: game versions $($sent -join ', ') of $($retail.Count) Retail versions listed"
+          "versions=$($sent -join ',')", "dropped=$($dropped -join ',')" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      # Whether WoWInterface's API lists a project's files is not read here, so a second copy is told
+      # apart off this run's own earlier attempts, as the other two jobs do.
+      - name: Read whether an earlier attempt of this run uploaded the file
+        id: wowi-rerun
+        if: steps.wowi-candidate.outputs.skip == 'false'
+        shell: pwsh
+        env:
+          READ_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $attempt = [int]$env:GITHUB_RUN_ATTEMPT
+          $found = 0
+          if ($attempt -gt 1) {
+            $api = "https://api.github.com/repos/$env:GITHUB_REPOSITORY/actions/runs/$env:GITHUB_RUN_ID"
+            $headers = @{ Authorization = "Bearer $env:READ_TOKEN"; Accept = 'application/vnd.github+json'; 'X-GitHub-Api-Version' = '2022-11-28' }
+            for ($n = 1; $n -lt $attempt; $n++) {
+              $jobs = Invoke-RestMethod -Uri "$api/attempts/$n/jobs?per_page=100" -TimeoutSec 60 -Headers $headers
+              if (@($jobs.jobs | Where-Object { $_.name -ceq 'wowi' -and $_.conclusion -ceq 'success' }).Count -gt 0) { $found = $n; break }
+            }
+          }
+          if ($found -gt 0) { Write-Host "rerun: attempt $found of this run uploaded the file, so attempt $attempt uploads nothing" }
+          else { Write-Host "rerun: none of the $($attempt - 1) earlier attempt(s) of this run uploaded the file" }
+          "uploaded=$(if ($found -gt 0) { 'true' } else { 'false' })", "attempt=$found" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      # The WoWInterface token is handed to this step alone, in a header from the environment. The
+      # fields are the ones the BigWigs packager sends (L2, its release.sh, read 2026-10-16), and 202
+      # is the only answer it reads as success. archive is not sent, so WoWInterface keeps its
+      # default of archiving the previous file.
+      - name: Upload the release zip to WoWInterface
+        id: wowi-upload
+        if: steps.wowi-candidate.outputs.skip == 'false' && steps.wowi-rerun.outputs.uploaded != 'true'
+        shell: pwsh
+        env:
+          WOWI_TOKEN: ${{ secrets.WOWI_API_TOKEN }}
+          RELEASE_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.publish.outputs.version }}
+          PROJECT: ${{ steps.wowi-toc.outputs.project }}
+          VERSIONS: ${{ steps.wowi-versions.outputs.versions }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $finish = "The release v$env:VERSION is published on GitHub and not on WoWInterface; use Re-run failed jobs once this is fixed."
+          if ([string]::IsNullOrWhiteSpace($env:WOWI_TOKEN)) { Write-Host "::error title=wowi::WOWI_API_TOKEN is not set on this repository. $finish"; exit 1 }
+          if ([string]::IsNullOrWhiteSpace($env:VERSION) -or [string]::IsNullOrWhiteSpace($env:PROJECT) -or [string]::IsNullOrWhiteSpace($env:VERSIONS)) {
+            Write-Host "::error title=wowi::The version, the project or the game versions did not reach this step. $finish"
+            exit 1
+          }
+          $api = "https://api.github.com/repos/$env:GITHUB_REPOSITORY"
+          $headers = @{ Authorization = "Bearer $env:RELEASE_TOKEN"; Accept = 'application/vnd.github+json'; 'X-GitHub-Api-Version' = '2022-11-28' }
+          $release = Invoke-RestMethod -Uri "$api/releases/tags/v$env:VERSION" -TimeoutSec 60 -Headers $headers
+          $assets = @($release.assets)
+          if ($assets.Count -ne 1 -or -not ([string]$assets[0].name).EndsWith('.zip')) { Write-Host "::error title=wowi::The release v$env:VERSION carries $($assets.Count) assets where the zip is one. $finish"; exit 1 }
+          if ([string]::IsNullOrWhiteSpace($release.body)) { Write-Host "::error title=wowi::The release v$env:VERSION carries no body to send as the changelog. $finish"; exit 1 }
+          $zip = Join-Path $env:RUNNER_TEMP $assets[0].name
+          Invoke-WebRequest -Uri $assets[0].url -TimeoutSec 300 -Headers @{ Authorization = "Bearer $env:RELEASE_TOKEN"; Accept = 'application/octet-stream' } -OutFile $zip
+          $size = (Get-Item -LiteralPath $zip).Length
+          if ($size -ne [long]$assets[0].size) { Write-Host "::error title=wowi::The zip downloaded at $size bytes and the release lists $($assets[0].size). $finish"; exit 1 }
+          $sha = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          $form = @{
+            id         = $env:PROJECT
+            version    = $env:VERSION
+            compatible = $env:VERSIONS
+            changelog  = [string]$release.body
+            updatefile = Get-Item -LiteralPath $zip
+          }
+          Write-Host "uploading: $($assets[0].name), $size bytes, sha256 $sha, game versions $($env:VERSIONS -replace ',', ', ')"
+          $code = 0
+          # Trap: a followed redirect answers 200 off the page it lands on, so no redirect is followed and anything but 202 fails below.
+          $response = Invoke-RestMethod -Method Post -Uri 'https://api.wowinterface.com/addons/update' -TimeoutSec 300 -Headers @{ 'x-api-token' = $env:WOWI_TOKEN } -Form $form -MaximumRedirection 0 -SkipHttpErrorCheck -StatusCodeVariable code
+          if ($code -ne 202) {
+            $said = if ($response -is [string]) { $response } elseif ($null -ne $response) { $response | ConvertTo-Json -Depth 4 -Compress } else { 'an empty body' }
+            if ($said.Length -gt 500) { $said = $said.Substring(0, 500) }
+            $meaning = switch ($code) {
+              401 { "no addon under project $env:PROJECT, or no permission to upload to it ($said)" }
+              403 { "a wrong token, or no permission to upload ($said)" }
+              default { $said }
+            }
+            Write-Host "::error title=wowi::WoWInterface answered ${code}: $meaning. $finish"
+            exit 1
+          }
+          Write-Host "wowi: answered 202, version $env:VERSION uploaded to project $env:PROJECT"
+          "code=$code", "sha=$sha" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Put the summary on the run
+        if: always()
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.publish.outputs.version }}
+          CANDIDATE_OUTCOME: ${{ steps.wowi-candidate.outcome }}
+          SKIP: ${{ steps.wowi-candidate.outputs.skip }}
+          TOC_OUTCOME: ${{ steps.wowi-toc.outcome }}
+          PROJECT: ${{ steps.wowi-toc.outputs.project }}
+          VERSIONS_OUTCOME: ${{ steps.wowi-versions.outcome }}
+          SENT: ${{ steps.wowi-versions.outputs.versions }}
+          DROPPED: ${{ steps.wowi-versions.outputs.dropped }}
+          RERUN_OUTCOME: ${{ steps.wowi-rerun.outcome }}
+          RERUN_UPLOADED: ${{ steps.wowi-rerun.outputs.uploaded }}
+          RERUN_ATTEMPT: ${{ steps.wowi-rerun.outputs.attempt }}
+          UPLOAD_OUTCOME: ${{ steps.wowi-upload.outcome }}
+          UPLOAD_CODE: ${{ steps.wowi-upload.outputs.code }}
+          ZIP_SHA: ${{ steps.wowi-upload.outputs.sha }}
+        run: |
+          $out = @('## WoWInterface', '', '```text')
+          $out += "version  $env:VERSION"
+          $reads = { param($outcome) if ($outcome) { $outcome } else { 'not run' } }
+          if ($env:CANDIDATE_OUTCOME -ne 'success') { $out += "wowi: not uploaded, the candidate read reads $(& $reads $env:CANDIDATE_OUTCOME)" }
+          elseif ($env:SKIP -eq 'true') { $out += "wowi: skipped, v$env:VERSION is a release candidate" }
+          elseif ($env:TOC_OUTCOME -ne 'success') { $out += "wowi: not uploaded, the .toc step reads $(& $reads $env:TOC_OUTCOME)" }
+          else {
+            $out += "project  $env:PROJECT"
+            if ($env:VERSIONS_OUTCOME -ne 'success') { $out += "wowi: not uploaded, the game version step reads $(& $reads $env:VERSIONS_OUTCOME)" }
+            else {
+              $out += "game     $($env:SENT -replace ',', ', ')", "dropped  $(if ($env:DROPPED) { $env:DROPPED -replace ',', ', ' } else { 'none' })"
+              if ($env:RERUN_OUTCOME -ne 'success') { $out += "wowi: not uploaded, the rerun read reads $(& $reads $env:RERUN_OUTCOME)" }
+              elseif ($env:RERUN_UPLOADED -eq 'true') { $out += "wowi: skipped, attempt $env:RERUN_ATTEMPT of this run uploaded the file" }
+              elseif ($env:UPLOAD_OUTCOME -eq 'success') { $out += "wowi: uploaded, answered $env:UPLOAD_CODE", "zip      sha256 $env:ZIP_SHA" }
+              else { $out += "wowi: not uploaded, the upload step reads $(& $reads $env:UPLOAD_OUTCOME)" }
+            }
           }
           $out += '```'
           $out | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append

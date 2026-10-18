@@ -1,4 +1,4 @@
--- WowPvpHistory 0.68.35
+-- WowPvpHistory 0.68.47
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -274,6 +274,7 @@ frame:SetClampedToScreen(true)
 frame:EnableMouse(true)
 frame:Hide()
 A.registerChrome(frame)
+A.registerScaledWindow(frame)
 frame.title=A.windowTitle(frame)
 frame.title:SetPoint("TOPLEFT",frame,"TOPLEFT",A.metric("titleInset"),-A.metric("titleTop"))
 frame.title:SetPoint("TOPRIGHT",frame,"TOPRIGHT",-A.metric("titleInset"),-A.metric("titleTop"))
@@ -384,7 +385,7 @@ round.mark=A.buildRoundMark(round)
 round.mark:SetSize(A.metric("roundBox"),A.metric("roundBoxHeight"))
 round.mark:ClearAllPoints()
 round.mark:SetPoint("BOTTOM",round,"BOTTOM",0,0)
-round.word=round:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall")
+round.word=round.mark:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall")
 round.word:SetPoint("CENTER",round.mark,"CENTER",0,0)
 round.word:SetWordWrap(false)
 strip.rounds[i]=round
@@ -570,7 +571,7 @@ return row
 end
 local forget
 local function bound(frame,floorWidth)
-local screen=type(A.screenSize)=="function"and A.screenSize()or nil
+local screen=type(A.screenSizeFor)=="function"and A.screenSizeFor(frame)or nil
 if type(screen)=="number"and screen<floorWidth then
 screen=floorWidth
 end

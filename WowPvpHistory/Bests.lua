@@ -1,4 +1,4 @@
--- WowPvpHistory 0.68.35
+-- WowPvpHistory 0.68.47
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -172,26 +172,26 @@ end
 end
 return figures
 end
-function A.bestsColumnSet(figures)
-local room=type(A.askTableWidth)=="function"and A.askTableWidth()or 0
-local count=1+#figures
-local furniture=A.metric("rowLabelPad")*2+A.metric("rowCellGap")*(count-1)
-local columns={{key="name",name="SPEC",metric="askName"}}
-local used=0
-for i=1,#figures do
-local width=math.max(math.floor(room/8),A.headerFloor(figures[i].head))
-columns[#columns+1]={key=figures[i].key,name=figures[i].head,metric="askRate",
-align="RIGHT",width=width}
-used=used+width
+local MEASURE_MARGIN=2
+function A.bestsColumnSet(figures,needs)
+needs=type(needs)=="table"and needs or{}
+local function width(key,head)
+local need=type(needs[key])=="number"and needs[key]>0 and(math.ceil(needs[key])+MEASURE_MARGIN)or 0
+return math.max(A.headerFloor(head),need)
 end
-columns[1].width=math.max(A.headerFloor("SPEC"),room-furniture-used)
+local columns={{key="name",name="SPEC",metric="askName",width=width("name","SPEC")}}
+for i=1,#figures do
+columns[#columns+1]={key=figures[i].key,name=figures[i].head,metric="askRate",
+align="RIGHT",width=width(figures[i].key,figures[i].head)}
+end
 return columns
 end
 local function cellText(row,key)
 local held=row.bests and row.bests[key]or nil
 return held and A.bestText(key,held.value)or"-"
 end
-function A.bestsAnswer(format,season,character,bound)
+function A.bestsAnswer(format,season,character,bound,measure)
+measure=type(measure)=="function"and measure or A.labelRoom
 local answer={key="bests",title="Bests",opens="BESTS SET IN",noun={"spec","specs"}}
 local ok,order,opened,leftOut,anyRating,anyMmr=pcall(A.bestsTally,format,season,character,bound)
 if not ok or type(order)~="table"then
@@ -200,21 +200,37 @@ answer.columns=A.bestsColumnSet({})
 return answer
 end
 local figures=A.bestsColumns(anyRating,anyMmr)
-answer.columns=A.bestsColumnSet(figures)
 answer.bestKeys={}
 for i=1,#figures do
 answer.bestKeys[i]=figures[i].key
 end
 local rows={}
+local needs={}
+local function widen(key,wide)
+if type(wide)=="number"and wide>(needs[key]or 0)then
+needs[key]=wide
+end
+end
 for i=1,#order do
 local row=order[i]
 local out={key=row.key,name=row.name,spec=row.spec,classToken=row.classToken,
 class=row.class,met=row.matches,ids=row.ids,bests=row.bests,leftOut=row.leftOut}
+widen("name",measure(tostring(row.name))
++(row.classToken~=nil and(A.metric("compSwatch")+A.metric("chipGap"))or 0))
+out.cellOpens={}
 for _,best in ipairs(BESTS)do
 out[best.key]=cellText(row,best.key)
+local held=row.bests[best.key]
+if held~=nil and held.id~=nil then
+out.cellOpens[best.key]=held.id
+end
+end
+for _,best in ipairs(figures)do
+widen(best.key,measure(out[best.key]))
 end
 rows[i]=out
 end
+answer.columns=A.bestsColumnSet(figures,needs)
 answer.rows,answer.under=rows,{}
 answer.group="YOUR BESTS, BY SPEC"
 answer.opened=opened

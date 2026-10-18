@@ -1,4 +1,4 @@
--- WowPvpHistory 0.68.35
+-- WowPvpHistory 0.68.47
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -93,8 +93,8 @@ end
 local REFUSAL={
 ["no-codec"]="this client provides no encoding surface, so a history string cannot be read",
 ["nothing"]="nothing was pasted",
-["not-ours"]="this text did not come from PvP History",
-["unreadable"]="this text came from PvP History and could not be read. It may have been "
+["not-ours"]="this text did not come from "..A.displayName(),
+["unreadable"]="this text came from "..A.displayName().." and could not be read. It may have been "
 .."truncated or edited in transit",
 ["shape"]="there is no history in this text",
 ["empty"]="there is no history in this text",

@@ -1,4 +1,4 @@
--- WowPvpHistory 0.68.35
+-- WowPvpHistory 0.68.47
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -719,6 +719,7 @@ end
 return{row=row,cells=cells,cellTint=tint,cellStyle=style,
 cellBar=bar,askKey=answer.key,faint=faint or nil,
 kdCell=type(row.kdCounts)=="table"and row.kdCounts or nil,
+cellOpens=not faint and type(row.cellOpens)=="table"and row.cellOpens or nil,
 askRow=(A.askRowOpens(answer)and type(row.ids)=="table"and#row.ids>0)
 and A.askRowKey(row)or nil}
 end
@@ -880,8 +881,7 @@ end
 if row==nil then
 if answer.noLoss then
 return{key=answer.key,title=title,empty=true,noLoss=true,
-emptyText=answer.key=="beats"and"Nothing has beaten you yet"or"No losses yet",
-emptyTone="dim"}
+emptyText=NOTHING,emptyTone="dim"}
 end
 return{key=answer.key,title=title,empty=true}
 end

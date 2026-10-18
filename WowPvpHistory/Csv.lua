@@ -1,4 +1,4 @@
--- WowPvpHistory 0.68.35
+-- WowPvpHistory 0.68.47
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -723,7 +723,7 @@ return table.concat(lines,"\n"),dataRows,held.matches,part,#parts
 end
 local REFUSAL={
 ["nothing"]="nothing was pasted",
-["not-ours"]="this text did not come from PvP History",
+["not-ours"]="this text did not come from "..A.displayName(),
 ["newer"]="this was written by a newer version of the addon. Update, then import it",
 ["unreadable"]="this text is not a readable CSV file",
 ["empty"]="this file holds no matches",

@@ -1,4 +1,4 @@
--- WowPvpHistory 0.68.35
+-- WowPvpHistory 0.68.47
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -34,7 +34,7 @@ local tracedOrder="recent"
 local MET_ROWS=4
 local ROSTER_SLOTS=8
 function A.notesWindowTitle()
-return("PvP History: players and notes (%s)"):format(tostring(A.version or"unknown"))
+return("%s: players and notes (%s)"):format(A.displayName(),tostring(A.version or"unknown"))
 end
 local function surface()
 if type(CreateFrame)~="function"
@@ -994,8 +994,12 @@ if frame.copyText then
 A.showCopyBox(frame,"Copy name","Ctrl+C copies the name.",frame.copyText)
 end
 end,A.metric("actionMin"))
+frame.dossierIcon=frame.dossier:CreateTexture(nil,"ARTWORK")
+frame.dossierIcon:SetPoint("TOPLEFT",frame.dossier,"TOPLEFT",0,0)
+frame.dossierIcon:Hide()
 frame.dossierName=frame.dossier:CreateFontString(nil,"ARTWORK","GameFontNormalLarge")
-frame.dossierName:SetPoint("TOPLEFT",frame.dossier,"TOPLEFT",0,0)
+frame.dossierName:SetPoint("TOPLEFT",frame.dossier,"TOPLEFT",
+A.fontSize("dossierName")+A.metric("chipGap"),0)
 frame.dossierName:SetJustifyH("LEFT")
 frame.dossierName:SetWordWrap(false)
 frame.dossierSub=frame.dossier:CreateFontString(nil,"ARTWORK","GameFontDisableSmall")
@@ -1003,7 +1007,8 @@ frame.dossierSub:SetPoint("TOPLEFT",frame.dossierName,"BOTTOMLEFT",0,-2)
 frame.dossierSub:SetJustifyH("LEFT")
 frame.dossierSub:SetWordWrap(false)
 frame.rep=A.buildRepControl(frame.dossier,repPicked)
-frame.rep:SetPoint("TOPLEFT",frame.dossierSub,"BOTTOMLEFT",0,-A.metric("paneGap"))
+frame.rep:SetPoint("TOPLEFT",frame.dossierSub,"BOTTOMLEFT",
+-(A.fontSize("dossierName")+A.metric("chipGap")),-A.metric("paneGap"))
 frame.rep:SetPoint("RIGHT",frame.dossier,"RIGHT",0,0)
 frame.cards=A.buildSideCards(frame.dossier)
 frame.cards:SetPoint("TOPLEFT",frame.rep,"BOTTOMLEFT",0,-A.metric("paneGap"))
@@ -1757,6 +1762,10 @@ end
 for _,line in ipairs({window.dossierName,window.dossierSub})do
 line:SetPoint("RIGHT",edge,"LEFT",-A.metric("paneGap"),0)
 end
+local iconKind=A.drawSpec({icon=window.dossierIcon},identity.classToken,identity.spec,nil,
+{size=A.fontSize("dossierName")})
+A.trace("playerhead",{headIcon=iconKind=="icon"and"spec"or iconKind=="square"and"class"or"none"},
+"ui")
 A.style(window.dossierName,"dossierName")
 window.dossierName:SetTextColor(A.classColor(identity.classToken))
 A.fitNameHead(window.dossierName,identity.bare or A.UNKNOWN_PLAYER,identity.realm,"dim")

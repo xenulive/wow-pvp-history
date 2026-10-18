@@ -1,4 +1,4 @@
--- WowPvpHistory 0.68.35
+-- WowPvpHistory 0.68.47
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -110,6 +110,15 @@ tip="Outside a battleground or an arena, put a mark on the nameplate of a player
 .."tagged or wrote about, and name them once in chat when they appear.",
 get=function()return A.sightEnabled()end,
 set=function(on)return A.setSight(on)end,
+},
+{
+key="chatMark",
+section="alerts",
+label="Mark people you have written about in chat",
+tip="Outside a match, a dungeon or a raid, put a bar before the name of a player you rated, "
+.."tagged or wrote about when they talk in chat, colored by your rating.",
+get=function()return A.chatMarkEnabled()end,
+set=function(on)return A.setChatMark(on)end,
 },
 {
 key="tooltip",
@@ -686,6 +695,11 @@ outcome({("window appearance set to %s"):format(tostring(labels[value]):lower())
 end
 end)
 frame.themeSegment=track
+local scaleRow=cardRow(card,"Scale",{find="scale size zoom"})
+frame.windowScaleStepper=buildStepper(frame,scaleRow,A.windowScaleApplied,function(value)
+A.setWindowScale(value,"window")
+end,A.windowScaleRange,"%")
+A.style(scaleRow.label,"cardText","text")
 for i=1,#SWITCHES do
 local spec=SWITCHES[i]
 if spec.key=="overlayShown"then

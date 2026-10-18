@@ -1,4 +1,4 @@
--- WowPvpHistory 0.68.35
+-- WowPvpHistory 0.68.47
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -7,14 +7,16 @@ local _,A=...
 local TILE_COUNT=6
 local OPPONENT_ROWS=4
 local READING_ROWS=7
+local paintedHeadline={}
 function A.readingRows()
 return READING_ROWS
 end
-function A.statsHeadline(format,summary)
-if format=="world"then
-return"standing"
+function A.statsHeadline(fmt,_)
+local painted=paintedHeadline[fmt or"all"]
+if painted~=nil then
+return painted
 end
-return type(summary)=="table"and summary.rating~=nil or false
+return"standing"
 end
 function A.summaryHeight(headline)
 return A.stripHeight(headline)+A.metric("stripGap")+A.readingReserve()
@@ -348,6 +350,8 @@ change=standing.text(strip,"stripChange","dim"),
 tier=standing.text(strip,"stripTier","dim"),
 high=standing.text(strip,"stripTier","dim"),
 highValue=standing.text(strip,"stripTier","dim"),
+peak=standing.text(strip,"stripTier","dim"),
+peakValue=standing.text(strip,"stripTier","dim"),
 }
 end
 strip.rate={
@@ -409,6 +413,8 @@ tile.tier:Hide()
 tile.change:Hide()
 tile.high:Hide()
 tile.highValue:Hide()
+tile.peak:Hide()
+tile.peakValue:Hide()
 end
 for _,region in ipairs(strip.hero and strip.hero.all or{})do
 region:Hide()
@@ -457,18 +463,26 @@ local mid=math.floor(height*0.5)
 local inset=A.metric("standingTrendInset")
 local reach=math.min(mid-inset,height-inset-(mid+1))
 local widest,gap=A.metric("standingBar"),A.metric("standingBarGap")
+local least=A.metric("standingBarFloor")
+local frame=to-from
+local count=math.min(#bars,#strip.bars)
+local fit=math.max(0,math.floor((frame+gap)/(least+gap)))
+local shed=0
+if count>fit then
+shed=count-fit
+count=fit
+end
+local first=#bars-count
 local scale=0
-for i=1,#bars do
+for i=first+1,#bars do
 if type(bars[i].change)=="number"and math.abs(bars[i].change)>scale then
 scale=math.abs(bars[i].change)
 end
 end
-local count=math.min(#bars,#strip.bars)
-local frame=to-from
 if count<2 or scale==0 or frame<2+gap then
-return 0,nil,nil
+return 0,nil,nil,shed
 end
-local bar=math.max(1,math.min(widest,math.floor((frame-gap*(count-1))/count)))
+local bar=math.max(least,math.min(widest,math.floor((frame-gap*(count-1))/count)))
 local pitch=(frame-bar)/(count-1)
 strip.rule:ClearAllPoints()
 strip.rule:SetPoint("TOPLEFT",strip,"TOPLEFT",from,-mid)
@@ -477,7 +491,7 @@ strip.rule:SetColorTexture(A.color("hairline"))
 strip.rule:Show()
 local drawn,nearest=0,nil
 for i=1,count do
-local held=bars[i]
+local held=bars[first+i]
 local x=from+math.floor((i-1)*pitch+0.5)
 if type(held.change)=="number"and held.change~=0 then
 local tall=math.max(1,math.floor(reach*math.abs(held.change)/scale+0.5))
@@ -496,7 +510,7 @@ nearest=away
 end
 end
 end
-return drawn,nearest,drawn>0 and bar or nil
+return drawn,nearest,drawn>0 and bar or nil,shed
 end
 function standing.blocks(strip,bars,from,to)
 local count=math.min(#bars,#strip.bars)
@@ -552,7 +566,7 @@ return A.fontSize(role)
 end
 function standing.fill(held,cell)
 local beside=standing.BESIDE
-local m={label=0,figure=0,change=0,tier=0,high=0,highValue=0}
+local m={label=0,figure=0,change=0,tier=0,high=0,highValue=0,peak=0,peakValue=0}
 local figure=cell.figure or"-"
 held.label:SetText(cell.label or"")
 setColor(held.label,cell.unranked and"dimmer"or"label")
@@ -591,9 +605,21 @@ tintRating(held.highValue,cell.format,cell.high,"dim")
 m.high=A.textRoom(held.high,"high")
 m.highValue=A.textRoom(held.highValue,value)
 end
+if held.peak~=nil and cell.peak~=nil then
+local value=tostring(cell.peak)
+held.peak:SetText("peak")
+setColor(held.peak,cell.unranked and"dimmer"or"dim")
+held.peakValue:SetText(value)
+tintRating(held.peakValue,cell.format,cell.peak,"dim")
+m.peak=A.textRoom(held.peak,"peak")
+m.peakValue=A.textRoom(held.peakValue,value)
+end
 local tierLine=m.tier
 if m.high>0 then
 tierLine=(m.tier>0 and m.tier+beside or 0)+m.high+4+m.highValue
+end
+if m.peak>0 then
+tierLine=(tierLine>0 and tierLine+beside or 0)+m.peak+4+m.peakValue
 end
 local figureLine=m.figure+(m.change>0 and beside+m.change or 0)
 m.natural=math.ceil(math.max(m.label,figureLine,tierLine)+A.metric("standingPad")*2)
@@ -605,6 +631,8 @@ if m.tier>0 then
 m.tierHeight=standing.lineHeight(held.tier,"stripTier")
 elseif m.high>0 then
 m.tierHeight=standing.lineHeight(held.high,"stripTier")
+elseif m.peak>0 then
+m.tierHeight=standing.lineHeight(held.peak,"stripTier")
 end
 return m
 end
@@ -635,6 +663,14 @@ standing.place(strip,held.high,"high",left+at,-tierTop,room-at)
 at=at+m.high+4
 if room-at>=1 then
 standing.place(strip,held.highValue,tostring(cell.high),left+at,-tierTop,room-at)
+end
+at=at+m.highValue+beside
+end
+if m.peak>0 and room-at>=1 then
+standing.place(strip,held.peak,"peak",left+at,-tierTop,room-at)
+at=at+m.peak+4
+if room-at>=1 then
+standing.place(strip,held.peakValue,tostring(cell.peak),left+at,-tierTop,room-at)
 end
 end
 return(top+block/2)-height/2
@@ -745,7 +781,7 @@ format=reading.format,rating=reading.rating,label=reading.label,
 figure=reading.rating~=nil and tostring(reading.rating)or"-",
 change=A.signedText(change),
 changeTone=(change or 0)>0 and"win"or(change or 0)<0 and"loss"or"dim",
-tier=(A.ratingTierName(reading.format,reading.rating)),high=reading.high,
+tier=(A.ratingTierName(reading.format,reading.rating)),high=reading.high,peak=reading.peak,
 unranked=A.ratingTierEnum(reading.format,reading.rating)==0,
 }
 else
@@ -763,8 +799,22 @@ unranked=A.ratingTierEnum(tile.format,tile.rating)==0,
 }
 end
 end
-local rateWidth=A.metric("standingRate")
+local rateFigure=(reading.figures or{})[1]
+local rateHeld,rateCell,rateMetrics=nil,nil,nil
+if type(rateFigure)=="table"then
+rateHeld={label=strip.rate.label,rating=strip.rate.value,tier=strip.rate.sub}
+rateCell={label=rateFigure.label,figure=rateFigure.value or"-",
+figureTone=rateFigure.tone or"bright",tier=rateFigure.sub,subTone=rateFigure.subTone}
+rateMetrics=standing.fill(rateHeld,rateCell)
+end
+local rateWidth=standing.rateWidth(rateMetrics,width)
 local rateX=width-rateWidth
+local placed={}
+local function keepPlaced(held)
+for _,key in ipairs({"label","rating","tier","change","high","highValue","peak","peakValue"})do
+placed[#placed+1]=held[key]
+end
+end
 local naturals,metrics={},{}
 for i,cell in ipairs(cells)do
 metrics[i]=standing.fill(strip.tiles[i],cell)
@@ -796,11 +846,12 @@ standing.ruleAt(strip,rules,x)
 x=x+1
 end
 local off=standing.placeCell(strip,held,cell,metrics[i],x,widths[i])
+keepPlaced(held)
 if math.abs(off)>math.abs(centre)then
 centre=off
 end
 local alpha=(cell.faded and not cell.unranked)and 0.5 or 1
-for _,key in ipairs({"label","rating","tier","change","high","highValue"})do
+for _,key in ipairs({"label","rating","tier","change","high","highValue","peak","peakValue"})do
 pcall(held[key].SetAlpha,held[key],alpha)
 end
 labels[#labels+1]=cell.label or"?"
@@ -827,6 +878,7 @@ local held={label=strip.stats[k].label,rating=strip.stats[k].value,tier=strip.st
 local cell={label=figure.label,figure=figure.value or"-",
 figureTone=figure.tone or"bright",tier=figure.sub,subTone=figure.subTone}
 local off=standing.placeCell(strip,held,cell,standing.fill(held,cell),ruleX+1,statWidth)
+keepPlaced(held)
 if math.abs(off)>math.abs(centre)then
 centre=off
 end
@@ -839,30 +891,27 @@ for k=#stats,kept+1,-1 do
 shed[#shed+1]=stats[k].label or"?"
 end
 end
-local figure=(reading.figures or{})[1]
 local rate=nil
-if type(figure)=="table"then
+if rateHeld~=nil and rateCell~=nil and rateMetrics~=nil then
 if#labels>0 then
 rules=rules+1
 standing.ruleAt(strip,rules,rateX-1)
 end
-local held={label=strip.rate.label,rating=strip.rate.value,tier=strip.rate.sub}
-local cell={label=figure.label,figure=figure.value or"-",figureTone=figure.tone or"bright",
-tier=figure.sub,subTone=figure.subTone}
-local off=standing.placeCell(strip,held,cell,standing.fill(held,cell),rateX,rateWidth)
+local off=standing.placeCell(strip,rateHeld,rateCell,rateMetrics,rateX,rateWidth)
+keepPlaced(rateHeld)
 if math.abs(off)>math.abs(centre)then
 centre=off
 end
-figure.drawn=cell.figure
+rateFigure.drawn=rateCell.figure
 rate=rateWidth
 end
 strip.edge:SetColorTexture(A.color("insetEdge"))
 strip.edge:Show()
-local bars,inset,barWidth=0,nil,nil
+local bars,inset,barWidth,barsShed=0,nil,nil,nil
 if reading.shape=="rated"then
 local gap=A.metric("standingGap")
 if trendRoom~=nil and trendRoom>0 then
-bars,inset,barWidth=standing.trend(strip,reading.bars or{},x+gap,trendTo-gap)
+bars,inset,barWidth,barsShed=standing.trend(strip,reading.bars or{},x+gap,trendTo-gap)
 end
 end
 return bars,reason,{
@@ -876,7 +925,16 @@ edge="strip",
 trend=trendRoom,
 inset=inset,
 barWidth=barWidth,
+barsShed=barsShed,
+stripCut=(A.cutTexts(placed)),
 }
+end
+function standing.rateWidth(m,width)
+local least=A.metric("standingRate")
+if type(m)~="table"or type(m.natural)~="number"or type(width)~="number"then
+return least
+end
+return math.max(least,math.min(m.natural,math.floor(width/3)))
 end
 function standing.paint(region,reading)
 local strip=region.standing
@@ -925,7 +983,7 @@ tones=#tones>0 and table.concat(tones,",")or nil,
 tiles=reading.shape=="all"and math.min(#(reading.tiles or{}),#strip.tiles)or nil,
 layout=layout}
 end
-function standing.traceStrip(summary,reading,drew,height)
+function standing.traceStrip(summary,reading,drew,height,body)
 if type(A.trace)~="function"or type(drew)~="table"or type(reading)~="table"then
 return
 end
@@ -946,7 +1004,8 @@ and(reading.recordKind or(reading.record and"record")or"none")or nil,
 labels=layout.labels,widths=layout.widths,rules=layout.rules,rate=layout.rate,
 centre=layout.centre,shed=layout.shed,edge=layout.edge,trend=layout.trend,
 inset=layout.inset,barWidth=layout.barWidth,
-cells=layout.cells,outings=layout.outings},"ui")
+cells=layout.cells,outings=layout.outings,trendSlot=layout.trendSlot,
+stripCut=layout.stripCut,stripBody=body,barsShed=layout.barsShed},"ui")
 end
 standing.CHIPS=6
 standing.SQUARES=10
@@ -1027,19 +1086,20 @@ for i=1,count do
 scale=math.max(scale,bars[i].kills or 0,bars[i].deaths or 0)
 end
 if count==0 or frame<count then
-return 0
+return 0,nil,nil
 end
 local height=A.metric("standingStrip")
 local mid=math.floor(height*0.5)
 local reach=mid-A.metric("standingTrendInset")
-local bar=math.max(1,math.min(A.metric("standingBar"),math.floor((frame-gap*(count-1))/count)))
+local slot=frame/count
+local bar=math.max(1,math.min(A.metric("standingBar"),math.floor(slot-gap)))
 held.worldLine:ClearAllPoints()
 held.worldLine:SetPoint("TOPLEFT",strip,"TOPLEFT",from,-mid)
 held.worldLine:SetSize(frame,1)
 held.worldLine:SetColorTexture(A.color("hairline"))
 held.worldLine:Show()
 for i=1,count do
-local x=from+(i-1)*(bar+gap)
+local x=from+math.floor((i-1)*slot+(slot-bar)*0.5+0.5)
 local pair=bars[i]
 for _,side in ipairs({{held.killBars[i],pair.kills or 0,"win",true},
 {held.deathBars[i],pair.deaths or 0,"loss",false}})do
@@ -1054,10 +1114,24 @@ texture:Show()
 end
 end
 end
-return count
+return count,bar,slot
+end
+function standing.worldCellWidths(naturals,room)
+local statWidth=A.metric("standingStat")
+local widths={math.max(statWidth,math.ceil(naturals[1]or 0)),statWidth,
+math.max(statWidth,math.ceil(naturals[3]or 0))}
+local short=math.ceil(A.metric("standingTrendFloor")-(room-widths[1]-widths[2]-widths[3]))
+if short>0 then
+local spare1,spare3=widths[1]-statWidth,widths[3]-statWidth
+local take1=math.min(spare1,math.ceil(short*0.5))
+local take3=math.min(spare3,short-take1)
+take1=math.min(spare1,short-take3)
+widths[1],widths[3]=widths[1]-take1,widths[3]-take3
+end
+return widths
 end
 function standing.paintWorld(strip,held,data,width)
-local statWidth=A.metric("standingStat")
+local pad,gap=A.metric("standingPad"),A.metric("standingGap")
 local tallied=(data.tallied or 0)>0
 local outings=data.outings or 0
 local cells={
@@ -1074,40 +1148,64 @@ local first=held.worldCells[1]
 local m=standing.fill(first,cells[1])
 local firstWidth=math.max(m.natural,A.metric("standingCellFloor"))
 standing.placeCell(strip,first,cells[1],m,0,firstWidth)
-local right=width-statWidth*3-3
+local lastForms=type(data.lastForms)=="table"and#data.lastForms>0 and data.lastForms or nil
+if lastForms~=nil then
+cells[4].figure=lastForms[1]
+end
+local fills={}
+for i=2,4 do
+fills[i]=standing.fill(held.worldCells[i],cells[i])
+end
+local room=width-3-gap-(firstWidth+1+gap)
+local right3=standing.worldCellWidths({fills[2].natural,fills[3].natural,fills[4].natural},room)
+local widths={firstWidth,right3[1],right3[2],right3[3]}
+if lastForms~=nil then
+local fitted=A.fittedForm(held.worldCells[4].rating,widths[4]-pad*2,lastForms)
+or lastForms[#lastForms]
+if fitted~=cells[4].figure then
+cells[4].figure=fitted
+fills[4]=standing.fill(held.worldCells[4],cells[4])
+end
+end
+local right=width-widths[2]-widths[3]-widths[4]-3
 local labels={cells[1].label}
 local rules=0
+local x=right
 for i=2,4 do
-local x=right+(i-2)*(statWidth+1)
 rules=rules+1
 standing.worldRule(strip,held,rules,x)
-local cellHeld=held.worldCells[i]
-local cell=cells[i]
-if cell.label=="LAST OUT"and type(data.lastForms)=="table"and#data.lastForms>0 then
-cell.figure=A.fittedForm(cellHeld.rating,statWidth-A.metric("standingPad")*2,data.lastForms)
-or data.lastForms[#data.lastForms]
+standing.placeCell(strip,held.worldCells[i],cells[i],fills[i],x+1,widths[i])
+labels[#labels+1]=cells[i].label
+x=x+widths[i]+1
 end
-standing.placeCell(strip,cellHeld,cell,standing.fill(cellHeld,cell),x+1,statWidth)
-labels[#labels+1]=cell.label
-end
-local gap=A.metric("standingGap")
 rules=rules+1
 standing.worldRule(strip,held,rules,firstWidth)
 local from,to=firstWidth+1+gap,right-gap
-local drawn=standing.worldTrend(strip,held,data.bars or{},from,to)
+local drawn,barWidth,slot=standing.worldTrend(strip,held,data.bars or{},from,to)
 strip.edge:SetColorTexture(A.color("insetEdge"))
 strip.edge:Show()
 local shownCells=drawn>0 and 1 or 0
+local texts={}
 for i=1,4 do
-if held.worldCells[i].rating:IsShown()then
+local cell=held.worldCells[i]
+if cell.rating:IsShown()then
 shownCells=shownCells+1
 end
+texts[#texts+1],texts[#texts+2],texts[#texts+3]=cell.label,cell.rating,cell.tier
+end
+local drawnWidths={}
+for i=1,4 do
+drawnWidths[i]=tostring(widths[i])
 end
 return drawn,{
 labels=table.concat(labels,","),
+widths=table.concat(drawnWidths,","),
 rules=rules,
 edge="strip",
 trend=math.max(0,to-from),
+barWidth=barWidth,
+trendSlot=slot and A.unitFigure(slot)or nil,
+stripCut=A.cutTexts(texts),
 cells=shownCells,
 outings=outings,
 }
@@ -2866,7 +2964,7 @@ if type(offer)=="function"and offer(fmt)then
 offered[#offered+1]="table"
 end
 end
-local bands=A.summaryBands({lines=lines,headline=summary.rating~=nil})
+local bands=A.summaryBands({lines=lines,headline=A.statsHeadline(fmt,summary)})
 if A.bandShown(bands[1])and A.bandShown(bands[2])then
 offered[#offered+1]="details"
 end
@@ -2884,14 +2982,14 @@ graphFolded=false
 end
 return collapsed,graphFolded,sole
 end
-local function paintReading(region,summary,lines,collapsed)
+local function paintReading(region,lines,collapsed,headline)
 local shown=#lines
 if shown>READING_ROWS then
 shown=READING_ROWS
 end
 local bands=A.summaryBands({
 lines=#lines,
-headline=summary.rating~=nil,
+headline=headline,
 collapsed=collapsed,
 })
 local draws=A.bandShown(bands[1])
@@ -3287,7 +3385,7 @@ end
 local height=A.metric("standingStrip")
 region:SetHeight(height)
 local drew=standing.paint(region,reading)
-standing.traceStrip(summary,reading,drew,height)
+standing.traceStrip(summary,reading,drew,height,"history")
 region.standingShape=type(drew)=="table"and drew.shape or nil
 return drew
 end
@@ -3308,12 +3406,21 @@ A.setDropdownChoices(region.scope,A.scopeChoicesFor(summary.format),scope)
 end)
 end
 end
+local stripHead=type(reading)=="table"and reading.stripOnly~=true
+and type(reading.standing)=="table"
+local headline=stripHead and"standing"or(summary.rating~=nil)
+if not(type(reading)=="table"and reading.stripOnly==true)then
+paintedHeadline[summary.format or"all"]=headline
+end
+if stripHead then
+region.fromValue:Hide()
+region.link:Hide()
+region.toValue:Hide()
+region.delta:Hide()
+else
 paintHeadline(region,summary)
 paintDelta(region,summary)
-local worldStrip=type(reading)=="table"and reading.stripOnly~=true
-and type(reading.standing)=="table"and type(reading.standing.hero)=="table"
-and reading.standing.hero.kind=="world"
-local headline=worldStrip and"standing"or(summary.rating~=nil)
+end
 local lines=A.readingLines(summary,notRated,true)
 paintDetails(region,#lines,headline,collapsed)
 local graphFolded=type(reading)=="table"and reading.graphFolded==true
@@ -3386,15 +3493,15 @@ if type(A.trace)=="function"then
 A.trace("statspills",{selected=#selected>0 and table.concat(selected,",")or"none",
 pillView=view or"none",pillOrder=region.pillOrder,soleView=sole or"none"},"ui")
 end
-local short=nil
-if worldStrip then
+local short,stripDrew=nil,nil
+if stripHead then
 for i=1,#region.tiles do
 region.tiles[i]:Hide()
 region.tiles[i].tooltipLines=nil
 region.tiles[i].opens,region.tiles[i].opensKind=nil,nil
 end
-standing.traceStrip(summary,reading.standing,standing.paint(region,reading.standing),
-A.metric("standingStrip"))
+stripDrew=standing.paint(region,reading.standing)
+standing.traceStrip(summary,reading.standing,stripDrew,A.metric("standingStrip"),"stats")
 else
 short=paintTiles(region,summary,
 type(reading)=="table"and reading.season or nil,
@@ -3418,8 +3525,8 @@ region.plot:Hide()
 A.paintStandingStrip(region,summary,reading.standing)
 return true
 end
-if worldStrip then
-region.standingShape="world"
+if stripHead then
+region.standingShape=type(stripDrew)=="table"and stripDrew.shape or nil
 else
 standing.hide(region)
 region.standingShape=nil
@@ -3452,7 +3559,7 @@ end
 return true
 end
 region.plot:Show()
-local readingHeight,readingCount=paintReading(region,summary,lines,collapsed)
+local readingHeight,readingCount=paintReading(region,lines,collapsed,headline)
 setPlotNote(region,nil)
 local branch,tally=plotBranch(summary.format,summary,graphFolded)
 if branch=="fought"then
@@ -3493,13 +3600,13 @@ local startDay,endDay=A.winLossEnds(held)
 local from,to=date("%Y-%m-%d",startDay),date("%Y-%m-%d",endDay)
 region.plotSpan:SetText(from==to and from or(from.." to "..to))
 end
-setRegionPlot(region,"folded",nil,summary.format,false,readingHeight,readingCount,
+setRegionPlot(region,"folded",nil,summary.format,headline,readingHeight,readingCount,
 grow,false)
 return true
 end
 region.barReading={bars=#held.columns,per=held.per,won=held.won,lost=held.lost,
 drawn=held.drawn}
-setRegionPlot(region,"bars",nil,summary.format,false,readingHeight,readingCount,grow,false)
+setRegionPlot(region,"bars",nil,summary.format,headline,readingHeight,readingCount,grow,false)
 drawBars(region,held)
 paintBarKeys(region,true)
 return true
@@ -3599,7 +3706,7 @@ local block=(branch=="plot"or branch=="bars")and"plot"or"note"
 if branch=="plot"or branch=="bars"then
 local gain
 gain,plotBound=A.plotGain(A.lastSummaryGrowth(),reading)
-total=A.summaryHeight(true)+gain
+total=A.summaryHeight(headline)+gain
 body=total-strip-gap-reading
 elseif branch=="folded"then
 total=A.summaryHeightFolded(headline,reading)
@@ -3610,7 +3717,7 @@ local rows=#fought
 if rows>OPPONENT_ROWS then
 rows=OPPONENT_ROWS
 end
-total=A.summaryHeightFought(rows,true,false,reading)
+total=A.summaryHeightFought(rows,true,headline,reading)
 body=total-strip-gap-reading
 block="fought"
 else
@@ -3642,7 +3749,8 @@ out[#out+1]=("%s  total %s = strip %s + gap %s + reading %s + %s %s%s%s")
 :format(name,figure(total),figure(strip),figure(gap),figure(reading),block,figure(body),
 boundWords,barsWords)
 out[#out+1]=("    tiles %d, headline %s, strip reserve %d, one ladder %s, season "
-.."boundary %s"):format(A.tileHeight(),headline and"drawn"or"none",
+.."boundary %s"):format(A.tileHeight(),
+headline=="standing"and"strip"or(headline and"drawn"or"none"),
 strip-A.tileHeight(),oneLadder and"yes"or"no",rated and"yes"or"no")
 out[#out+1]=("    note %s, scope %s")
 :format(branch=="folded"and"none, the graph is folded"
