@@ -1,10 +1,10 @@
--- WowPvpHistory 0.68.35
+-- WowPvpHistory 0.68.47
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
 -- License: MIT, see LICENSE
 local _,A=...
-local CATEGORY_NAME="PvP History"
+local CATEGORY_NAME=A.displayName()
 local VARIABLES={}
 local function declare(name)
 VARIABLES[#VARIABLES+1]=name
@@ -19,6 +19,7 @@ local ANNOUNCE_VARIABLE=declare("WOWPVPHISTORY_ANNOUNCE")
 local ANNOUNCE_TIME_VARIABLE=declare("WOWPVPHISTORY_ANNOUNCE_TIME")
 local ANNOUNCE_SIZE_VARIABLE=declare("WOWPVPHISTORY_ANNOUNCE_SIZE")
 local ANNOUNCE_OPACITY_VARIABLE=declare("WOWPVPHISTORY_ANNOUNCE_OPACITY")
+local WINDOW_SCALE_VARIABLE=declare("WOWPVPHISTORY_WINDOW_SCALE")
 local OVERLAY_VARIABLE=declare("WOWPVPHISTORY_OVERLAY")
 local TOOLTIP_VARIABLE=declare("WOWPVPHISTORY_TOOLTIP")
 local MINIMAP_VARIABLE=declare("WOWPVPHISTORY_MINIMAP_BUTTON")
@@ -30,6 +31,7 @@ local HOLD_VARIABLE=declare("WOWPVPHISTORY_HOLD")
 local FINDER_VARIABLE=declare("WOWPVPHISTORY_FINDER")
 local FINDER_DOCK_VARIABLE=declare("WOWPVPHISTORY_FINDER_DOCK")
 local SIGHT_VARIABLE=declare("WOWPVPHISTORY_SIGHT")
+local CHAT_MARK_VARIABLE=declare("WOWPVPHISTORY_CHAT_MARK")
 local ALERTS_DEFAULT=true
 local POST_GAME_DEFAULT=true
 local OPEN_AFTER_MATCH_DEFAULT=true
@@ -46,6 +48,7 @@ local HOLD_DEFAULT=true
 local FINDER_DEFAULT=true
 local FINDER_DOCK_DEFAULT=true
 local SIGHT_DEFAULT=true
+local CHAT_MARK_DEFAULT=true
 local THEME_DEFAULT="blizzard"
 local category
 local attempted=false
@@ -107,6 +110,10 @@ function A.notifySightSetting()
 traceSetting("sight",A.sightEnabled)
 return notify(SIGHT_VARIABLE)
 end
+function A.notifyChatMarkSetting()
+traceSetting("chat-mark",A.chatMarkEnabled)
+return notify(CHAT_MARK_VARIABLE)
+end
 function A.notifyGroupNotesSetting()
 traceSetting("group-notes",A.groupNotesEnabled)
 return notify(GROUP_NOTES_VARIABLE)
@@ -118,6 +125,10 @@ end
 function A.notifyAnnounceTimeSetting()
 traceSetting("announce-time",A.announceTime)
 return notify(ANNOUNCE_TIME_VARIABLE)
+end
+function A.notifyWindowScaleSetting()
+traceSetting("window-scale",A.windowScale)
+return notify(WINDOW_SCALE_VARIABLE)
 end
 function A.notifyAnnounceSizeSetting()
 traceSetting("announce-size",A.announceSize)
@@ -269,6 +280,11 @@ A.announceOpacity,A.setAnnounceOpacity,
 "How dark the panel behind the announcement's names is. At 0% the names are drawn alone "
 .."over the game world.",
 A.announceOpacityRange)
+slider(WINDOW_SCALE_VARIABLE,"Window scale",
+A.windowScale,A.setWindowScale,
+"Draws every PvPHistory window larger or smaller, text included. The announcement has its "
+.."own size slider.",
+A.windowScaleRange)
 end
 local function register()
 local s=surface()
@@ -306,6 +322,12 @@ A.sightEnabled,A.setSight)
 s.CreateCheckbox(made,sight,
 "Outside a battleground or an arena, put a mark on the nameplate of a player you rated, "
 .."tagged or wrote about, and name them once in chat when they appear.")
+local chatMark=s.RegisterProxySetting(made,CHAT_MARK_VARIABLE,s.VarType.Boolean,
+"Mark people you have written about in chat",CHAT_MARK_DEFAULT,
+A.chatMarkEnabled,A.setChatMark)
+s.CreateCheckbox(made,chatMark,
+"Outside a match, a dungeon or a raid, put a bar before the name of a player you rated, "
+.."tagged or wrote about when they talk in chat, colored by your rating.")
 local announce=s.RegisterProxySetting(made,ANNOUNCE_VARIABLE,s.VarType.Boolean,
 "Announce who you know at the gates",ANNOUNCE_DEFAULT,
 A.announceEnabled,A.setAnnounce)

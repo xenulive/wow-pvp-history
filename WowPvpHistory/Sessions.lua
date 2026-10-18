@@ -1,4 +1,4 @@
--- WowPvpHistory 0.68.35
+-- WowPvpHistory 0.68.47
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -286,14 +286,20 @@ if not okParts or type(dayOfMonth)~="number"then
 return nil
 end
 return{
-("%s %d %s, %s"):format(long,dayOfMonth,month,part),
-("%s %d %s, %s"):format(weekday,dayOfMonth,short,part),
-("%d %s, %s"):format(dayOfMonth,short,part),
+("%s %d %s"):format(long,dayOfMonth,month),
+("%s %d %s"):format(weekday,dayOfMonth,short),
+("%d %s"):format(dayOfMonth,short),
 }
 end
-function A.sessionGridLabelForms(stamp,now)
+local function gridLabelForms(stamp,now,earlier)
 local forms=A.sessionHeadForms(stamp,now)
-if forms==nil or#forms<2 then
+if forms==nil then
+return nil
+end
+if#forms<2 then
+if earlier and forms[1]~=nil then
+return{"Earlier "..forms[1]:lower()}
+end
 return forms
 end
 local day,part=sessionDayPart(stamp)
@@ -303,13 +309,14 @@ end)
 if not ok or type(dayOfMonth)~="number"then
 return forms
 end
-local out={("%s %d %s, %s"):format(weekday,dayOfMonth,month,part)}
-for i=2,#forms do
-if forms[i]~=out[#out]then
-out[#out+1]=forms[i]
+local said=(earlier and"earlier "or"")..part
+return{
+("%s %d %s, %s"):format(weekday,dayOfMonth,month,said),
+("%d %s, %s"):format(dayOfMonth,month,said),
+}
 end
-end
-return out
+function A.sessionGridLabelForms(stamp,now)
+return gridLabelForms(stamp,now,false)
 end
 function A.sessionHeadList(sessions,now)
 local out={}
@@ -317,6 +324,24 @@ for _,session in ipairs(type(sessions)=="table"and sessions or{})do
 out[session]=A.sessionHeadForms(session.startStamp,now)or{}
 end
 return out
+end
+function A.sessionGridLabelList(sessions,now)
+local heads=A.sessionHeadList(sessions,now)
+local out,seen,earlier={},{},0
+for _,session in ipairs(type(sessions)=="table"and sessions or{})do
+local day,part=sessionDayPart(session.startStamp)
+local key=day~=nil and(day.." "..part)or nil
+local taken=key~=nil and seen[key]==true
+local forms=gridLabelForms(session.startStamp,now,taken)
+if taken and forms~=nil then
+earlier=earlier+1
+end
+if key~=nil then
+seen[key]=true
+end
+out[session]=forms or heads[session]or{}
+end
+return out,earlier
 end
 function A.sessionSpanText(session)
 if type(session)~="table"then
@@ -608,7 +633,14 @@ text=text..A.colorEscape("dim").." rds|r"
 end
 return text
 end
-function A.sessionGrid(entries,room,format)
+function A.sessionColumnNeed(labelNeed,caretWidth)
+if type(labelNeed)~="number"or labelNeed<=0 then
+return nil
+end
+local caret=type(caretWidth)=="number"and caretWidth or A.fontSize("label")
+return math.ceil(labelNeed+caret+A.metric("rowCellGap")+2)
+end
+function A.sessionGrid(entries,room,format,sessionWidth)
 local shown,rest={},{}
 if format==nil then
 shown,rest=A.sessionGridFormats(entries)
@@ -618,7 +650,8 @@ local function fixed(metric,name)
 return math.max(A.metric(metric),A.headerFloor(name))
 end
 local function build(fold)
-local columns={{key="session",name="SESSION",width=fixed("gridSession","SESSION")}}
+local columns={{key="session",name="SESSION",
+width=math.max(fixed("gridSession","SESSION"),sessionWidth or 0)}}
 if not fold then
 columns[#columns+1]={key="time",name="TIME",width=fixed("gridTime","TIME")}
 end
@@ -660,7 +693,7 @@ end
 columns=build(true)
 return columns,rest,true
 end
-function A.worldSessionGrid(columns)
+function A.worldSessionGrid(columns,sessionWidth)
 if type(columns)~="table"then
 return nil
 end
@@ -676,9 +709,13 @@ if widthOf[key]==nil then
 return nil
 end
 end
+local shared=widthOf.time+A.metric("rowCellGap")+widthOf.where
+local session=math.min(math.max(A.metric("gridSession"),widthOf.id,sessionWidth or 0),
+widthOf.id+shared-1)
+local time=shared-(session-widthOf.id)
 return{
-{key="session",name="SESSION",width=widthOf.id},
-{key="time",name="TIME",width=widthOf.time+A.metric("rowCellGap")+widthOf.where},
+{key="session",name="SESSION",width=session},
+{key="time",name="TIME",width=time},
 {key="tally",name="KILLS AND DEATHS",width=widthOf.tally},
 {key="ratio",name="K/D",width=widthOf.ratio,align="RIGHT"},
 {key="matches",name="OUTINGS",width=widthOf.span,align="RIGHT"},
@@ -965,7 +1002,7 @@ if best.zone~=nil then
 hero.best=hero.best..", "..best.zone
 end
 end
-hero.timeOut=hero.timed>0 and A.lengthText(hero.seconds)or nil
+hero.timeOut=hero.timed>0 and A.totalTimeText(hero.seconds)or nil
 hero.average=hero.timed>0 and("avg "..A.lengthText(math.floor(hero.seconds/hero.timed+0.5)))or nil
 local last=records[1]
 local stamp=last and(last.openedAt or last.completedAt)or nil
@@ -1068,12 +1105,21 @@ moved=moved+1
 end
 end
 reading.bars=moved>=2 and bars or{}
-local rate=select(4,A.winRecord(summary))
+local wins,losses,_,rate=A.winRecord(summary)
+if type(summary.peak)=="number"and(reading.high==nil or math.floor(summary.peak)>reading.high)then
+reading.peak=math.floor(summary.peak)
+end
 if format=="shuffle"then
+local parts={}
+if summary.roundsPlayed and summary.roundsPlayed>0 then
+parts[#parts+1]=("%d-%d rounds"):format(summary.roundsWon,summary.roundsPlayed-summary.roundsWon)
+end
+if wins~=nil then
+parts[#parts+1]=("%d-%d matches"):format(wins,losses)
+end
 reading.figures={
 {label="ROUNDS WON",value=A.percentText(summary.roundRate),
-sub=summary.roundsPlayed and summary.roundsPlayed>0
-and("%d-%d"):format(summary.roundsWon,summary.roundsPlayed-summary.roundsWon)or nil,
+sub=#parts>0 and table.concat(parts,", ")or nil,
 tone=A.winRateTone(summary.roundRate)},
 }
 else
@@ -1132,9 +1178,21 @@ played=newestFormats[rated]==true,
 end
 end
 reading.tiles=tiles
-local rate=select(4,A.winRecord(summary))
+local wins,losses,draws,rate=A.winRecord(summary)
+local sub={}
+local record=A.winRecordText(summary,format)
+if record~=nil then
+sub[#sub+1]=record
+end
+local count=type(summary.matches)=="number"and summary.matches or nil
+if count~=nil and count>0 and(wins==nil or wins+losses+draws~=count)then
+sub[#sub+1]=("%d %s"):format(count,count==1 and"match"or"matches")
+end
+if avgText~=nil then
+sub[#sub+1]=avgText
+end
 reading.figures={
-{label="WIN RATE",value=A.percentText(rate),sub=A.winRecordText(summary,format),
+{label="WIN RATE",value=A.percentText(rate),sub=#sub>0 and table.concat(sub,", ")or nil,
 tone=A.winRateTone(rate)},
 }
 else
@@ -1155,9 +1213,13 @@ end
 reading.bars=bars
 local last=records[1]
 local lastStamp=last and(last.openedAt or last.completedAt)or nil
+local matchesSub=avgText
+if summary.mmr~=nil then
+matchesSub=(avgText and(avgText..", ")or"").."MMR "..tostring(summary.mmr)
+end
 reading.figures={
 {label="MATCHES",value=tostring(summary.matches or 0),
-sub=avgText},
+sub=matchesSub},
 {label="LAST PLAYED",value=lastStamp and A.sessionDayLabel(lastStamp,now)or"-",
 forms=lastStamp and A.sessionDayForms(lastStamp,now)or nil,
 sub=lastStamp and A.clockKey(lastStamp)or nil},

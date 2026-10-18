@@ -1,4 +1,4 @@
--- WowPvpHistory 0.68.35
+-- WowPvpHistory 0.68.47
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -125,7 +125,7 @@ end
 A.trace("minimap/drag",{state="circle",angle=A.unitFigure(storedAngle())},"ui")
 end
 local MENU_ENTRIES={
-{kind="title",text="PvP History"},
+{kind="title",text=A.displayName()},
 {kind="button",text="Match history",run=function()A.toggleWindow()end},
 {kind="button",text="Players",count="players",run=function()A.toggleNotes()end},
 {kind="button",text="Stats",run=function()A.showWindowState({body="stats",view="ask"})end},
@@ -255,7 +255,7 @@ local hint="Click: match history "..A.HEAD_DOT.." Right click: menu"
 local character=A.barCharacter()
 local newest=character~=nil and A.lastMatch(nil,nil,A.barRecorder(character),nil,true)or nil
 if newest==nil or newest.format==nil then
-GameTooltip:AddLine("PvP History",ar,ag,ab)
+GameTooltip:AddLine(A.displayName(),ar,ag,ab)
 GameTooltip:AddLine(hint,mr,mg,mb)
 GameTooltip:Show()
 A.trace("minimap/tooltip",{state="empty"},"ui")
@@ -272,7 +272,7 @@ drawn=drawn+1
 end
 local format=newest.format
 local formatText=A.formatLabel(format)
-double("PvP History",formatText,ar,ag,ab,dr,dg,db)
+double(A.displayName(),formatText,ar,ag,ab,dr,dg,db)
 local figures=A.todayFigures(format,character)or{}
 local drawnRating,drawnChange
 if figures.rating~=nil or figures.change~=nil then

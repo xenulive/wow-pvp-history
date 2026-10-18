@@ -1,4 +1,4 @@
--- WowPvpHistory 0.68.35
+-- WowPvpHistory 0.68.47
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -1654,9 +1654,11 @@ tooltip=function()return A.tooltipSampleShown()or GameTooltip end,
 finder=function()return A.finderTooltip and A.finderTooltip()or nil end,
 card=function()return A.nameCardFrame and A.nameCardFrame()or nil end,
 hold=function()return A.holdStandIn and A.holdStandIn()or nil end,
+grip=function()return A.windowFrameOf and A.windowFrameOf("matches")or nil end,
 }
 local RECT_ORDER={"history","summary","players","match","table","player","banner","overlay",
-"overlaytile","tooltip","finder","card","hold"}
+"overlaytile","tooltip","finder","card","hold","grip"}
+local RECT_CORNERS={grip=64}
 local function rectFigure(frame,getter)
 local fn=frame[getter]
 if type(fn)~="function"then
@@ -1711,6 +1713,11 @@ if not rect then
 A.say(("%s: %s"):format(which,why))
 return
 end
+local side=RECT_CORNERS[which]
+if side then
+rect={left=rect.left+rect.width-side,top=rect.top+rect.height-side,width=side,
+height=side}
+end
 A.say(("%s: %d,%d,%d,%d (left,top,width,height in screen pixels)"):format(which,rect.left,rect.top,
 rect.width,rect.height))
 end
@@ -1732,6 +1739,27 @@ return
 end
 if word=="size"then
 reportWindowSize(words)
+return
+end
+if word=="scale"then
+if type(A.windowScaleLines)~="function"then
+A.say("the window geometry did not load, so no window has a scale to state")
+return
+end
+local given=words[3]and words[3]:lower()or nil
+if given=="reset"then
+A.setSessionWindowScale(nil,"reset")
+elseif given~=nil then
+if A.setSessionWindowScale(given,"command")==nil then
+local least,most,step=A.windowScaleRange()
+A.say(("/pvph window scale takes a percentage from %d to %d in steps of %d, or reset, and %q is none")
+:format(least,most,step,given))
+return
+end
+end
+for _,line in ipairs(A.windowScaleLines())do
+A.say(line)
+end
 return
 end
 if word=="scroll"then
@@ -1823,6 +1851,26 @@ if word=="rect"then
 reportWindowRect(words)
 return
 end
+if word=="grip"then
+local which=words[3]and words[3]:lower()or nil
+if which~=nil and which~="hover"then
+A.say(("/pvph window grip [hover]: the history window's resize grip as a pointer over it, and %q is not hover")
+:format(which))
+return
+end
+local frame=A.windowFrameOf and A.windowFrameOf("matches")or nil
+local grip=frame and frame.grip or nil
+if not grip then
+A.say("the history window has no grip built yet. /pvph show opens it")
+return
+end
+local handler=grip:GetScript(which and"OnEnter"or"OnLeave")
+if type(handler)=="function"then
+pcall(handler,grip)
+end
+A.say(("history window grip: %s"):format(grip.gripDrawn or"unpainted"))
+return
+end
 if word=="close"then
 local matches=type(A.closeMatchWindows)=="function"and A.closeMatchWindows()or 0
 local players=type(A.closePlayerWindows)=="function"and A.closePlayerWindows()or 0
@@ -1831,7 +1879,7 @@ players,players==1 and"window"or"windows"))
 return
 end
 if word~=nil then
-A.say(("/pvph window takes reset, size, scroll, store, player, menu, hover, round, click, dropdown, tile, rect, close or nothing, and %q is none of them")
+A.say(("/pvph window takes reset, size, scale, scroll, store, player, menu, hover, round, click, dropdown, tile, rect, grip, close or nothing, and %q is none of them")
 :format(word))
 return
 end
@@ -3516,6 +3564,7 @@ local USAGE={
 "/pvph postgame       the lines after a match or a duel. on or off; a fault still prints",
 "/pvph aftermatch     open the match's window once its instance is left. on or off; bare reads it",
 "/pvph sight          mark and name a player you wrote about when they appear. on or off; bare reads it",
+"/pvph chatmark       a bar before the name of a player you wrote about in chat. on, off or sample; bare reads it",
 "/pvph menu           write a note and a rating from the player right-click menu",
 "/pvph tooltip        put the record, the last rating and the note on a unit tooltip",
 "/pvph duel           record completed duels. on or off, and what the readout can see",
@@ -3554,6 +3603,7 @@ local USAGE={
 "/pvph window size [players] <w> [h]  both halves' size: a number, min, max, authored or same.",
 "                     never stored; session says so",
 "/pvph window size match|player <w> [h]  the newest match or player window, this session, never stored",
+"/pvph window scale [<percent>|reset]  every window's scale. A percentage holds for this session and stores nothing; reset puts the setting back",
 "/pvph window scroll top  the History list back to its top. Holds nothing and stores nothing",
 "/pvph window store   the store panel. window player <who> opens that player's window",
 "/pvph window menu <id|last|draw|typed|short> [open|note|roster|print|talents|result <win|loss|draw>]  a match row's menu, or one entry of it",
@@ -3561,7 +3611,8 @@ local USAGE={
 "/pvph window round [n]  the hover over round n of the newest match window's table. No number hides it",
 "/pvph window dropdown [character|scope|result|spec]  open that dropdown's list. No word closes it",
 "/pvph window tile [rate|matches|mmr|length|last]  a summary card's hover. No word hides it",
-"/pvph window rect <history|summary|players|match|table|player|banner|overlay|overlaytile|tooltip|finder|card|hold>  where it sits on screen, in pixels",
+"/pvph window rect <history|summary|players|match|table|player|banner|overlay|overlaytile|tooltip|finder|card|hold|grip>  where it sits on screen, in pixels. grip is the history window's 64 pixel corner",
+"/pvph window grip [hover]  the history window's resize grip as a pointer over it. No word puts it back",
 "/pvph window close  close every match window and player window",
 "/pvph window click [players] <who> [shift|ctrl|alt|shift-alt|ctrl-alt]  a click on that name in the newest match window, or in the players window. #N is a roster row; a modifier adds the name or the spec to the search instead",
 "/pvph season        the client's season and rated counters, and what is declared. start, end, label, forget",
@@ -3822,6 +3873,10 @@ return
 end
 if first=="sight"then
 A.reportSight(words[2]and words[2]:lower()or nil)
+return
+end
+if first=="chatmark"then
+A.reportChatMark(words[2]and words[2]:lower()or nil)
 return
 end
 if first=="tooltip"then

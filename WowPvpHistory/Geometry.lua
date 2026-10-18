@@ -1,4 +1,4 @@
--- WowPvpHistory 0.68.35
+-- WowPvpHistory 0.68.47
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -164,7 +164,7 @@ end
 end
 return narrowest
 end
-function A.registerPlacedWindow(frame,point,x,y)
+function A.registerPlacedWindow(frame,point,x,y,onScaled)
 if type(frame)~="table"or type(point)~="string"or point==""then
 return false
 end
@@ -185,6 +185,7 @@ x=type(x)=="number"and x or 0,
 y=type(y)=="number"and y or 0,
 name=name,
 }
+A.registerScaledWindow(frame,onScaled)
 return true
 end
 function A.placedWindows()
@@ -228,6 +229,203 @@ end
 return width,height
 end
 A.screenSize=screenSize
+local SCALE_MIN,SCALE_MAX,SCALE_STEP,SCALE_DEFAULT=70,150,5,100
+local scaledWindows={}
+local sessionScale=nil
+local function scaleStep(value)
+local number=tonumber(value)
+if number==nil or number~=number or number==math.huge or number==-math.huge then
+return nil
+end
+local stepped=math.floor(number/SCALE_STEP+0.5)*SCALE_STEP
+return math.max(SCALE_MIN,math.min(SCALE_MAX,stepped))
+end
+function A.windowScale()
+local db=A.db()
+if not db or type(db.ui)~="table"then
+return SCALE_DEFAULT
+end
+return scaleStep(db.ui.windowScale)or SCALE_DEFAULT
+end
+function A.windowScaleRange()
+return SCALE_MIN,SCALE_MAX,SCALE_STEP,SCALE_DEFAULT
+end
+function A.windowScaleApplied()
+return sessionScale or A.windowScale()
+end
+local function scaleFactor()
+return A.windowScaleApplied()/100
+end
+function A.screenSizeFor(frame)
+local width,height=screenSize()
+local scale=nil
+if type(frame)=="table"and type(frame.GetScale)=="function"then
+local ok,read=pcall(frame.GetScale,frame)
+if ok and type(read)=="number"and read>0 then
+scale=read
+end
+end
+scale=scale or scaleFactor()
+return width and width/scale or nil,height and height/scale or nil
+end
+function A.registerScaledWindow(frame,onScaled)
+if type(frame)~="table"then
+return false
+end
+for i=1,#scaledWindows do
+if scaledWindows[i].frame==frame then
+return false
+end
+end
+local name
+local okName,given=pcall(frame.GetName,frame)
+if okName and type(given)=="string"and given~=""then
+name=given
+end
+scaledWindows[#scaledWindows+1]={
+frame=frame,
+name=name,
+onScaled=type(onScaled)=="function"and onScaled or nil,
+}
+pcall(frame.SetScale,frame,scaleFactor())
+return true
+end
+local function convertAnchors(frame,ratio)
+local okCount,count=pcall(frame.GetNumPoints,frame)
+if not okCount or type(count)~="number"or count<1 then
+return false
+end
+local points,onRoot={},false
+for i=1,count do
+local ok,point,relativeTo,relativePoint,x,y=pcall(frame.GetPoint,frame,i)
+if not ok or type(point)~="string"then
+return false
+end
+local root=relativeTo==nil or relativeTo==UIParent
+onRoot=onRoot or root
+points[i]={point,relativeTo,relativePoint or point,
+(type(x)=="number"and x or 0)*(root and ratio or 1),
+(type(y)=="number"and y or 0)*(root and ratio or 1)}
+end
+if not onRoot then
+return false
+end
+pcall(frame.ClearAllPoints,frame)
+for i=1,#points do
+local held=points[i]
+pcall(frame.SetPoint,frame,held[1],held[2]or UIParent,held[3],held[4],held[5])
+end
+return true
+end
+local boundResize
+function A.applyWindowScale(from,stored)
+local new=scaleFactor()
+local scaled,refused,moved=0,0,0
+for i=1,#scaledWindows do
+local held=scaledWindows[i]
+local frame=held.frame
+local okOld,old=pcall(frame.GetScale,frame)
+old=okOld and type(old)=="number"and old>0 and old or 1
+if math.abs(old-new)>0.0001 and convertAnchors(frame,old/new)then
+moved=moved+1
+end
+if pcall(frame.SetScale,frame,new)then
+scaled=scaled+1
+else
+refused=refused+1
+end
+local screenW,screenH=A.screenSizeFor(frame)
+local okW,width=pcall(frame.GetWidth,frame)
+local okH,height=pcall(frame.GetHeight,frame)
+if okW and type(width)=="number"and type(screenW)=="number"and width>screenW then
+pcall(frame.SetWidth,frame,screenW)
+end
+if okH and type(height)=="number"and type(screenH)=="number"and height>screenH then
+pcall(frame.SetHeight,frame,screenH)
+end
+if held.onScaled then
+pcall(held.onScaled,frame,type(stored)=="number"and stored or nil)
+end
+end
+for k=1,#order do
+local kind=order[k]
+local spec=specs[kind]
+if spec and spec.frame then
+pcall(boundResize,spec.frame,kind)
+local entry=ownerOf(kind)==kind and A.storedGeometry(kind)or nil
+if entry and type(stored)=="number"and entry.point then
+entry.x,entry.y=(entry.x or 0)*stored,(entry.y or 0)*stored
+A.setStoredGeometry(kind,entry)
+elseif entry and stored=="restore"then
+A.applyStoredGeometry(kind)
+end
+end
+end
+A.trace("scale",{
+windowScale=A.windowScaleApplied(),
+scaleFrom=from,
+scaled=scaled,
+scaleRefused=refused,
+anchorsMoved=moved,
+placesStored=type(stored)=="number"and"converted"or stored=="restore"and"restored"or"kept",
+},"ui")
+return scaled,refused
+end
+function A.setWindowScale(value,from)
+local db=A.db()
+if not db then
+return false
+end
+local want=scaleStep(value)
+if want==nil then
+return false
+end
+local before=A.windowScale()
+db.ui=db.ui or{}
+db.ui.windowScale=want~=SCALE_DEFAULT and want or nil
+sessionScale=nil
+if A.notifyWindowScaleSetting then
+pcall(A.notifyWindowScaleSetting)
+end
+A.applyWindowScale(type(from)=="string"and from or"setting",before/want)
+return true
+end
+function A.windowScaleLines()
+local out={}
+out[1]=("window scale %d%% stored, %s this session, %d%% applied"):format(A.windowScale(),
+sessionScale and(sessionScale.."%")or"none typed",A.windowScaleApplied())
+if#scaledWindows==0 then
+out[2]="no window is built yet, so none has taken the scale"
+return out
+end
+for i=1,#scaledWindows do
+local held=scaledWindows[i]
+local okScale,effective=pcall(held.frame.GetEffectiveScale,held.frame)
+local okShown,shown=pcall(held.frame.IsShown,held.frame)
+local figure=okScale and A.unitFigure(effective)or nil
+out[#out+1]=("  %s  effective %s, %s"):format(held.name or("window "..i),
+figure and("%.2f"):format(figure)or"unread",okShown and(shown and"shown"or"hidden")or"unread")
+end
+return out
+end
+function A.setSessionWindowScale(value,from)
+local restore=nil
+if value==nil then
+restore=sessionScale~=nil and"restore"or nil
+sessionScale=nil
+else
+local want=scaleStep(value)
+if want==nil then
+return nil
+end
+sessionScale=want
+end
+A.applyWindowScale(from or"command",restore)
+if type(A.refreshOptionsWindow)=="function"then
+pcall(A.refreshOptionsWindow)
+end
+return A.windowScaleApplied()
+end
 local function fit(value,floor,ceiling)
 if type(value)~="number"then
 value=floor
@@ -248,7 +446,7 @@ end
 if type(geometry)~="table"then
 return nil
 end
-local screenW,screenH=screenSize()
+local screenW,screenH=A.screenSizeFor(specs[kind]and specs[kind].frame or nil)
 local maxW=A.windowCeiling(kind)
 if type(screenW)=="number"and(maxW==nil or screenW<maxW)then
 maxW=screenW
@@ -744,17 +942,12 @@ releaseStored=stored,
 kind=kind,
 },"ui")
 end
-function A.attachResize(frame,kind,onResize)
-local spec=specs[kind]
-if not(spec and type(frame)=="table")then
-return false
-end
-spec.frame=frame
+boundResize=function(frame,kind)
 local floorW,floorH=A.windowFloor(kind)
 if type(floorW)~="number"then
 return false
 end
-local screenW,screenH=screenSize()
+local screenW,screenH=A.screenSizeFor(frame)
 local maxW=A.windowCeiling(kind)
 if type(screenW)=="number"and(maxW==nil or screenW<maxW)then
 maxW=screenW
@@ -766,6 +959,45 @@ local ok=pcall(frame.SetResizable,frame,true)
 if ok then
 pcall(frame.SetResizeBounds,frame,floorW,floorH,maxW,screenH)
 end
+return ok
+end
+function A.seatGripPoint(grip)
+local frame=type(grip)=="table"and grip.window or nil
+if type(frame)~="table"then
+return nil
+end
+local inset=A.metric("gripInset")
+local panel=rawget(frame,"InsetBg")
+local to,seat=frame,"frame"
+if A.theme()=="blizzard"and type(panel)=="table"then
+to,seat=panel,"inset"
+end
+grip:ClearAllPoints()
+grip:SetPoint("BOTTOMRIGHT",to,"BOTTOMRIGHT",-inset,inset)
+grip.gripSeat=seat
+return seat
+end
+local function seatGrip(frame,kind,grip)
+frame.grip=grip
+grip.windowKind=kind
+A.seatGripPoint(grip)
+A.raiseGrip(grip)
+pcall(frame.HookScript,frame,"OnShow",function()
+A.raiseGrip(grip)
+end)
+end
+function A.attachResize(frame,kind,onResize)
+local spec=specs[kind]
+if not(spec and type(frame)=="table")then
+return false
+end
+spec.frame=frame
+A.registerScaledWindow(frame)
+local floorW=A.windowFloor(kind)
+if type(floorW)~="number"then
+return false
+end
+boundResize(frame,kind)
 local pressed,steps,resizedInPress=false,0,false
 local function queueRepaint()
 if queued[kind]then
@@ -832,9 +1064,7 @@ pcall(traceGrip,frame,kind,"grip-started")
 end
 local built,grip=pcall(A.grip,frame,released,pressedDown,sizingStarted)
 if built and grip then
-frame.grip=grip
-grip:SetPoint("BOTTOMRIGHT",frame,"BOTTOMRIGHT",
--A.metric("gripInset"),A.metric("gripInset"))
+seatGrip(frame,kind,grip)
 end
 end
 A.applyStoredGeometry(kind)
@@ -849,7 +1079,8 @@ local floorW,floorH=A.windowFloor(kind)
 if type(floorW)~="number"then
 return false
 end
-local screenW,screenH=screenSize()
+A.registerScaledWindow(frame)
+local screenW,screenH=A.screenSizeFor(frame)
 if not pcall(frame.SetResizable,frame,true)then
 return false
 end
@@ -914,8 +1145,7 @@ local built,grip=pcall(A.grip,frame,released,pressedDown,sizingStarted)
 if not(built and grip)then
 return false
 end
-frame.grip=grip
-grip:SetPoint("BOTTOMRIGHT",frame,"BOTTOMRIGHT",-A.metric("gripInset"),A.metric("gripInset"))
+seatGrip(frame,kind,grip)
 return true
 end
 function A.pooledOpenSize(kind)

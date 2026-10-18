@@ -1,4 +1,4 @@
--- WowPvpHistory 0.68.35
+-- WowPvpHistory 0.68.47
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -56,6 +56,9 @@ local FIELDS={
 "noteAt",
 "noted",
 "carriesNote",
+"outcome","mark","carriesRating","chatEvent",
+"art","textureRead","alpha","level","levelAbove","cursorSet",
+"tinted","gripSeat","gripX","gripY",
 "named",
 "players","notes","incomplete","drops","pinned",
 "stored",
@@ -177,6 +180,10 @@ local FIELDS={
 "lineScope","boxScope",
 "classColored",
 "labels","widths","rules","rate","centre","shed","edge","trend","inset","barWidth",
+"trendSlot","stripCut",
+"labelsCut","earlierLabels",
+"labelsShort","sessionNeed","sessionWidth",
+"windowScale","scaleFrom","scaled","scaleRefused","anchorsMoved","placesStored",
 "asides","moment",
 "overGap","overGapFrom",
 "chips","need","needShort",
@@ -233,6 +240,9 @@ local FIELDS={
 "copyShown",
 "tabLabel","tabAsked","tabFloor","tabWidth",
 "outings","marks",
+"stripBody","barsShed",
+"headIcon",
+"cellOpens",
 }
 function A.debugFields()
 local out={}
@@ -252,6 +262,7 @@ FIELD_TYPES[keys[i]]=set
 end
 end
 typed("number",{
+"alpha","level","gripX","gripY",
 "restriction","rounds","rows","kept","skipped","charsKept","charsTaken","charsBoth","attempt","off","bracket","n","season",
 "arena","winner","winnerOdd","out","from","gap","mmr","noRow","noGuid","secretGuid",
 "left","seg","total","strip","plot","reading","lines","players","notes","incomplete",
@@ -272,6 +283,8 @@ typed("number",{
 "firstAfter","content","extent","snapTo","wheelN","d","tries","measured","drawnWidth",
 "reserved","roundsRoom","roundsNeed","height","srcBottom","floor","ranked","under",
 "weeks","cells","blank","draws","weekBar","weekStep","rules","rate","centre","trend","inset","barWidth",
+"trendSlot","stripCut","labelsCut","earlierLabels","labelsShort","sessionNeed","sessionWidth",
+"windowScale","scaled","scaleRefused","anchorsMoved",
 "overGap","need","needShort","chart","cell","ratedRows","seasonBreaks","icons","squares",
 "stripSeason","stripFloor","bodyWidth","bodyFloor","over1","over5","over10","over50",
 "over100","over500","over1000","drainMean","drainMax","samples","peak","session","foldUs",
@@ -283,7 +296,7 @@ typed("number",{
 "placedScreen","windowsOpen","windows","objectiveRows","sortSlot","first",
 "pvpTalents","earlier","bestCols","leftOutWins","buildSpecs","beforeBuilds","unreadBuilds",
 "numbered","rowIcons",
-"tabAsked","tabFloor","tabWidth","outings","marks",
+"tabAsked","tabFloor","tabWidth","outings","marks","barsShed","cellOpens",
 "samplesRead","samplesSkipped","classColored",
 })
 typed("string",{
@@ -305,7 +318,8 @@ typed("string",{
 "foundType","clientEvent","modifiers","tabFrom","sideFilter",
 "screen","windowsReset","sides","to","slot","tileValues","descForm","sortColumn",
 "rateSign","bestsSet","tabLabel",
-"cardSet","soleView","lineScope","boxScope",
+"cardSet","soleView","lineScope","boxScope","scaleFrom","placesStored","stripBody","headIcon",
+"outcome","mark","chatEvent","art","gripSeat",
 })
 typed("boolean",{
 "rangeRead","scrollRead",
@@ -316,10 +330,12 @@ typed("boolean",{
 "default","copy","created","hidden",
 "rating","carriesNote","columnDrawn","rateClause",
 "loadoutRead","heroRead","copyShown",
+"carriesRating","levelAbove","cursorSet","tinted",
 })
 typed("number string",{
 "id","fromId","repStep","topValue","bottomValue","yoursTop","theirsTop","sortFirst",
 "markFrom","markTo",
+"textureRead",
 })
 typed("boolean string",{
 "early",

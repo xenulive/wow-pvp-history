@@ -1,4 +1,4 @@
--- WowPvpHistory 0.68.35
+-- WowPvpHistory 0.68.47
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -191,10 +191,111 @@ A.style(row.label,"bodyText",row.dropdownChosen and"bright"or"text")
 end
 end
 end
+local function gripState(grip)
+if grip.gripDown then
+return"down"
+end
+return grip.gripHot and"hover"or"up"
+end
+local function highestLevel(frame,skip)
+local top
+local ok,children=pcall(function()return{frame:GetChildren()}end)
+if not ok then
+return nil
+end
+for i=1,#children do
+local child=children[i]
+if child~=skip then
+local read,level=pcall(child.GetFrameLevel,child)
+if read and type(level)=="number"and(top==nil or level>top)then
+top=level
+end
+local below=highestLevel(child,skip)
+if below~=nil and(top==nil or below>top)then
+top=below
+end
+end
+end
+return top
+end
+function A.gripLevelAbove(grip)
+local parent=grip and grip.window
+if not parent then
+return false
+end
+local top=highestLevel(parent,grip)
+local ok,level=pcall(grip.GetFrameLevel,grip)
+if not(ok and type(level)=="number")then
+return false
+end
+return top==nil or level>top
+end
+local GRIP_LIFT=100
+function A.raiseGrip(grip)
+local parent=grip and grip.window
+if not parent then
+return nil
+end
+local ok,own=pcall(parent.GetFrameLevel,parent)
+own=ok and type(own)=="number"and own or 0
+local top=highestLevel(parent,grip)or own
+local level=math.max(top+1,own+GRIP_LIFT)
+if not pcall(grip.SetFrameLevel,grip,level)then
+return nil
+end
+return level
+end
+local function ringPath(path)
+if type(path)~="string"then
+return path
+end
+return(path:gsub("%-","_"))
+end
+local function traceGrip(grip,state)
+local read,file=pcall(grip.art.GetTexture,grip.art)
+local answered=nil
+if read and(type(file)=="number"or type(file)=="string")and A.canRead(file)then
+answered=ringPath(file)
+end
+local okAlpha,alpha=pcall(grip.art.GetAlpha,grip.art)
+local okLevel,level=pcall(grip.GetFrameLevel,grip)
+local okPoint,_,_,_,x,y=pcall(grip.GetPoint,grip,1)
+A.trace("grip",{
+kind=grip.windowKind,
+state=state,
+art=ringPath(A.GRIP_ART[state]),
+textureRead=answered,
+alpha=okAlpha and type(alpha)=="number"and A.unitFigure(alpha)or nil,
+level=okLevel and type(level)=="number"and level or nil,
+levelAbove=A.gripLevelAbove(grip),
+cursorSet=grip.gripCursor,
+theme=grip.gripTheme,
+tinted=grip.gripTinted,
+gripSeat=grip.gripSeat,
+gripX=okPoint and type(x)=="number"and A.unitFigure(x)or nil,
+gripY=okPoint and type(y)=="number"and A.unitFigure(y)or nil,
+},"ui")
+end
 local function paintGrip(button)
-local tone=button.gripHot and"text"or"dimmer"
-for i=1,#button.strokes do
-button.strokes[i]:SetColorTexture(A.color(tone))
+local state=gripState(button)
+local theme=A.theme()
+local tinted,r,g,b=A.gripTint(state,theme)
+button.art:SetTexture(A.GRIP_ART[state])
+button.art:SetAlpha(state=="up"and A.metric("gripIdleAlpha")or 1)
+button.art:SetDesaturated(tinted)
+button.art:SetVertexColor(r,g,b)
+button.art:Show()
+button.gripTinted=tinted
+local themeBefore=button.gripTheme
+button.gripTheme=theme
+local themeMoved=themeBefore~=nil and themeBefore~=theme
+if themeMoved and A.seatGripPoint then
+A.seatGripPoint(button)
+end
+local before=button.gripDrawn
+button.gripDrawn=state
+if(before~=nil and before~=state)or themeMoved then
+traceGrip(button,state)
 end
 end
 local function paint(button)
@@ -924,25 +1025,24 @@ function A.grip(parent,onStop,onPress,onStarted)
 local size=A.metric("gripSize")
 local grip=CreateFrame("Frame",nil,parent)
 grip.controlKind="grip"
+grip.window=parent
 grip:SetSize(size,size)
 grip:EnableMouse(true)
-grip.strokes={}
-local inset,stroke,step=A.metric("gripInset"),A.metric("gripStroke"),A.metric("gripStrokeGap")
-for i=1,3 do
-local mark=grip:CreateTexture(nil,"ARTWORK")
-mark:SetSize(stroke,stroke)
-mark:SetPoint("BOTTOMRIGHT",grip,"BOTTOMRIGHT",-inset-(i-1)*step,inset)
-grip.strokes[i]=mark
-end
+grip.art=grip:CreateTexture(nil,"ARTWORK")
+grip.art:SetAllPoints(grip)
 grip:SetScript("OnEnter",function(self)
 self.gripHot=true
+self.gripCursor=type(SetCursor)=="function"and pcall(SetCursor,"UI_RESIZE_CURSOR")or false
 paint(self)
 end)
 grip:SetScript("OnLeave",function(self)
 self.gripHot=false
+self.gripCursor=type(ResetCursor)=="function"and pcall(ResetCursor)or false
 paint(self)
 end)
 grip:SetScript("OnMouseDown",function(self)
+self.gripDown=true
+paint(self)
 if onPress then
 pcall(onPress)
 end
@@ -955,10 +1055,17 @@ end)
 grip:SetScript("OnMouseUp",function(self)
 pcall(parent.StopMovingOrSizing,parent)
 pcall(parent.SetUserPlaced,parent,false)
+local read,over=pcall(self.IsMouseOver,self)
+if read and type(over)=="boolean"then
+self.gripHot=over
+end
+self.gripDown=false
+paint(self)
 if onStop then
 onStop()
 end
 end)
+paintGrip(grip)
 A.registerControl(grip)
 return grip
 end

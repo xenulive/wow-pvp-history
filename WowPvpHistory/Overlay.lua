@@ -1,4 +1,4 @@
--- WowPvpHistory 0.68.35
+-- WowPvpHistory 0.68.47
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -9,7 +9,7 @@ local OPACITY_MIN,OPACITY_MAX,OPACITY_STEP,OPACITY_DEFAULT=0,100,10,70
 local DEFAULT_POINT,DEFAULT_X,DEFAULT_Y="TOP",0,-72
 local PAD,SQUARE,DELTA_GAP,CELL_GAP,BLOCK_GAP=6,30,2,5,10
 local LINE_GAP,TODAY_GAP=1,6
-local TITLE_TEXT="PVP HISTORY"
+local TITLE_TEXT=A.displayName():upper()
 local TITLE_GAP,RULE_GAP,RULE_SHORT=2,2,12
 local DELTA_FLOOR_TEXT="+999"
 local frame
@@ -528,7 +528,12 @@ made:EnableMouse(true)
 made:RegisterForDrag("LeftButton")
 made:SetSize(columnWidth(),barHeight())
 made:SetPoint(DEFAULT_POINT,UIParent,DEFAULT_POINT,DEFAULT_X,DEFAULT_Y)
-A.registerPlacedWindow(made,DEFAULT_POINT,DEFAULT_X,DEFAULT_Y)
+A.registerPlacedWindow(made,DEFAULT_POINT,DEFAULT_X,DEFAULT_Y,function(_,ratio)
+local held=type(ratio)=="number"and A.overlayPosition()or nil
+if held then
+A.setOverlayPosition({point=held.point,x=held.x*ratio,y=held.y*ratio})
+end
+end)
 made:Hide()
 made.ground=made:CreateTexture(nil,"BACKGROUND")
 made.ground:SetAllPoints(made)

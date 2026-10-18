@@ -1,4 +1,4 @@
--- WowPvpHistory 0.68.35
+-- WowPvpHistory 0.68.47
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -415,7 +415,7 @@ function A.linkColor()
 return A.palette().link or FLAT.link
 end
 function A.displayName()
-return"PvP History"
+return"PvPHistory"
 end
 function A.chatPrefix()
 return"|cff"..A.chatColor().."PvPHistory:|r "
@@ -811,6 +811,22 @@ return math.ceil(width)
 end
 return nil
 end
+function A.cutTexts(fontStrings)
+local cut,shown,unread=0,0,0
+for _,text in ipairs(type(fontStrings)=="table"and fontStrings or{})do
+local okShown,isShown=pcall(text.IsShown,text)
+if okShown and isShown then
+shown=shown+1
+local ok,truncated=pcall(text.IsTruncated,text)
+if ok and A.canRead(truncated)and type(truncated)=="boolean"then
+cut=cut+(truncated and 1 or 0)
+else
+unread=unread+1
+end
+end
+end
+return unread==0 and cut or nil,shown
+end
 function A.fittedForm(fontString,room,forms)
 if type(forms)~="table"or#forms==0 then
 return nil,nil,false
@@ -936,6 +952,18 @@ fontString:SetTextColor(A.color(colorName))
 end
 return true
 end
+A.GRIP_ART={
+up="Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up",
+hover="Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight",
+down="Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down",
+}
+function A.gripTint(state,theme)
+if state=="hover"and theme=="flat"then
+local r,g,b=A.color("bright")
+return true,r,g,b
+end
+return false,1,1,1
+end
 local METRICS={
 frameWidth=1069,
 listWidth=462,
@@ -953,9 +981,8 @@ dropdownRows=8,
 dropdownPad=3,
 dropdownCaret=6,
 gripSize=16,
-gripInset=3,
-gripStroke=2,
-gripStrokeGap=4,
+gripInset=2,
+gripIdleAlpha=0.7,
 headerHeight=30,
 filterHeight=22,
 summaryGap=6,
@@ -1049,7 +1076,7 @@ rowResultMark=2,
 rowHeadRow=18,
 rowExpandPad=6,
 rowDayRow=26,
-gridSession=180,
+gridSession=206,
 gridTime=84,
 gridFormat=72,
 gridRating=72,
@@ -1073,8 +1100,10 @@ standingLineGap=4,
 standingRate=190,
 standingStat=150,
 standingCellFloor=120,
-standingBar=12,
+standingBar=14,
 standingBarGap=2,
+standingBarFloor=3,
+standingTrendFloor=120,
 standingTrendInset=10,
 standingFigure=108,
 standingGap=18,

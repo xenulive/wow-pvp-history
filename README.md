@@ -1,10 +1,10 @@
-# WoW PvP History
+# PvPHistory
 
 [![publish](https://github.com/xenulive/wow-pvp-history/actions/workflows/publish.yml/badge.svg)](https://github.com/xenulive/wow-pvp-history/actions/workflows/publish.yml)
 
 **A World of Warcraft addon that remembers your PvP matches, and everyone in them.**
 
-The scoreboard disappears the moment you leave a match. PvP History keeps it: every arena, Solo Shuffle,
+The scoreboard disappears the moment you leave a match. PvPHistory keeps it: every arena, Solo Shuffle,
 battleground, Blitz, duel and World PvP fight is saved with its full roster, so you can look back at how
 a match went, how your rating moved, and who you've played with and against.
 
@@ -13,7 +13,8 @@ companion app.
 
 [Download the latest release](https://github.com/xenulive/wow-pvp-history/releases) or get it
 [on CurseForge](https://www.curseforge.com/wow/addons/wow-pvp-history) or
-[on Wago](https://addons.wago.io/addons/wow-pvp-history), read
+[on Wago](https://addons.wago.io/addons/wow-pvp-history) or
+[on WoWInterface](https://www.wowinterface.com/downloads/info27266-PVPHistory.html), read
 [the guide](https://github.com/xenulive/wow-pvp-history/wiki), visit
 [the website](https://pvphistory.xenu.live), or
 [report a problem](https://github.com/xenulive/wow-pvp-history/issues).
@@ -49,7 +50,7 @@ companion app.
 3. Unzip it into `World of Warcraft\_retail_\Interface\AddOns`, so a `WowPvpHistory` folder sits there.
 4. Log in. Recording starts on its own; there's nothing to set up.
 
-To check it worked, click **AddOns** on the character select screen: **WoW PvP History** should be in
+To check it worked, click **AddOns** on the character select screen: **PvPHistory** should be in
 the list. If it isn't, look for `WowPvpHistory.toc` one folder too deep, such as
 `AddOns\WowPvpHistory-<version>\WowPvpHistory`, and move the inner `WowPvpHistory` folder up into
 `AddOns`. [Getting started](https://github.com/xenulive/wow-pvp-history/wiki/Getting-Started) walks
@@ -58,7 +59,9 @@ through it step by step.
 Every release is also on CurseForge and on Wago as the same zip, on the
 [CurseForge page](https://www.curseforge.com/wow/addons/wow-pvp-history) and the
 [Wago page](https://addons.wago.io/addons/wow-pvp-history): install it from either with its app
-to keep it up to date. A release candidate shows on both as a beta.
+to keep it up to date. A release candidate shows on CurseForge and Wago as a beta. Every final
+release is also on the [WoWInterface page](https://www.wowinterface.com/downloads/info27266-PVPHistory.html), and a release
+candidate is not, since WoWInterface has no beta channel.
 
 Built for Retail WoW. Releases marked **Pre-release** are release candidates.
 
@@ -71,7 +74,7 @@ After a match, open your history any of these ways:
 
 - type `/pvph`
 - click the minimap button, or pick it from the addon menu beside the minimap
-- bind a key under **Key Bindings**, in the **AddOns** section, under **PvP History**
+- bind a key under **Key Bindings**, in the **AddOns** section, under **PvPHistory**
 
 The commands you'll use most:
 

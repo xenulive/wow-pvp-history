@@ -1,4 +1,4 @@
--- WowPvpHistory 0.68.35
+-- WowPvpHistory 0.68.47
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -1287,6 +1287,19 @@ return("%dm%02ds"):format(math.floor(seconds/60),seconds%60)
 end
 function A.lengthText(seconds)
 return spanText(seconds)
+end
+function A.totalTimeText(seconds)
+if type(seconds)~="number"or seconds<0 then
+return nil
+end
+if seconds<60 then
+return spanText(math.floor(seconds))
+end
+local minutes=math.floor(seconds/60+0.5)
+if minutes>=60 then
+return("%dh %dm"):format(math.floor(minutes/60),minutes%60)
+end
+return("%dm"):format(minutes)
 end
 local REASON_TEXT={
 ["disconnect"]="Disconnect",
