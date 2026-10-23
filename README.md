@@ -24,7 +24,10 @@ companion app.
 ## What it does
 
 - Every match goes into one searchable list, grouped into play sessions, with result, map, opponents,
-  length and rating change. Open any match in its own window to see the whole scoreboard.
+  length and rating change. Open any match in its own window to see the whole scoreboard, with both
+  teams' MMR in rated Blitz and Solo Shuffle.
+- Compare up to four matches of one format side by side, each figure set against the one you pick as the
+  base.
 - Your current rating and tier for each bracket, your win rate, and a rating graph over the season or
   any time range you pick.
 - Solo Shuffle round by round: who was on your team each round, who won it, and how each player's
@@ -51,7 +54,7 @@ companion app.
 4. Log in. Recording starts on its own; there's nothing to set up.
 
 To check it worked, click **AddOns** on the character select screen: **PvPHistory** should be in
-the list. If it isn't, look for `WowPvpHistory.toc` one folder too deep, such as
+the list, under the **PvP** heading. If it isn't, look for `WowPvpHistory.toc` one folder too deep, such as
 `AddOns\WowPvpHistory-<version>\WowPvpHistory`, and move the inner `WowPvpHistory` folder up into
 `AddOns`. [Getting started](https://github.com/xenulive/wow-pvp-history/wiki/Getting-Started) walks
 through it step by step.

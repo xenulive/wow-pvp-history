@@ -1,0 +1,73 @@
+name: Something isn't working
+description: A match wasn't saved, a window shows something wrong, or the addon shows an error.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. [Troubleshooting](https://github.com/xenulive/wow-pvp-history/wiki/Troubleshooting) answers the problems people hit most, so it's worth a look first.
+
+        This page is public. Paste the debug log freely, since it holds no player names, but don't paste a history export or a CSV: those carry the names of everyone you've played with.
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Type `/pvph status` in game. The version is on its first line, and at the bottom right of the match history window.
+      placeholder: "0.68.47"
+    validations:
+      required: true
+
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened
+      description: What you were doing, what you saw, and roughly when. For a match, say which kind (arena, Solo Shuffle, Blitz, battleground, duel) and whether it was rated.
+      placeholder: |
+        I played a rated Solo Shuffle and left after the last round. The match is in the list, but its scoreboard is empty.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+      placeholder: The scoreboard shows all six players, as it does for my other matches.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to make it happen again
+      description: Leave this empty if you don't know. It happened once is a useful answer too.
+      placeholder: |
+        1. Open the history with /pvph
+        2. Click the Solo Shuffle tab
+        3. ...
+
+  - type: textarea
+    id: error
+    attributes:
+      label: The last error
+      description: Type `/pvph error` and paste what it says. If it reports no error, write that.
+      render: text
+
+  - type: textarea
+    id: debug
+    attributes:
+      label: Debug log
+      description: |
+        If the log is off, turn it on with `/pvph debug on` and do what caused the problem again, since it only holds what happened while it was on. Then type `/pvph debug export`, copy the text and paste it here. If it's too long to paste, save it as a .txt file and drag the file into this box. [Debug log](https://github.com/xenulive/wow-pvp-history/wiki/Debug-Log) has the details.
+
+  - type: textarea
+    id: screenshot
+    attributes:
+      label: Screenshot
+      description: If something looks wrong on screen, drag a screenshot into this box.
+
+  - type: input
+    id: addons
+    attributes:
+      label: Other addons
+      description: Optional. Any addons that change the game's windows, tooltips or nameplates, such as ElvUI or Plater.
