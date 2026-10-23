@@ -1,10 +1,10 @@
-<!-- WowPvpHistory 0.68.47
+<!-- WowPvpHistory 0.70.7
      Author:  Xenu-Sentinels
      Project: wow-pvp-history
               https://github.com/xenulive/wow-pvp-history
      License: MIT, see LICENSE -->
 <Bindings>
-<Binding name="WOWPVPHISTORY_TOGGLE" category="BINDING_HEADER_WOWPVPHISTORY">
-WowPvpHistory_Toggle()
-</Binding>
+    <Binding name="WOWPVPHISTORY_TOGGLE" category="BINDING_HEADER_WOWPVPHISTORY">
+        WowPvpHistory_Toggle()
+    </Binding>
 </Bindings>

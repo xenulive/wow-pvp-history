@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: How do I...?
+    url: https://github.com/xenulive/wow-pvp-history/wiki/Questions
+    about: Short answers to what people ask most, and the guide to every window and setting.
+  - name: Questions and ideas
+    url: https://github.com/xenulive/wow-pvp-history/discussions
+    about: Ask something, suggest a feature, or share how you use the addon.
