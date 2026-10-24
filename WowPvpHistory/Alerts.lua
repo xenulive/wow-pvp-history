@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.7
+-- WowPvpHistory 0.70.16
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -138,17 +138,6 @@ local function contained(fn)
 	end
 end
 
-local function guarded(fn,...)
-	if type(fn)~="function"then
-		return nil
-	end
-	local ok,res=pcall(fn,...)
-	if not ok then
-		return nil
-	end
-	return res
-end
-
 function A.inMatchInstance()
 	if type(GetInstanceInfo)~="function"then
 		return false
@@ -163,16 +152,16 @@ local function traceAlert(reason,n,restriction,noted,found)
 end
 
 function A.groupGuids()
-	local count=guarded(GetNumGroupMembers)
+	local count=A.guardedCall(GetNumGroupMembers)
 	if not A.canRead(count)or type(count)~="number"or count<1 then
 		return{},nil
 	end
-	local raid=guarded(IsInRaid)
+	local raid=A.guardedCall(IsInRaid)
 	if type(raid)~="nil"and not A.canRead(raid)then
 		return{},nil
 	end
 
-	local selfGuid=guarded(UnitGUID,"player")
+	local selfGuid=A.guardedCall(UnitGUID,"player")
 	if not(type(selfGuid)=="string"and A.canRead(selfGuid))then
 		selfGuid=nil
 	end
@@ -181,7 +170,7 @@ function A.groupGuids()
 
 	local guids={}
 	for i=1,count do
-		local guid=guarded(UnitGUID,prefix..i)
+		local guid=A.guardedCall(UnitGUID,prefix..i)
 		if type(guid)=="string"and A.canRead(guid)and guid~=selfGuid then
 			guids[#guids+1]=guid
 		end
@@ -201,7 +190,7 @@ end
 
 local function surfaces()
 	local banner=type(A.announceEnabled)=="function"and type(A.announceGroupRoster)=="function"
-		and A.announceEnabled()==true
+		and A.announceEnabled()
 	return A.alertsEnabled(),banner
 end
 
@@ -219,19 +208,26 @@ local function forget()
 	end
 end
 
-local function announce()
+local function heldOff()
 	local chatOn,bannerOn=surfaces()
 	if not(chatOn or bannerOn)then
 		traceAlert("switch")
-		return
+		return true
 	end
 	local suppressed,reading=A.pvpRestricted()
 	if suppressed then
 		traceAlert("restriction",nil,reading)
-		return
+		return true
 	end
 	if A.inMatchInstance()then
 		traceAlert("instance")
+		return true
+	end
+	return false
+end
+
+local function announce()
+	if heldOff()then
 		return
 	end
 
@@ -308,18 +304,7 @@ local function schedule()
 end
 
 local function onRoster()
-	local chatOn,bannerOn=surfaces()
-	if not(chatOn or bannerOn)then
-		traceAlert("switch")
-		return
-	end
-	local suppressed,reading=A.pvpRestricted()
-	if suppressed then
-		traceAlert("restriction",nil,reading)
-		return
-	end
-	if A.inMatchInstance()then
-		traceAlert("instance")
+	if heldOff()then
 		return
 	end
 
@@ -438,14 +423,6 @@ local function inPvpInstance()
 	return ok and A.canRead(kind)and(kind=="pvp"or kind=="arena")
 end
 
-local function inCombat()
-	if type(InCombatLockdown)~="function"then
-		return false
-	end
-	local ok,value=pcall(InCombatLockdown)
-	return ok and value==true
-end
-
 local function attempt()
 	local id=pendingId
 	if id==nil then
@@ -460,7 +437,7 @@ local function attempt()
 	local held
 	if inPvpInstance()then
 		held="instance"
-	elseif inCombat()then
+	elseif A.inCombatLockdown()then
 		held="combat"
 	end
 	if held then

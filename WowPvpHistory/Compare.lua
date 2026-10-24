@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.7
+-- WowPvpHistory 0.70.16
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -11,6 +11,8 @@ local picked={ids={},held={},format=nil}
 
 local hooked={}
 
+local lastBoxes=nil
+
 function A.compareIds()
 	local out={}
 	for i=1,#picked.ids do
@@ -19,24 +21,32 @@ function A.compareIds()
 	return out
 end
 
+local function takeOut(id)
+	for i=#picked.ids,1,-1 do
+		if picked.ids[i]==id then
+			table.remove(picked.ids,i)
+		end
+	end
+	picked.held[id]=nil
+	if#picked.ids==0 then
+		picked.format=nil
+	end
+end
+
 local function prune()
 	local out={}
 	local gone={}
 	for i=1,#picked.ids do
-		local record=type(A.match)=="function"and A.match(picked.ids[i])or nil
+		local id=picked.ids[i]
+		local record=type(A.match)=="function"and A.match(id)or nil
 		if record then
 			out[#out+1]=record
 		else
-			gone[#gone+1]=picked.ids[i]
+			gone[#gone+1]=id
 		end
 	end
 	for i=1,#gone do
-		for j=#picked.ids,1,-1 do
-			if picked.ids[j]==gone[i]then
-				table.remove(picked.ids,j)
-			end
-		end
-		picked.held[gone[i]]=nil
+		takeOut(gone[i])
 	end
 	if#picked.ids==0 then
 		picked.format=nil
@@ -76,7 +86,7 @@ end
 
 function A.compareRefusedText(reason)
 	if reason=="format"and picked.format~=nil then
-		return"Holds "..A.formatPlural(picked.format)
+		return"Must be the same match type"
 	end
 	if reason=="full"then
 		return"Four is the most"
@@ -131,6 +141,7 @@ local function hookHalves()
 end
 
 local function changed()
+	lastBoxes=nil
 	local history=type(A.windowFrameOf)=="function"and A.windowFrameOf("matches")or nil
 	if type(history)=="table"then
 		local ok,shown=pcall(history.IsShown,history)
@@ -159,18 +170,6 @@ function A.compareAdd(record,via)
 	tracePick("add",record.id,via)
 	changed()
 	return"add",nil
-end
-
-local function takeOut(id)
-	for i=#picked.ids,1,-1 do
-		if picked.ids[i]==id then
-			table.remove(picked.ids,i)
-		end
-	end
-	picked.held[id]=nil
-	if#picked.ids==0 then
-		picked.format=nil
-	end
 end
 
 function A.compareRemove(id,via)
@@ -236,6 +235,7 @@ function A.compareRecords()
 end
 
 function A.dropCompareSet()
+	lastBoxes=nil
 	if#picked.ids>0 then
 		picked.ids,picked.held,picked.format={},{},nil
 		A.trace("compare/clear",{via="replaced",count=0},"ui")
@@ -312,6 +312,34 @@ local function hideBox(row)
 	end
 end
 
+function A.compareBoxShape(id,record,hovered)
+	if id==nil then
+		return nil
+	end
+	if A.comparePicked(id)then
+		return"picked"
+	end
+	if type(record)~="table"then
+		return nil
+	end
+	local ok,reason=A.compareAdmits(record)
+	if ok then
+		return(#picked.ids>0 or hovered==true)and"empty"or nil
+	end
+	if reason~="unknown"and#picked.ids>0 then
+		return"dimmed"
+	end
+	return nil
+end
+
+function A.compareBoxReason(record)
+	if type(record)~="table"or A.compareBoxShape(record.id,record,true)~="dimmed"then
+		return nil
+	end
+	local _,reason=A.compareAdmits(record)
+	return A.compareRefusedText(reason)
+end
+
 function A.paintCompareBox(row,at)
 	if type(row)~="table"then
 		return nil
@@ -321,12 +349,7 @@ function A.paintCompareBox(row,at)
 		hideBox(row)
 		return nil
 	end
-	local shape=nil
-	if A.comparePicked(row.matchId)then
-		shape="picked"
-	elseif row.compareHover==true and type(row.matchRecord)=="table"and A.compareAdmits(row.matchRecord)then
-		shape="empty"
-	end
+	local shape=A.compareBoxShape(row.matchId,row.matchRecord,row.compareHover==true)
 	if shape==nil then
 		hideBox(row)
 		return nil
@@ -349,13 +372,99 @@ function A.paintCompareBox(row,at)
 		box.check:SetVertexColor(A.color("accent"))
 		box.check:Show()
 	else
-		box.edge:SetColorTexture(A.color("dim"))
+		box.edge:SetColorTexture(A.color(shape=="dimmed"and"faint"or"dim"))
 		box.fill:SetColorTexture(A.color("field"))
 		box.check:Hide()
 	end
 	box.edge:Show()
 	box.fill:Show()
 	return shape
+end
+
+function A.tallyCompareBoxes(rows)
+	if#picked.ids==0 then
+		lastBoxes=nil
+		return nil
+	end
+	local counts={picked=0,open=0,dimmed=0}
+	local drawn=0
+	for _,data in ipairs(type(rows)=="table"and rows or{})do
+		if type(data)=="table"and not data.separator and data.kind=="match"and data.id~=nil then
+			local shape=A.compareBoxShape(data.id,data.matchRecord,false)
+			if shape~=nil then
+				local key=shape=="empty"and"open"or shape
+				counts[key]=counts[key]+1
+				drawn=drawn+1
+			end
+		end
+	end
+	if drawn==0 then
+		lastBoxes=nil
+		return nil
+	end
+	lastBoxes=counts
+	A.trace("compare/boxes",{picked=counts.picked,open=counts.open,dimmed=counts.dimmed},"ui")
+	return counts
+end
+
+function A.compareBoxLine()
+	if#picked.ids==0 then
+		return nil
+	end
+	if lastBoxes==nil then
+		return"compare: no History list paint has drawn a box since the set last changed"
+	end
+	return("compare: boxes on the last list paint, %d picked, %d open, %d dimmed")
+		:format(lastBoxes.picked,lastBoxes.open,lastBoxes.dimmed)
+end
+
+local function pointerAcross(row)
+	if type(GetCursorPosition)~="function"or type(row.GetEffectiveScale)~="function"
+		or type(row.GetLeft)~="function"then
+		return nil
+	end
+	local ok,x=pcall(GetCursorPosition)
+	local okScale,scale=pcall(row.GetEffectiveScale,row)
+	local okLeft,left=pcall(row.GetLeft,row)
+	if not(ok and okScale and okLeft and type(x)=="number"and type(scale)=="number"and scale>0
+		and type(left)=="number")then
+		return nil
+	end
+	return A.unitFigure(x/scale-left)
+end
+
+function A.comparePointerInLane(row)
+	if type(row)~="table"then
+		return false
+	end
+	local right=row.pickLaneRight
+	if type(right)~="number"or right<=0 then
+		return false
+	end
+	local across=pointerAcross(row)
+	return across~=nil and across>=0 and across<=A.unitFigure(right)
+end
+
+local function pressBox(record)
+	if type(record)~="table"or A.compareBoxShape(record.id,record,true)==nil then
+		return"none",nil
+	end
+	return A.compareToggle(record,"box")
+end
+
+function A.compareLaneClick(row)
+	if type(row)~="table"or row.matchId==nil or not A.comparePointerInLane(row)then
+		return false
+	end
+	local record=type(row.matchRecord)=="table"and row.matchRecord or A.match(row.matchId)
+	return pressBox(record)~="none"
+end
+
+function A.compareLaneTooltip(row)
+	if type(row)~="table"or row.matchId==nil or not A.comparePointerInLane(row)then
+		return nil
+	end
+	return A.compareBoxReason(type(row.matchRecord)=="table"and row.matchRecord or A.match(row.matchId))
 end
 
 function A.compareBarHeight(listing)
@@ -373,21 +482,6 @@ function A.compareButtonTooltip()
 		return("Pick one more of your %s"):format(A.formatPlural(picked.format))
 	end
 	return"Open the picked matches side by side"
-end
-
-local function hoverLine(owner,text)
-	if not(GameTooltip and type(text)=="string")then
-		return
-	end
-	pcall(function()
-		GameTooltip:SetOwner(owner,"ANCHOR_TOP")
-		if type(A.styleTooltip)=="function"then
-			A.styleTooltip(GameTooltip)
-		end
-		local r,g,b=A.color("text")
-		GameTooltip:SetText(text,r,g,b,1,true)
-		GameTooltip:Show()
-	end)
 end
 
 local function buildBar(frame)
@@ -415,7 +509,7 @@ local function buildBar(frame)
 	end,A.metric("actionMin"))
 	bar.compare:SetPoint("RIGHT",bar,"RIGHT",-A.metric("rowLabelPad"),0)
 	pcall(bar.compare.HookScript,bar.compare,"OnEnter",function(self)
-		hoverLine(self,A.compareButtonTooltip())
+		A.hoverLine(self,A.compareButtonTooltip())
 	end)
 	pcall(bar.compare.HookScript,bar.compare,"OnLeave",function(self)
 		A.hideOwnedTooltip(self)
@@ -547,9 +641,10 @@ local function largestSwing(record)
 	end
 	local best=nil
 	for i=1,#rows do
-		local swing=figure(rows[i].swing)
+		local row=rows[i]
+		local swing=figure(row.swing)
 		if swing~=nil and(best==nil or math.abs(swing)>math.abs(best.value))then
-			best={value=swing,classToken=rows[i].classToken,spec=rows[i].spec,class=rows[i].class}
+			best={value=swing,classToken=row.classToken,spec=row.spec,class=row.class}
 		end
 	end
 	return best
@@ -591,13 +686,8 @@ local ROWS={
 }
 
 local function rowApplies(spec,format)
-	if spec.only and not spec.only[format]then
-		return false
-	end
-	if spec.skip and spec.skip[format]then
-		return false
-	end
-	if spec.rated and not A.movesRating(format)then
+	if(spec.only and not spec.only[format])or(spec.skip and spec.skip[format])
+		or(spec.rated and not A.movesRating(format))then
 		return false
 	end
 	return true
@@ -758,10 +848,11 @@ function A.compareRows(records)
 		elseif spec.expands then
 			local names,values={},{}
 			for c,record in ipairs(records)do
-				values[c]={}
+				local byName={}
+				values[c]=byName
 				for _,column in ipairs(objectiveValues(record))do
-					if values[c][column.name]==nil then
-						values[c][column.name]=column
+					if byName[column.name]==nil then
+						byName[column.name]=column
 					end
 					local known=false
 					for _,name in ipairs(names)do
@@ -852,23 +943,40 @@ function A.compareKeysText(keys)
 	return table.concat(keys,",")
 end
 
-local function newestOnTab(n)
-	local seen=0
+local function newestOnTab(n,sameFormat)
+	local seen,format=0,nil
 	for _,entry in ipairs(A.drawnEntries())do
 		if entry.kind=="match"then
-			seen=seen+1
-			if seen==n then
-				return entry.subject
+			if format==nil then
+				format=type(entry.subject)=="table"and entry.subject.format or nil
+			end
+			if not sameFormat or(type(entry.subject)=="table"and entry.subject.format==format)then
+				seen=seen+1
+				if seen==n then
+					return entry.subject
+				end
 			end
 		end
 	end
-	A.say(("the list the window shows draws %d matches, so there is no number %d"):format(seen,n))
+	if sameFormat then
+		A.say(("the list the window shows draws %d matches of its newest one's type, so there is no number %d")
+			:format(seen,n))
+	else
+		A.say(("the list the window shows draws %d matches, so there is no number %d"):format(seen,n))
+	end
 	return nil
 end
 
-local function typedRecord(word,count)
+local RECORD_USAGE={
+	add="/pvph compare add <id|last [n]>: a stored match's id, or last for the newest on the tab",
+	box="/pvph compare box <id|last [n]>: a stored match's id, or last n for the nth newest on the tab "
+		.."of the newest one's match type",
+}
+
+local function typedRecord(word,count,verb)
+	verb=verb or"add"
 	if word==nil then
-		A.say("/pvph compare add <id|last [n]>: a stored match's id, or last for the newest on the tab")
+		A.say(RECORD_USAGE[verb])
 		return nil
 	end
 	if word:lower()=="last"then
@@ -877,7 +985,7 @@ local function typedRecord(word,count)
 			A.say(("%q is not a count. last 2 is the second newest on the tab"):format(tostring(count)))
 			return nil
 		end
-		return newestOnTab(n)
+		return newestOnTab(n,verb=="box")
 	end
 	local id=A.matchIdFromWord(word)
 	if not id then
@@ -903,10 +1011,38 @@ function A.compareSetLine()
 	return("compare: %s, base %s; columns %s"):format(A.compareCountText(),ids[1],table.concat(ids,", "))
 end
 
+local function refusedWhy(reason)
+	return reason=="format"and("the set holds %s"):format(A.formatPlural(picked.format))
+		or reason=="full"and"the set holds four"
+		or"the match has no format to compare on"
+end
+
 function A.reportCompare(words)
 	local verb=words[2]and words[2]:lower()or nil
 	if verb==nil then
 		A.say(A.compareSetLine())
+		local boxes=A.compareBoxLine()
+		if boxes~=nil then
+			A.say(boxes)
+		end
+		return
+	end
+	if verb=="box"then
+		local record=typedRecord(words[3],words[4],"box")
+		if not record then
+			return
+		end
+		local action,reason=pressBox(record)
+		local id=A.matchIdText(record.id)
+		if action=="none"then
+			A.say(("compare: #%s draws no box, the match has no format to compare on"):format(id))
+		elseif action=="refused"then
+			A.say(("compare: box on #%s refused, %s (%s)"):format(id,reason,refusedWhy(reason)))
+		elseif action=="remove"then
+			A.say(("compare: box on #%s took it out, %d picked"):format(id,#picked.ids))
+		else
+			A.say(("compare: box on #%s picked it, %d picked"):format(id,#picked.ids))
+		end
 		return
 	end
 	if verb=="add"then
@@ -917,10 +1053,7 @@ function A.reportCompare(words)
 		local action,reason=A.compareAdd(record,"typed")
 		local id=A.matchIdText(record.id)
 		if action=="refused"then
-			local why=reason=="format"and("the set holds %s"):format(A.formatPlural(picked.format))
-				or reason=="full"and"the set holds four"
-				or"the match has no format to compare on"
-			A.say(("compare: #%s refused, %s (%s)"):format(id,reason,why))
+			A.say(("compare: #%s refused, %s (%s)"):format(id,reason,refusedWhy(reason)))
 		elseif action=="held"then
 			A.say(("compare: #%s is already picked, %d picked"):format(id,#picked.ids))
 		else
@@ -986,5 +1119,6 @@ function A.reportCompare(words)
 		end
 		return
 	end
-	A.say(("/pvph compare takes add, remove, clear, open, base, close or rows, and %q is none of them"):format(verb))
+	A.say(("/pvph compare takes add, box, remove, clear, open, base, close or rows, and %q is none of them")
+		:format(verb))
 end

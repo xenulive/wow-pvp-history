@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.7
+-- WowPvpHistory 0.70.16
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -24,6 +24,11 @@ local function endedStamp(subject)
 	return subject.completedAt or subject.endedAt
 end
 
+local function entryLength(subject)
+	return type(subject.duration)=="number"and subject.duration
+		or type(subject.seconds)=="number"and subject.seconds or 0
+end
+
 local function startEpoch(subject)
 	if type(subject)~="table"then
 		return nil
@@ -34,9 +39,7 @@ local function startEpoch(subject)
 	end
 	local ended=A.stampEpoch(endedStamp(subject))
 	if ended~=nil then
-		local length=type(subject.duration)=="number"and subject.duration
-			or type(subject.seconds)=="number"and subject.seconds or 0
-		return ended-length
+		return ended-entryLength(subject)
 	end
 	return nil
 end
@@ -53,9 +56,7 @@ local function endEpoch(subject)
 	if opened==nil then
 		return nil
 	end
-	local length=type(subject.duration)=="number"and subject.duration
-		or type(subject.seconds)=="number"and subject.seconds or 0
-	return opened+length
+	return opened+entryLength(subject)
 end
 
 local function entryKey(entry)
@@ -80,10 +81,8 @@ local function ownRow(record)
 end
 
 function A.recordLadderPair(record)
-	if type(record)~="table"or not A.movesRating(record.format)or not A.oneLadder(record.format)then
-		return nil
-	end
-	if record.rated==false then
+	if type(record)~="table"or not A.movesRating(record.format)or not A.oneLadder(record.format)
+		or record.rated==false then
 		return nil
 	end
 	local row=ownRow(record)
@@ -100,10 +99,8 @@ function A.recordLadderPair(record)
 end
 
 function A.recordMmrPair(record)
-	if type(record)~="table"or not A.movesRating(record.format)or not A.oneLadder(record.format)then
-		return nil
-	end
-	if record.rated==false then
+	if type(record)~="table"or not A.movesRating(record.format)or not A.oneLadder(record.format)
+		or record.rated==false then
 		return nil
 	end
 	local row=ownRow(record)
@@ -936,16 +933,18 @@ function A.setSessionOpen(key,open,newest)
 	heldFolds[key]=nil
 	open=open==true
 	local default=newest==true
+	local ui=db.ui
 	if open==default then
-		if type(db.ui.sessionFolds)=="table"then
-			db.ui.sessionFolds[key]=nil
-			if next(db.ui.sessionFolds)==nil then
-				db.ui.sessionFolds=nil
+		local folds=ui.sessionFolds
+		if type(folds)=="table"then
+			folds[key]=nil
+			if next(folds)==nil then
+				ui.sessionFolds=nil
 			end
 		end
 	else
-		db.ui.sessionFolds=type(db.ui.sessionFolds)=="table"and db.ui.sessionFolds or{}
-		db.ui.sessionFolds[key]=open
+		ui.sessionFolds=type(ui.sessionFolds)=="table"and ui.sessionFolds or{}
+		ui.sessionFolds[key]=open
 	end
 	return open
 end
@@ -1107,6 +1106,8 @@ function A.duelReading(records,character,season,bound)
 				how[#how+1]=parts[i]
 			end
 		end
+		local day=A.shortDay(stamp)
+		local clock=day and A.clockKey(stamp)
 		hero.last={
 			result=verdict=="win"and"won"or verdict=="loss"and"lost"or nil,
 			tone=A.resultTone(last),
@@ -1114,8 +1115,7 @@ function A.duelReading(records,character,season,bound)
 			realm=realm,
 			classToken=key and hero.classes[key]or nil,
 			how=#how>0 and table.concat(how,", ")or nil,
-			when=(A.shortDay(stamp)and A.clockKey(stamp))
-				and(A.shortDay(stamp).." "..A.clockKey(stamp))or nil,
+			when=(day and clock)and(day.." "..clock)or nil,
 		}
 	end
 	return hero
@@ -1316,8 +1316,9 @@ function A.standingReading(format,season,character,bound,summary,now,listed)
 		end
 		reading.bars=moved>=2 and bars or{}
 		local wins,losses,_,rate=A.winRecord(summary)
-		if type(summary.peak)=="number"and(reading.high==nil or math.floor(summary.peak)>reading.high)then
-			reading.peak=math.floor(summary.peak)
+		local peak=type(summary.peak)=="number"and math.floor(summary.peak)or nil
+		if peak~=nil and(reading.high==nil or peak>reading.high)then
+			reading.peak=peak
 		end
 		if format=="shuffle"then
 			local parts={}

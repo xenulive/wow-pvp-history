@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.7
+-- WowPvpHistory 0.70.16
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -44,10 +44,7 @@ function A.linksAvailable()
 end
 
 local function route(raw)
-	if not(type(raw)=="string"and A.canRead(raw))then
-		return false
-	end
-	if raw:sub(1,#PREFIX)~=PREFIX then
+	if not(type(raw)=="string"and A.canRead(raw))or raw:sub(1,#PREFIX)~=PREFIX then
 		return false
 	end
 

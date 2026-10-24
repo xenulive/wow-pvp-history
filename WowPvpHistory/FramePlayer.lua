@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.7
+-- WowPvpHistory 0.70.16
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -152,23 +152,7 @@ local function written()
 end
 
 local function commitNote(frame)
-	local box=frame.noteRow.box
-	local ok,text=pcall(box.GetText,box)
-	if not ok then
-		return
-	end
-	local stored,_,why,length,bound=
-		A.setPlayerNote(frame.guid,(text~=nil and text~="")and text or nil)
-	if not stored then
-		if why=="too-long"then
-			A.say(("that note is %d bytes and the bound is %d bytes. Nothing written")
-				:format(tonumber(length)or 0,tonumber(bound)or A.PLAYER_NOTE_MAX))
-		else
-			A.say("no database, so the note could not be stored")
-		end
-		return
-	end
-	pcall(box.ClearFocus,box)
+	A.commitNoteBox(frame.noteRow.box,frame.guid)
 end
 
 local function repPicked(frame,wanted)
@@ -184,42 +168,8 @@ local function repPicked(frame,wanted)
 	end
 end
 
-local function tagRefusal(why,offender,bound)
-	if why=="tag-too-long"then
-		A.say(("%q is longer than %d bytes, so nothing was added")
-			:format(tostring(offender),tonumber(bound)or A.PLAYER_TAG_MAX))
-	elseif why=="too-many"then
-		A.say(("that is past %d tags, so %q and the rest were not added. Nothing written")
-			:format(tonumber(bound)or A.PLAYER_MAX_TAGS,tostring(offender)))
-	else
-		A.say("no database, so the tags could not be stored")
-	end
-end
-
 local function commitTags(frame)
-	local box=frame.tagRow.box
-	local ok,text=pcall(box.GetText,box)
-	if not ok then
-		return
-	end
-	local tags={}
-	for word in tostring(text or""):gmatch("%S+")do
-		tags[#tags+1]=word
-	end
-	if#tags==0 then
-		return
-	end
-	pcall(box.SetText,box,"")
-	local stored,added,why,offender,bound=A.addPlayerTags(frame.guid,tags)
-	if not stored then
-		pcall(box.SetText,box,text)
-		tagRefusal(why,offender,bound)
-		return
-	end
-	if type(added)=="table"and#added==0 then
-		A.say("every one of those tags was already there. Nothing written")
-	end
-	pcall(box.ClearFocus,box)
+	A.commitTagBox(frame.tagRow.box,frame.guid)
 end
 
 local function tagClicked(button)
@@ -243,7 +193,7 @@ local function suggestClicked(button)
 	local stored,_,why,offender,bound=A.addPlayerTags(frame.guid,{button.tagValue})
 	if not stored then
 		pcall(box.SetText,box,read and typed or"")
-		tagRefusal(why,offender,bound)
+		A.sayTagRefusal(why,offender,bound)
 	end
 end
 
@@ -631,11 +581,19 @@ end
 local forget
 
 local function bound(frame,floorWidth)
-	local screen=type(A.screenSizeFor)=="function"and A.screenSizeFor(frame)or nil
-	if type(screen)=="number"and screen<floorWidth then
-		screen=floorWidth
+	local screenW,screenH
+	if type(A.screenSizeFor)=="function"then
+		screenW,screenH=A.screenSizeFor(frame)
 	end
-	pcall(frame.SetResizeBounds,frame,floorWidth,A.playerWindowFloor(),screen,nil)
+	if type(screenW)=="number"and screenW<floorWidth then
+		screenW=floorWidth
+	end
+	local floorHeight=A.playerWindowFloor()
+	if type(screenH)=="number"and screenH<floorHeight then
+		screenH=floorHeight
+	end
+	pcall(frame.SetResizeBounds,frame,floorWidth,floorHeight,
+		type(screenW)=="number"and screenW or nil,type(screenH)=="number"and screenH or nil)
 end
 
 local function buildWindow(index)
@@ -644,26 +602,7 @@ local function buildWindow(index)
 	frame.windowName=name
 	frame:SetSize(A.playerWindowWidth(frame.stripFloor),A.playerWindowHeight())
 	frame.widthFrom="build"
-	frame:SetFrameStrata("MEDIUM")
-	frame:SetToplevel(true)
-	frame:SetClampedToScreen(true)
-	frame:SetMovable(true)
-	frame:EnableMouse(true)
-	frame:RegisterForDrag("LeftButton")
-	frame:SetScript("OnDragStart",frame.StartMoving)
-	frame:SetScript("OnDragStop",function(self)
-		A.stopDrag(self)
-		self.undocked=true
-	end)
-	frame:Hide()
-	A.registerChrome(frame)
-
-	frame.heading=A.windowTitle(frame)
-	frame.heading:SetPoint("TOPLEFT",frame,"TOPLEFT",A.metric("titleInset"),-A.metric("titleTop"))
-	frame.heading:SetPoint("TOPRIGHT",frame,"TOPRIGHT",-A.metric("titleInset"),-A.metric("titleTop"))
-	frame.heading:SetJustifyH("CENTER")
-	frame.heading:SetWordWrap(false)
-	A.style(frame.heading,"heading","bright")
+	A.standDetailWindow(frame)
 
 	frame.body=CreateFrame("Frame",nil,frame)
 	frame.body:SetPoint("TOPLEFT",frame,"TOPLEFT",A.metric("margin"),-A.metric("headerHeight"))
@@ -726,18 +665,7 @@ local function buildWindow(index)
 	end
 	bound(frame,A.playerWindowWidth(frame.stripFloor))
 
-	if type(UISpecialFrames)=="table"then
-		local seen=false
-		for i=1,#UISpecialFrames do
-			if UISpecialFrames[i]==name then
-				seen=true
-				break
-			end
-		end
-		if not seen then
-			UISpecialFrames[#UISpecialFrames+1]=name
-		end
-	end
+	A.closeOnEscape(name)
 
 	frame:SetScript("OnHide",function(self)
 		forget(self)
@@ -959,10 +887,7 @@ local function paintComments(frame,width)
 		row.text:SetWidth(textWidth)
 		row.text:SetText(comment.text)
 		local ok,high=pcall(row.text.GetStringHeight,row.text)
-		if not(ok and type(high)=="number"and high>0)then
-			high=A.metric("rowHeight")
-		end
-		if high<A.metric("rowHeight")then
+		if not(ok and type(high)=="number"and high>0)or high<A.metric("rowHeight")then
 			high=A.metric("rowHeight")
 		end
 		local height=high+A.metric("commentPad")*2
@@ -981,18 +906,6 @@ local function paintComments(frame,width)
 	end
 	frame.commentList:SetHeight(y>0 and y or 1)
 	return#comments
-end
-
-local function sideReading(parts)
-	local pieces=A.sideShort(parts)
-	if not pieces then
-		return nil
-	end
-	local units={}
-	for i=1,#parts do
-		units[i]=parts[i].unit
-	end
-	return("%s (%s)"):format(A.sideShortText(pieces),table.concat(units,"+"))
 end
 
 paintWindow=function(frame,index)
@@ -1037,17 +950,18 @@ paintWindow=function(frame,index)
 	frame.footState:SetText(credit)
 
 	local ids={}
-	for i=1,#(dossier.record.ids or{})do
-		ids[i]=tostring(dossier.record.ids[i])
+	local recordIds=dossier.record.ids or{}
+	for i=1,#recordIds do
+		ids[i]=tostring(recordIds[i])
 	end
 	frame.drawn={met=metDrawn,tagRows=tagRows,comments=comments,strip=stripId,
 		marked=marked}
 	pcall(A.trace,"paint",{source="player",rows=metDrawn,n=comments,
 		shown=tagRows,typed=typed or nil,id=stripId,marked=marked or nil,
-		with=sideReading(dossier.with),against=sideReading(dossier.against),
+		with=A.sideReading(dossier.with),against=A.sideReading(dossier.against),
 		ids=table.concat(ids,","),
-		matchWith=stripInfo and sideReading(stripInfo.with)or nil,
-		matchAgainst=stripInfo and sideReading(stripInfo.against)or nil,
+		matchWith=stripInfo and A.sideReading(stripInfo.with)or nil,
+		matchAgainst=stripInfo and A.sideReading(stripInfo.against)or nil,
 		result=frame.stripResult,
 		stripRoom=frame.stripFloor and A.unitFigure(body-frame.stripFloor+A.metric("paneGap"))or nil,
 		bodyWidth=A.unitFigure(body),bodyFloor=A.unitFigure(bodyFloor)},"ui")
@@ -1233,6 +1147,10 @@ function A.openPlayer(guid,forWriting,source,beside)
 			return nil,"refused"
 		end
 		drafts=clearDrafts(frame,guid)
+		if frame.shownGuid~=nil and frame.shownGuid~=guid and frame.commentScroll then
+			pcall(frame.commentScroll.SetVerticalScroll,frame.commentScroll,0)
+		end
+		frame.shownGuid=guid
 		frame.guid=guid
 		open[guid]=frame
 		order[#order+1]=guid

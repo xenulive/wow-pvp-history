@@ -21,9 +21,12 @@
 # A version with no draft waiting and no published release fails: the merge has moved main to a new
 # addon with no release behind it.
 #
-# The draft is read before it is published, and one carrying no zip, the wrong pre-release flag or
-# another tag fails the run with the draft left as it is. Publishing cannot be undone, so the check
-# comes first. Trap: checked after the publish, a draft with no zip was published, made latest and
+# The draft is read before it is published, and one carrying no zip, the wrong pre-release flag,
+# another tag, or a zip whose entries differ by name or by bytes from WowPvpHistory/ in the merged
+# commit fails the run with the draft left as it is. Publishing cannot be undone, so the check
+# comes first. The release branch stays editable until it is merged, and the three upload jobs send
+# the draft's zip while reading their project ids off the merged commit, so the zip is compared
+# with the commit and not only counted. Trap: checked after the publish, a draft with no zip was published, made latest and
 # tagged, and the version could not be released again.
 #
 # The release is published with GITHUB_TOKEN, which sets its target to the pushed commit and creates
@@ -106,6 +109,39 @@ jobs:
           PRERELEASE: ${{ steps.version.outputs.prerelease }}
         run: |
           $ErrorActionPreference = 'Stop'
+          # Compares a zip with a directory: each entry name against the file paths under Prefix/, then
+          # every entry's bytes against its file's. Returns the entry count, the file count and one line
+          # per difference. Trap: a count or a total size matches after an edit of equal length, so
+          # every entry is read whole.
+          function Compare-DraftZip {
+            param([string] $Zip, [string] $Tree, [string] $Prefix)
+            Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
+            $root = [System.IO.Path]::GetFullPath($Tree)
+            $files = [System.Collections.Generic.Dictionary[string, string]]::new([System.StringComparer]::Ordinal)
+            foreach ($f in @(Get-ChildItem -LiteralPath $root -Recurse -File -Force)) {
+              $files["$Prefix/$([System.IO.Path]::GetRelativePath($root, $f.FullName).Replace('\', '/'))"] = $f.FullName
+            }
+            $differences = [System.Collections.Generic.List[string]]::new()
+            $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::Ordinal)
+            $entries = 0
+            $archive = [System.IO.Compression.ZipFile]::OpenRead($Zip)
+            try {
+              foreach ($entry in $archive.Entries) {
+                $entries++
+                $name = $entry.FullName
+                if (-not $seen.Add($name)) { $differences.Add("$name is in the zip twice"); continue }
+                if (-not $files.ContainsKey($name)) { $differences.Add("$name is in the zip and not in this commit"); continue }
+                $buffer = [System.IO.MemoryStream]::new()
+                $stream = $entry.Open()
+                try { $stream.CopyTo($buffer) } finally { $stream.Dispose() }
+                $zipped = [Convert]::ToBase64String($buffer.ToArray())
+                if ($zipped -cne [Convert]::ToBase64String([System.IO.File]::ReadAllBytes($files[$name]))) { $differences.Add("$name differs from this commit's copy") }
+              }
+            }
+            finally { $archive.Dispose() }
+            foreach ($name in $files.Keys) { if (-not $seen.Contains($name)) { $differences.Add("$name is in this commit and not in the zip") } }
+            return [pscustomobject]@{ Entries = $entries; Files = $files.Count; Differences = @($differences) }
+          }
           $tag = "v$env:VERSION"
           $prerelease = $env:PRERELEASE -eq 'true'
           $api = "https://api.github.com/repos/$env:GITHUB_REPOSITORY"
@@ -151,6 +187,16 @@ jobs:
           if ($draft.tag_name -cne $tag) { Write-Host "::error title=release::The draft names $($draft.tag_name) where $tag was expected, so it is left a draft."; exit 1 }
           if ($draft.prerelease -ne $prerelease) { Write-Host "::error title=release::The draft reads pre-release $($draft.prerelease) and $tag is $(if ($prerelease) { 'a candidate' } else { 'a final release' }), so it is left a draft."; exit 1 }
           if (@($draft.assets).Count -ne 1) { Write-Host "::error title=release::The draft carries $(@($draft.assets).Count) assets where the zip is one, so it is left a draft."; exit 1 }
+          $asset = @($draft.assets)[0]
+          $zip = Join-Path $env:RUNNER_TEMP 'draft.zip'
+          Invoke-WebRequest -Uri $asset.url -TimeoutSec 300 -Headers @{ Authorization = "Bearer $env:RELEASE_TOKEN"; Accept = 'application/octet-stream' } -OutFile $zip
+          $compared = Compare-DraftZip -Zip $zip -Tree 'WowPvpHistory' -Prefix 'WowPvpHistory'
+          Write-Host "read before publishing: the zip holds $($compared.Entries) entries and WowPvpHistory/ in this commit $($compared.Files) files, $($compared.Differences.Count) differing by name or bytes"
+          if ($compared.Differences.Count -gt 0) {
+            foreach ($d in @($compared.Differences | Select-Object -First 20)) { Write-Host "  $d" }
+            Write-Host "::error title=release::The draft's zip and WowPvpHistory/ in this commit differ in $($compared.Differences.Count) place(s), so it is left a draft. Tag a new candidate number to build the release from the merged tree."
+            exit 1
+          }
           $body = @{
             target_commitish = $env:GITHUB_SHA
             draft            = $false
@@ -425,6 +471,9 @@ jobs:
           VERSIONS: ${{ steps.curseforge-toc.outputs.versions }}
         run: |
           $ErrorActionPreference = 'Stop'
+          # The message of an annotation escapes percent, CR and LF, so a host's answer stays one message and
+          # no line of it reads as a workflow command. The title is a fixed word and is not escaped.
+          function Protect-Message([string] $Text) { $Text.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A') }
           $finish = "The release v$env:VERSION is published on GitHub and not on CurseForge; use Re-run failed jobs once this is fixed."
           if ([string]::IsNullOrWhiteSpace($env:CURSEFORGE_TOKEN)) { Write-Host "::error title=curseforge::CURSEFORGE_API_TOKEN is not set on this repository. $finish"; exit 1 }
           if ([string]::IsNullOrWhiteSpace($env:VERSION) -or [string]::IsNullOrWhiteSpace($env:PROJECT) -or [string]::IsNullOrWhiteSpace($env:VERSIONS)) {
@@ -471,7 +520,7 @@ jobs:
           if ($code -ne 200 -or $fileId -notmatch '^[1-9]\d*$') {
             $said = if ($response -is [string]) { $response } elseif ($null -ne $response) { $response | ConvertTo-Json -Depth 4 -Compress } else { 'an empty body' }
             if ($said.Length -gt 500) { $said = $said.Substring(0, 500) }
-            Write-Host "::error title=curseforge::CurseForge answered $code with no file id: $said. $finish"
+            Write-Host "::error title=curseforge::CurseForge answered $code with no file id: $(Protect-Message $said). $finish"
             exit 1
           }
           Write-Host "curseforge: file $fileId uploaded to project $env:PROJECT"
@@ -605,6 +654,9 @@ jobs:
           VERSIONS: ${{ steps.wago-toc.outputs.versions }}
         run: |
           $ErrorActionPreference = 'Stop'
+          # The message of an annotation escapes percent, CR and LF, so a host's answer stays one message and
+          # no line of it reads as a workflow command. The title is a fixed word and is not escaped.
+          function Protect-Message([string] $Text) { $Text.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A') }
           $finish = "The release v$env:VERSION is published on GitHub and not on Wago; use Re-run failed jobs once this is fixed."
           if ([string]::IsNullOrWhiteSpace($env:WAGO_TOKEN)) { Write-Host "::error title=wago::WAGO_API_TOKEN is not set on this repository. $finish"; exit 1 }
           if ([string]::IsNullOrWhiteSpace($env:VERSION) -or [string]::IsNullOrWhiteSpace($env:PROJECT) -or [string]::IsNullOrWhiteSpace($env:VERSIONS)) {
@@ -650,7 +702,7 @@ jobs:
           if ($code -ne 200 -and $code -ne 201) {
             $said = if ($response -is [string]) { $response } elseif ($null -ne $response) { $response | ConvertTo-Json -Depth 4 -Compress } else { 'an empty body' }
             if ($said.Length -gt 500) { $said = $said.Substring(0, 500) }
-            Write-Host "::error title=wago::Wago answered ${code}: $said. $finish"
+            Write-Host "::error title=wago::Wago answered ${code}: $(Protect-Message $said). $finish"
             exit 1
           }
           Write-Host "wago: answered $code, version $env:VERSION uploaded to project $env:PROJECT"
@@ -837,6 +889,9 @@ jobs:
           VERSIONS: ${{ steps.wowi-versions.outputs.versions }}
         run: |
           $ErrorActionPreference = 'Stop'
+          # The message of an annotation escapes percent, CR and LF, so a host's answer stays one message and
+          # no line of it reads as a workflow command. The title is a fixed word and is not escaped.
+          function Protect-Message([string] $Text) { $Text.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A') }
           $finish = "The release v$env:VERSION is published on GitHub and not on WoWInterface; use Re-run failed jobs once this is fixed."
           if ([string]::IsNullOrWhiteSpace($env:WOWI_TOKEN)) { Write-Host "::error title=wowi::WOWI_API_TOKEN is not set on this repository. $finish"; exit 1 }
           if ([string]::IsNullOrWhiteSpace($env:VERSION) -or [string]::IsNullOrWhiteSpace($env:PROJECT) -or [string]::IsNullOrWhiteSpace($env:VERSIONS)) {
@@ -873,7 +928,7 @@ jobs:
               403 { "a wrong token, or no permission to upload ($said)" }
               default { $said }
             }
-            Write-Host "::error title=wowi::WoWInterface answered ${code}: $meaning. $finish"
+            Write-Host "::error title=wowi::WoWInterface answered ${code}: $(Protect-Message $meaning). $finish"
             exit 1
           }
           Write-Host "wowi: answered 202, version $env:VERSION uploaded to project $env:PROJECT"

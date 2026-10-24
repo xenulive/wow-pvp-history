@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.7
+-- WowPvpHistory 0.70.16
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -26,10 +26,14 @@ local function uiState(create)
 	return type(db.ui)=="table"and db.ui or nil
 end
 
+local function finite(value)
+	return type(value)=="number"and value==value and value~=math.huge and value~=-math.huge
+end
+
 local function storedAngle()
 	local ui=uiState(false)
 	local angle=ui and tonumber(ui.minimapAngle)
-	if not angle then
+	if not finite(angle)then
 		return DEFAULT_ANGLE
 	end
 	return angle%360
@@ -38,7 +42,7 @@ end
 local DEGREE_SIGN="\194\176"
 
 function A.minimapAngleText(angle)
-	if type(angle)~="number"or angle~=angle or angle==math.huge or angle==-math.huge then
+	if not finite(angle)then
 		return nil
 	end
 	return("%d%s"):format(math.floor(angle+0.5)%360,DEGREE_SIGN)
@@ -51,7 +55,7 @@ local function storedFree()
 		return nil
 	end
 	local x,y=tonumber(held.x),tonumber(held.y)
-	if not(x and y)then
+	if not(finite(x)and finite(y))then
 		return nil
 	end
 	return x,y
@@ -211,17 +215,6 @@ local function rightFigure(text)
 	end
 end
 
-local function menuOwner(region)
-	if not region then
-		return nil
-	end
-	local ok,visible=pcall(region.IsVisible,region)
-	if not ok or not visible then
-		return nil
-	end
-	return region
-end
-
 local function buildRows(root)
 	local built,players={},nil
 	local canDivide=type(root.CreateDivider)=="function"
@@ -257,7 +250,7 @@ local function openMenu(owner)
 	end
 
 	local built,players
-	local ok,menu=pcall(MenuUtil.CreateContextMenu,menuOwner(owner),function(_,root)
+	local ok,menu=pcall(MenuUtil.CreateContextMenu,A.shownRegion(owner),function(_,root)
 		built,players=buildRows(root)
 	end)
 
@@ -268,8 +261,7 @@ local function openMenu(owner)
 end
 
 local function escapeOf(r,g,b)
-	return("|cff%02x%02x%02x"):format(math.floor(r*255+0.5),math.floor(g*255+0.5),
-		math.floor(b*255+0.5))
+	return A.channelEscape(r,g,b)
 end
 
 local function headlineOf(record)
@@ -518,6 +510,14 @@ local function notifySetting()
 	end
 end
 
+local function showPlaced()
+	if not buttonOrNil()then
+		return false
+	end
+	place()
+	return(pcall(button.Show,button))
+end
+
 function A.setMinimapShown(shown)
 	local ui=uiState(not shown)
 	if ui then
@@ -536,11 +536,7 @@ function A.setMinimapShown(shown)
 		return true
 	end
 
-	if not buttonOrNil()then
-		return false
-	end
-	place()
-	return(pcall(button.Show,button))
+	return showPlaced()
 end
 
 function A.minimapShown()
@@ -555,11 +551,7 @@ function A.resetMinimap()
 		ui.minimapShown=nil
 	end
 	notifySetting()
-	if not buttonOrNil()then
-		return false
-	end
-	place()
-	return(pcall(button.Show,button))
+	return showPlaced()
 end
 
 function A.applyMinimapState()
@@ -570,11 +562,7 @@ function A.applyMinimapState()
 		return true
 	end
 
-	if not buttonOrNil()then
-		return false
-	end
-	place()
-	return(pcall(button.Show,button))
+	return showPlaced()
 end
 
 function A.minimapAvailable()

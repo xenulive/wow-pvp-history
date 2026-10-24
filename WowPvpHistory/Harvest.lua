@@ -1,15 +1,9 @@
--- WowPvpHistory 0.70.7
+-- WowPvpHistory 0.70.16
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
 -- License: MIT, see LICENSE
 local ADDON,A=...
-
-local canaccesstable=canaccesstable
-local GetNumBattlefieldScores=GetNumBattlefieldScores
-local SetBattlefieldScoreFaction=SetBattlefieldScoreFaction
-local RequestBattlefieldScoreData=RequestBattlefieldScoreData
-local GetTimePreciseSec=GetTimePreciseSec
 
 local FIRST_READ=3
 local RETRY_EVERY=2
@@ -105,7 +99,8 @@ local function readRow(index)
 
 	local participant={}
 	for i=1,#ROW_FIELDS do
-		local source,key=ROW_FIELDS[i][1],ROW_FIELDS[i][2]
+		local field=ROW_FIELDS[i]
+		local source,key=field[1],field[2]
 		local gotField,value=pcall(A.index,row,source)
 		if gotField then
 			A.put(participant,key,value)
@@ -148,7 +143,8 @@ local function readColumns()
 		if indexed and type(item)=="table"then
 			local column={}
 			for f=1,#COLUMN_FIELDS do
-				local source,key=COLUMN_FIELDS[f][1],COLUMN_FIELDS[f][2]
+				local field=COLUMN_FIELDS[f]
+				local source,key=field[1],field[2]
 				local gotField,value=pcall(A.index,item,source)
 				if gotField then
 					A.put(column,key,value)
@@ -320,6 +316,18 @@ end
 
 A.precise=precise
 
+local function sweepTimes(record,startedAt,finishedAt)
+	local readSeconds
+	if startedAt and finishedAt then
+		readSeconds=finishedAt-startedAt
+	end
+	local readAt
+	if startedAt and type(record.completedPrecise)=="number"then
+		readAt=startedAt-record.completedPrecise
+	end
+	return readSeconds,readAt
+end
+
 local function sinceComplete(record)
 	local now=precise()
 	if type(now)=="number"and type(record.completedPrecise)=="number"then
@@ -346,8 +354,10 @@ local function sweep()
 	for i=1,rows do
 		local guid,participant,why=readRow(i)
 		if guid then
+			if participants[guid]==nil then
+				kept=kept+1
+			end
 			participants[guid]=participant
-			kept=kept+1
 		elseif why then
 			refused[why]=(refused[why]or 0)+1
 		end
@@ -402,8 +412,9 @@ function A.readRoundBoundary(final)
 	else
 		mates={}
 		for i=1,size do
-			if guids[i]~=own then
-				mates[#mates+1]=guids[i]
+			local guid=guids[i]
+			if guid~=own then
+				mates[#mates+1]=guid
 			end
 		end
 		if#mates~=A.ROUND_MATES then
@@ -568,7 +579,8 @@ local function readTeams()
 			reasons[index]="secret"
 		else
 			for i=1,#TEAM_FIELDS do
-				local source,key,dropZero=TEAM_FIELDS[i][1],TEAM_FIELDS[i][2],TEAM_FIELDS[i][3]
+				local field=TEAM_FIELDS[i]
+				local source,key,dropZero=field[1],field[2],field[3]
 				local got,value=pcall(A.index,info,source)
 				if not got or(type(value)~="nil"and not A.canRead(value))then
 					refused=true
@@ -599,7 +611,8 @@ local function readTeams()
 	return any and teams or nil,reasons
 end
 
-local function store(record,participants,kept,rows,attempt,readSeconds,readAt,stash,superseded)
+local function store(record,participants,kept,rows,attempt,readSeconds,readAt,stash,superseded,
+	announce)
 	endSandboxForMatch()
 	local db=A.db()
 
@@ -628,7 +641,7 @@ local function store(record,participants,kept,rows,attempt,readSeconds,readAt,st
 	end
 
 	if surface then
-		record.format=surface.format
+		record.format=type(surface.format)=="string"and surface.format or"unknown"
 		A.put(record,"bracket",surface.bracket)
 		A.put(record,"rated",surface.rated)
 	else
@@ -741,7 +754,7 @@ local function store(record,participants,kept,rows,attempt,readSeconds,readAt,st
 			refused=refused})
 	end
 
-	if record.openedEpoch and record.completedEpoch then
+	if type(record.openedEpoch)=="number"and type(record.completedEpoch)=="number"then
 		record.duration=record.completedEpoch-record.openedEpoch
 	end
 
@@ -800,7 +813,7 @@ local function store(record,participants,kept,rows,attempt,readSeconds,readAt,st
 			A.say(("match not recorded: the match-level surface read nothing and %d of %d in the "
 				.."roster are bots (%s)")
 				:format(bots,roster,record.map and record.map.name or"no map"))
-			return
+			return false
 		end
 	end
 
@@ -817,6 +830,9 @@ local function store(record,participants,kept,rows,attempt,readSeconds,readAt,st
 	end
 	record.talents=talents
 
+	if announce then
+		A.say(announce)
+	end
 	record.id=db.nextMatchId
 	db.nextMatchId=db.nextMatchId+1
 	db.matches[#db.matches+1]=record
@@ -933,40 +949,41 @@ local function store(record,participants,kept,rows,attempt,readSeconds,readAt,st
 	if not heldOk then
 		A.noteError(heldErr,"after-match")
 	end
+	return true
 end
 
 function A.storeFallback(record,attempt,superseded)
 	local fallback=record.fallback
 	if not(type(fallback)=="table"and type(fallback.kept)=="number"and fallback.kept>0)then
-		return false
+		return false,false
 	end
 
 	local why=("scoreboard gone after %s"):format(attempt and(attempt.." attempts")or"no scheduled read")
 	if superseded then
 		why="a new match opened before the scoreboard was read"
 	end
-	A.say(("%s, storing the roster read at %s: %d rows")
+	local announce=("%s, storing the roster read at %s: %d rows")
 		:format(why,
 			fallback.readAt and("+"..string.format("%.1f",fallback.readAt).." s")or"the transition",
-			fallback.kept))
+			fallback.kept)
 
-	store(record,fallback.participants,fallback.kept,fallback.rows,
-		STASH_ATTEMPT,fallback.readSeconds,fallback.readAt,fallback,superseded)
-	return true
+	local stored=store(record,fallback.participants,fallback.kept,fallback.rows,
+		STASH_ATTEMPT,fallback.readSeconds,fallback.readAt,fallback,superseded,announce)
+	return stored==true,stored~=true
 end
 
 local function supersede(record,attempt,opened,current)
 	local fallback=record.fallback
 	local kept=type(fallback)=="table"and type(fallback.kept)=="number"and fallback.kept or 0
-	local stored=A.storeFallback(record,attempt,true)
+	local stored,refused=A.storeFallback(record,attempt,true)
 	A.trace("superseded",{
 		attempt=attempt,
 		openedGen=opened,
 		currentGen=current,
 		kept=kept,
-		source=stored and"stash"or"drop",
+		source=stored and"stash"or(refused and"refused"or"drop"),
 	})
-	if stored then
+	if stored or refused then
 		return
 	end
 	A.drop("superseded",A.dropContext(record,{attempts=attempt}))
@@ -994,15 +1011,7 @@ local function runHarvest(record,attempt)
 	local participants,kept,rows,refused=sweep()
 	local finishedAt=precise()
 
-	local readSeconds
-	if startedAt and finishedAt then
-		readSeconds=finishedAt-startedAt
-	end
-
-	local readAt
-	if startedAt and type(record.completedPrecise)=="number"then
-		readAt=startedAt-record.completedPrecise
-	end
+	local readSeconds,readAt=sweepTimes(record,startedAt,finishedAt)
 
 	A.trace("harvest",{attempt=attempt,rows=rows,kept=kept,off=A.unitFigure(readAt)})
 
@@ -1024,7 +1033,8 @@ local function runHarvest(record,attempt)
 			return
 		end
 
-		if A.storeFallback(record,attempt)then
+		local stored,stashRefused=A.storeFallback(record,attempt)
+		if stored or stashRefused then
 			return
 		end
 
@@ -1049,15 +1059,7 @@ function A.stashRoster(record)
 	local participants,kept,rows=sweep()
 	local finishedAt=precise()
 
-	local readAt
-	if startedAt and type(record.completedPrecise)=="number"then
-		readAt=startedAt-record.completedPrecise
-	end
-
-	local readSeconds
-	if startedAt and finishedAt then
-		readSeconds=finishedAt-startedAt
-	end
+	local readSeconds,readAt=sweepTimes(record,startedAt,finishedAt)
 
 	local winner
 	if A.readMatchSurface()then
@@ -1109,11 +1111,22 @@ function A.stashAtTransition(record)
 	end
 end
 
+local pendingReads=setmetatable({},{__mode="k"})
+
+function A.harvestsPending()
+	local n=0
+	for _ in pairs(pendingReads)do
+		n=n+1
+	end
+	return n
+end
+
 function A.scheduleHarvest(record,attempt)
 	attempt=attempt or 1
 
 	if not(C_Timer and C_Timer.After)then
-		if A.storeFallback(record,nil)then
+		local stored,refused=A.storeFallback(record,nil)
+		if stored or refused then
 			return
 		end
 		A.drop("no-timer",A.dropContext(record))
@@ -1123,7 +1136,10 @@ function A.scheduleHarvest(record,attempt)
 	end
 
 	local delay=(attempt==1)and FIRST_READ or RETRY_EVERY
+	pendingReads[record]=(pendingReads[record]or 0)+1
 	C_Timer.After(delay,function()
+		local left=(pendingReads[record]or 1)-1
+		pendingReads[record]=left>0 and left or nil
 		local ok,err=pcall(runHarvest,record,attempt)
 		if not ok then
 			local db=A.db()

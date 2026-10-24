@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.7
+-- WowPvpHistory 0.70.16
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -134,10 +134,8 @@ local function side(selfFaction,participant)
 		return explicit
 	end
 
-	if selfFaction==nil or participant.faction==nil then
-		return nil
-	end
-	if(selfFaction~=0 and selfFaction~=1)or(participant.faction~=0 and participant.faction~=1)then
+	if selfFaction==nil or participant.faction==nil
+		or(selfFaction~=0 and selfFaction~=1)or(participant.faction~=0 and participant.faction~=1)then
 		return nil
 	end
 	if participant.faction==selfFaction then
@@ -347,7 +345,7 @@ function A.nameplateTokens()
 		local plate=list[i]
 		if type(plate)=="table"then
 			local token=plate.namePlateUnitToken
-			if type(token)=="string"and token~=""then
+			if A.canRead(token)and type(token)=="string"and token~=""then
 				tokens[#tokens+1]=token
 			end
 		end
@@ -482,11 +480,7 @@ function A.indexReading(db,census)
 end
 
 function A.reportRebuild()
-	local said={}
-	local function say(line)
-		said[#said+1]=line
-		A.say(line)
-	end
+	local said,say=A.chatCollector()
 
 	local walked=A.rebuildIndex()
 	if not walked then
@@ -520,6 +514,19 @@ local function guidKeyed(key,participant)
 	return type(key)=="string"and key~=""and key~=participant.name
 end
 
+local function nameHeldElsewhere(players,name,guid,skip)
+	for key,other in pairs(players)do
+		if key~=skip and key~=guid and type(other)=="table"and type(other.names)=="table"then
+			for i=1,#other.names do
+				if other.names[i]==name then
+					return true
+				end
+			end
+		end
+	end
+	return false
+end
+
 local function namedEntryFor(players,name,guid)
 	if type(name)~="string"or name==""then
 		return nil,"no-name"
@@ -529,14 +536,8 @@ local function namedEntryFor(players,name,guid)
 		return nil,"no-entry"
 	end
 
-	for key,other in pairs(players)do
-		if key~=name and key~=guid and type(other)=="table"and type(other.names)=="table"then
-			for i=1,#other.names do
-				if other.names[i]==name then
-					return nil,"ambiguous"
-				end
-			end
-		end
+	if nameHeldElsewhere(players,name,guid,name)then
+		return nil,"ambiguous"
 	end
 
 	return name
@@ -700,14 +701,8 @@ local function namedNoteFor(db,name,guid)
 	if type(notes)~="table"or name==guid or not A.namedNote(name,notes[name])then
 		return nil,"no-entry"
 	end
-	for key,other in pairs(db.players)do
-		if key~=guid and type(other)=="table"and type(other.names)=="table"then
-			for i=1,#other.names do
-				if other.names[i]==name then
-					return nil,"ambiguous"
-				end
-			end
-		end
+	if nameHeldElsewhere(db.players,name,guid,nil)then
+		return nil,"ambiguous"
 	end
 	return name
 end

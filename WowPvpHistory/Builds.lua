@@ -1,11 +1,9 @@
--- WowPvpHistory 0.70.7
+-- WowPvpHistory 0.70.16
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
 -- License: MIT, see LICENSE
 local _,A=...
-
-local canaccesstable=canaccesstable
 
 local REASON_SECRET="secret"
 local REASON_NO_CONFIG="no-config"
@@ -224,7 +222,7 @@ local function ownSpec(record)
 	if type(own)~="table"then
 		return nil,nil
 	end
-	return own.spec,own.classToken
+	return own.spec,own.classToken,own.class
 end
 
 function A.buildDigest(text)
@@ -235,7 +233,7 @@ function A.buildDigest(text)
 	for i=1,#text do
 		hash=(hash*33+text:byte(i))%4294967296
 	end
-	return("%08x"):format(hash)
+	return A.hex8(hash)
 end
 
 local function stampOf(record)
@@ -266,17 +264,18 @@ function A.buildTally(format,season,character,bound)
 			elseif type(block.string)~="string"or block.string==""then
 				unread=unread+1
 			else
-				local spec,classToken=ownSpec(record)
+				local spec,classToken,class=ownSpec(record)
 				local specKey=type(spec)=="string"and spec or""
 				local key=specKey.."/"..A.buildDigest(block.string)
 				local row=rows[key]
 				if not row then
-					row={key=key,string=block.string,spec=spec,classToken=classToken,
+					row={key=key,string=block.string,spec=spec,classToken=classToken,class=class,
 						played=0,decided=0,wins=0,draws=0,ids={}}
 					rows[key]=row
 					order[#order+1]=row
-					if not specs[specKey]then
-						specs[specKey]=true
+					local specClass=specKey.."/"..tostring(classToken or"")
+					if not specs[specClass]then
+						specs[specClass]=true
 						specCount=specCount+1
 					end
 				end
@@ -297,30 +296,12 @@ function A.buildTally(format,season,character,bound)
 					end
 					row.pvp=pvp
 				end
-				local outcome,_,derived=A.recordVerdict(record)
-				if outcome~=nil then
-					row.decided=row.decided+1
-					if outcome=="win"then
-						row.wins=row.wins+1
-					elseif A.recordLevel(record,outcome,derived)then
-						row.draws=row.draws+1
-					end
-				end
+				A.tallyVerdict(row,record)
 			end
 		end
 	end
 
-	for i=1,#order do
-		local row=order[i]
-		row.winRate=select(4,A.winRecord(row))
-	end
-
-	table.sort(order,function(a,b)
-		if a.played~=b.played then
-			return a.played>b.played
-		end
-		return a.key<b.key
-	end)
+	A.rankByPlayed(order,"key")
 
 	return order,considered,before,unread,specCount
 end
@@ -341,7 +322,8 @@ function A.buildsAnswer(format,season,character,bound)
 		local row=order[i]
 		local wins,losses=A.winRecord(row)
 		local loadout=row.loadout or UNNAMED
-		local same=table.concat({loadout,row.heroName or"",mixed and tostring(row.spec or"")or""},"\n")
+		local specText=type(row.spec)=="string"and A.chipText({spec=row.spec,class=row.class})or nil
+		local same=table.concat({loadout,row.heroName or"",mixed and specText or""},"\n")
 		seen[same]=(seen[same]or 0)+1
 		local number=seen[same]>1 and seen[same]or nil
 		if number then
@@ -352,8 +334,8 @@ function A.buildsAnswer(format,season,character,bound)
 		if row.heroName then
 			name=("%s, %s"):format(name,row.heroName)
 		end
-		if mixed and type(row.spec)=="string"then
-			name=("%s (%s)"):format(name,row.spec)
+		if mixed and specText then
+			name=("%s (%s)"):format(name,specText)
 		end
 		local icons={}
 		for _,id in ipairs(row.pvp or{})do

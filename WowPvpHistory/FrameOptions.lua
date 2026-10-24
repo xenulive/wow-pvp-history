@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.7
+-- WowPvpHistory 0.70.16
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -10,7 +10,7 @@ local FRAME_NAME="WowPvpHistoryOptionsFrame"
 local window
 
 local restoreSlot="current"
-local restoreArmed=false
+local restoreRead=nil
 
 local DIAGNOSTIC="diagnostic"
 
@@ -54,6 +54,26 @@ function A.restoreSlotText(slot)
 		("%d %s, written %s."):format(entry.matches,entry.matches==1 and"match"or"matches",
 			tostring(entry.at)),
 		entry.matches,entry.at
+end
+
+local function holdRestoreRead(slot)
+	local _,_,matches,at=A.restoreSlotText(slot)
+	local held=A.backupStore()
+	restoreRead={slot=slot,at=at,matches=matches,entry=held and held[slot]or nil}
+end
+
+local function restoreArmedNow()
+	local read=restoreRead
+	if read==nil or read.slot~=restoreSlot then
+		return false
+	end
+	local _,_,matches,at=A.restoreSlotText(restoreSlot)
+	local held=A.backupStore()
+	if at==nil or at~=read.at or matches~=read.matches or(held and held[restoreSlot])~=read.entry then
+		restoreRead=nil
+		return false
+	end
+	return true
 end
 
 local function surface()
@@ -490,21 +510,7 @@ local function buildCard(frame,pane,title,opts)
 	card.pane=pane
 	card.ground=card:CreateTexture(nil,"BACKGROUND")
 	card.ground:SetAllPoints(card)
-	card.edges={}
-	for _,side in ipairs({"TOP","BOTTOM"})do
-		local edge=card:CreateTexture(nil,"BORDER")
-		edge:SetPoint(side.."LEFT",card,side.."LEFT",0,0)
-		edge:SetPoint(side.."RIGHT",card,side.."RIGHT",0,0)
-		edge:SetHeight(1)
-		card.edges[#card.edges+1]=edge
-	end
-	for _,side in ipairs({"LEFT","RIGHT"})do
-		local edge=card:CreateTexture(nil,"BORDER")
-		edge:SetPoint("TOP"..side,card,"TOP"..side,0,0)
-		edge:SetPoint("BOTTOM"..side,card,"BOTTOM"..side,0,0)
-		edge:SetWidth(1)
-		card.edges[#card.edges+1]=edge
-	end
+	card.edges=A.hairlineEdges(card)
 
 	card.heading=card:CreateFontString(nil,"ARTWORK","GameFontNormalSmall")
 	card.heading:SetPoint("LEFT",card,"TOPLEFT",A.metric("setCardPad"),-A.metric("cardHead")/2)
@@ -526,9 +532,9 @@ local function buildCard(frame,pane,title,opts)
 		link.label:SetPoint("RIGHT",link,"RIGHT",0,0)
 		link.label:SetJustifyH("RIGHT")
 		link.label:SetWordWrap(false)
-		link.label:SetText(opts.link.text)
-		link.linkText=opts.link.text
-		link:SetWidth(A.labelRoom(opts.link.text))
+		local linkText=opts.link.text
+		link.label:SetText(linkText)
+		link.linkText=linkText
 		link:SetScript("OnClick",opts.link.onClick)
 		link:SetScript("OnEnter",function(self)
 			self.over=true
@@ -539,6 +545,7 @@ local function buildCard(frame,pane,title,opts)
 			A.style(self.label,"cardLabel","dim")
 		end)
 		A.style(link.label,"cardLabel","dim")
+		link:SetWidth(A.textRoom(link.label,linkText))
 		card.link=link
 	end
 
@@ -1067,10 +1074,11 @@ ROW_BUILDERS.announcePosition={
 
 		frame.announceLock=buildToggle(position)
 		atRight(position,frame.announceLock,frame.announcePreview)
-		frame.announceLock.label=position:CreateFontString(nil,"ARTWORK","GameFontHighlightSmall")
-		frame.announceLock.label:SetPoint("RIGHT",frame.announceLock.word,"LEFT",-A.metric("pillGap"),0)
-		frame.announceLock.label:SetText("Lock")
-		A.style(frame.announceLock.label,"cardLabel","dim")
+		local lockLabel=position:CreateFontString(nil,"ARTWORK","GameFontHighlightSmall")
+		frame.announceLock.label=lockLabel
+		lockLabel:SetPoint("RIGHT",frame.announceLock.word,"LEFT",-A.metric("pillGap"),0)
+		lockLabel:SetText("Lock")
+		A.style(lockLabel,"cardLabel","dim")
 		frame.announceLock:SetScript("OnClick",function(self)
 			local locked=self:GetChecked()and true or false
 			if A.setAnnounceLocked(locked)then
@@ -1091,7 +1099,7 @@ ROW_BUILDERS.announcePosition={
 			showTip(self,position.tipSpec)
 		end)
 		frame.announceLock:SetScript("OnLeave",hideTip)
-		position.inertRegions[#position.inertRegions+1]=frame.announceLock.label
+		position.inertRegions[#position.inertRegions+1]=lockLabel
 		return position
 	end,
 }
@@ -1225,21 +1233,7 @@ local function buildSlotCard(parent,slot)
 	card:SetHeight(A.metric("slotCard"))
 	card.ground=card:CreateTexture(nil,"BACKGROUND")
 	card.ground:SetAllPoints(card)
-	card.edges={}
-	for _,side in ipairs({"TOP","BOTTOM"})do
-		local edge=card:CreateTexture(nil,"BORDER")
-		edge:SetPoint(side.."LEFT",card,side.."LEFT",0,0)
-		edge:SetPoint(side.."RIGHT",card,side.."RIGHT",0,0)
-		edge:SetHeight(1)
-		card.edges[#card.edges+1]=edge
-	end
-	for _,side in ipairs({"LEFT","RIGHT"})do
-		local edge=card:CreateTexture(nil,"BORDER")
-		edge:SetPoint("TOP"..side,card,"TOP"..side,0,0)
-		edge:SetPoint("BOTTOM"..side,card,"BOTTOM"..side,0,0)
-		edge:SetWidth(1)
-		card.edges[#card.edges+1]=edge
-	end
+	card.edges=A.hairlineEdges(card)
 	local pad=A.metric("setCardPad")
 	card.name=card:CreateFontString(nil,"ARTWORK","GameFontNormalSmall")
 	card.name:SetPoint("TOPLEFT",card,"TOPLEFT",pad,-pad/2-2)
@@ -1350,14 +1344,18 @@ local function buildStorageSection(frame,pane)
 	end
 	frame.readCopy=buildButton(backup,"Read the chosen copy",function()
 		local _,lines,readable=A.openRestore(restoreSlot,false)
-		restoreArmed=readable==true
+		restoreRead=nil
+		if readable==true then
+			holdRestoreRead(restoreSlot)
+		end
 		outcome(lines,readable~=true and"fault"or nil)
 	end)
 	frame.restoreCopy=buildButton(backup,"Restore the chosen copy",function()
-		if not restoreArmed then
+		if not restoreArmedNow()then
+			A.refreshOptionsWindow()
 			return
 		end
-		restoreArmed=false
+		restoreRead=nil
 		local restored,lines=A.openRestore(restoreSlot,true)
 		outcome(lines,not restored and"fault"or nil)
 	end)
@@ -1397,21 +1395,7 @@ local function buildStorageSection(frame,pane)
 	frame.eraseBox=CreateFrame("Frame",nil,pane)
 	frame.eraseBox.ground=frame.eraseBox:CreateTexture(nil,"BACKGROUND")
 	frame.eraseBox.ground:SetAllPoints(frame.eraseBox)
-	frame.eraseBox.edges={}
-	for _,side in ipairs({"TOP","BOTTOM"})do
-		local edge=frame.eraseBox:CreateTexture(nil,"BORDER")
-		edge:SetPoint(side.."LEFT",frame.eraseBox,side.."LEFT",0,0)
-		edge:SetPoint(side.."RIGHT",frame.eraseBox,side.."RIGHT",0,0)
-		edge:SetHeight(1)
-		frame.eraseBox.edges[#frame.eraseBox.edges+1]=edge
-	end
-	for _,side in ipairs({"LEFT","RIGHT"})do
-		local edge=frame.eraseBox:CreateTexture(nil,"BORDER")
-		edge:SetPoint("TOP"..side,frame.eraseBox,"TOP"..side,0,0)
-		edge:SetPoint("BOTTOM"..side,frame.eraseBox,"BOTTOM"..side,0,0)
-		edge:SetWidth(1)
-		frame.eraseBox.edges[#frame.eraseBox.edges+1]=edge
-	end
+	frame.eraseBox.edges=A.hairlineEdges(frame.eraseBox)
 	local pad=A.metric("setCardPad")
 	frame.eraseHeading=frame.eraseBox:CreateFontString(nil,"ARTWORK","GameFontNormalSmall")
 	frame.eraseHeading:SetPoint("TOPLEFT",frame.eraseBox,"TOPLEFT",pad,-pad)
@@ -1975,7 +1959,7 @@ local function paintBackup(frame)
 		card.dot:SetColorTexture(A.color(chosen and"accent"or"dimmer"))
 	end
 
-	if restoreArmed then
+	if restoreArmedNow()then
 		frame.restoreCopy:Enable()
 	else
 		frame.restoreCopy:Disable()
@@ -2086,15 +2070,15 @@ function A.refreshOptionsWindow(walk,finding)
 
 	local counts=A.optionsSwitchCounts()
 
-	pcall(layoutDiagnostics,window)
+	A.containedPaint("options/diagnostics-layout",layoutDiagnostics,window)
 
 	for i=1,#window.cards do
-		pcall(paintCard,window.cards[i])
+		A.containedPaint("options/card",paintCard,window.cards[i])
 	end
 
 	for i=1,#window.checks do
 		local check=window.checks[i]
-		pcall(function()
+		A.containedPaint("options/check",function()
 			check:SetChecked(check.spec.get()and true or false)
 			local available=check.spec.parent==nil or parentOn(check.spec.parent)
 			if available then
@@ -2110,37 +2094,37 @@ function A.refreshOptionsWindow(walk,finding)
 
 	for i=1,#window.diagnostics do
 		local check=window.diagnostics[i]
-		pcall(function()
+		A.containedPaint("options/diagnostic",function()
 			check:SetChecked(check.spec.get()and true or false)
 			A.style(check.label,"cardText","text")
 		end)
 	end
 
-	pcall(paintHeader,window)
-	pcall(paintDiagnosticLink,window)
+	A.containedPaint("options/header",paintHeader,window)
+	A.containedPaint("options/diagnostic-link",paintDiagnosticLink,window)
 
-	pcall(A.setSegmentChosen,window.themeSegment,A.theme())
-	pcall(function()
+	A.containedPaint("options/theme",A.setSegmentChosen,window.themeSegment,A.theme())
+	A.containedPaint("options/announce-shape",function()
 		A.setSegmentChosen(window.announceShapeSegment,A.announceShape())
 	end)
 
 	for i=1,#(window.steppers or{})do
-		pcall(paintStepper,window.steppers[i])
+		A.containedPaint("options/stepper",paintStepper,window.steppers[i])
 	end
 
-	pcall(function()
+	A.containedPaint("options/preview",function()
 		window.announcePreview:SetText(A.announcePreviewActive()and"End preview"or"Preview")
 		A.fitControl(window.announcePreview,A.metric("actionMin"))
 	end)
 
-	pcall(function()
+	A.containedPaint("options/lock",function()
 		window.announceLock:SetChecked(A.announceLocked())
 		A.style(window.announceLock.label,"cardLabel","dim")
 	end)
 
-	pcall(paintChildRows,window)
+	A.containedPaint("options/child-rows",paintChildRows,window)
 
-	pcall(function()
+	A.containedPaint("options/minimap",function()
 		local state=A.minimapState()
 		if not state.available then
 			window.angle:SetText("This client has no minimap.")
@@ -2158,7 +2142,7 @@ function A.refreshOptionsWindow(walk,finding)
 		end
 	end)
 
-	pcall(function()
+	A.containedPaint("options/meter",function()
 		if walk or(window.heldSize==nil and window.onScreen and storageShowing())then
 			window.heldSize=A.storedSize()
 		end
@@ -2166,26 +2150,26 @@ function A.refreshOptionsWindow(walk,finding)
 			paintMeter(window,window.heldSize)
 		end
 	end)
-	pcall(paintBackup,window)
+	A.containedPaint("options/backup",paintBackup,window)
 	if storageShowing()then
-		pcall(paintErase,window,finding)
+		A.containedPaint("options/erase",paintErase,window,finding)
 	end
 
-	pcall(function()
+	A.containedPaint("options/gate-preview",function()
 		if window.gatePreview and type(A.announceCardPreview)=="function"then
 			A.announceCardPreview(window.gatePreview)
 		end
 	end)
 
-	pcall(function()
+	A.containedPaint("options/find",function()
 		if(window.find:GetText()or"")~=findText then
 			window.find:SetText(findText)
 		end
 	end)
 
-	pcall(layoutSections,window)
+	A.containedPaint("options/sections",layoutSections,window)
 
-	pcall(function()
+	A.containedPaint("options/outcome",function()
 		A.style(window.outcome,"rowNote","dimmer")
 		window.outcome:SetText(lastOutcome or"")
 		A.style(window.storageOutcome,"rowNote","dimmer")
@@ -2193,7 +2177,7 @@ function A.refreshOptionsWindow(walk,finding)
 		window.sections.rule:SetColorTexture(A.color("divider"))
 	end)
 
-	pcall(layoutOutcome,window)
+	A.containedPaint("options/outcome-layout",layoutOutcome,window)
 
 	local onStorage=storageShowing()
 	A.trace("options",{
@@ -2220,7 +2204,7 @@ function A.optionsChooseSlot(slot)
 	end
 	if restoreSlot~=slot then
 		restoreSlot=slot
-		restoreArmed=false
+		restoreRead=nil
 	end
 	A.refreshOptionsWindow()
 	return true
@@ -2238,7 +2222,7 @@ function A.optionsFind(text)
 end
 
 function A.optionsState()
-	return findText,restoreSlot,restoreArmed,chosenPage
+	return findText,restoreSlot,restoreArmedNow(),chosenPage
 end
 
 local function sizeBody(frame,width,height)

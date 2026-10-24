@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.7
+-- WowPvpHistory 0.70.16
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -193,20 +193,31 @@ function A.windowCeiling(kind)
 	return narrowest
 end
 
+local function registered(list,frame)
+	for i=1,#list do
+		if list[i].frame==frame then
+			return true
+		end
+	end
+	return false
+end
+
+local function globalName(frame)
+	local okName,given=pcall(frame.GetName,frame)
+	if okName and type(given)=="string"and given~=""then
+		return given
+	end
+	return nil
+end
+
 function A.registerPlacedWindow(frame,point,x,y,onScaled,hooks)
 	if type(frame)~="table"or type(point)~="string"or point==""then
 		return false
 	end
-	for i=1,#placedWindows do
-		if placedWindows[i].frame==frame then
-			return false
-		end
+	if registered(placedWindows,frame)then
+		return false
 	end
-	local name
-	local okName,given=pcall(frame.GetName,frame)
-	if okName and type(given)=="string"and given~=""then
-		name=given
-	end
+	local name=globalName(frame)
 
 	placedWindows[#placedWindows+1]={
 		frame=frame,
@@ -351,20 +362,67 @@ function A.stopDrag(frame)
 	pcall(frame.SetUserPlaced,frame,false)
 end
 
+function A.standMovableWindow(frame)
+	frame:SetFrameStrata("MEDIUM")
+	frame:SetToplevel(true)
+	frame:SetClampedToScreen(true)
+	frame:SetMovable(true)
+	frame:EnableMouse(true)
+	frame:RegisterForDrag("LeftButton")
+	frame:SetScript("OnDragStart",frame.StartMoving)
+end
+
+function A.placeWindowHeading(frame)
+	frame.heading=A.windowTitle(frame)
+	frame.heading:SetPoint("TOPLEFT",frame,"TOPLEFT",A.metric("titleInset"),-A.metric("titleTop"))
+	frame.heading:SetPoint("TOPRIGHT",frame,"TOPRIGHT",-A.metric("titleInset"),-A.metric("titleTop"))
+	frame.heading:SetJustifyH("CENTER")
+	frame.heading:SetWordWrap(false)
+end
+
+function A.closeOnEscape(name)
+	if type(UISpecialFrames)~="table"then
+		return
+	end
+	for i=1,#UISpecialFrames do
+		if UISpecialFrames[i]==name then
+			return
+		end
+	end
+	UISpecialFrames[#UISpecialFrames+1]=name
+end
+
+function A.shownRegion(region)
+	if not region then
+		return nil
+	end
+	local ok,visible=pcall(region.IsVisible,region)
+	if not ok or not visible then
+		return nil
+	end
+	return region
+end
+
+function A.frameFigure(frame,getter)
+	local fn=frame[getter]
+	if type(fn)~="function"then
+		return nil
+	end
+	local ok,value=pcall(fn,frame)
+	if not ok or(issecretvalue and issecretvalue(value))or type(value)~="number"then
+		return nil
+	end
+	return value
+end
+
 function A.registerScaledWindow(frame,onScaled)
 	if type(frame)~="table"then
 		return false
 	end
-	for i=1,#scaledWindows do
-		if scaledWindows[i].frame==frame then
-			return false
-		end
+	if registered(scaledWindows,frame)then
+		return false
 	end
-	local name
-	local okName,given=pcall(frame.GetName,frame)
-	if okName and type(given)=="string"and given~=""then
-		name=given
-	end
+	local name=globalName(frame)
 	scaledWindows[#scaledWindows+1]={
 		frame=frame,
 		name=name,
@@ -474,7 +532,9 @@ function A.setWindowScale(value,from)
 		return false
 	end
 	local before=A.windowScale()
-	db.ui=db.ui or{}
+	if type(db.ui)~="table"then
+		db.ui={}
+	end
 	db.ui.windowScale=want~=SCALE_DEFAULT and want or nil
 	sessionScale=nil
 	if A.notifyWindowScaleSetting then
@@ -580,10 +640,7 @@ function A.storedGeometry(kind)
 	end
 	local held=store(false)
 	local entry=type(held)=="table"and held[ownerOf(kind)]or nil
-	if type(entry)~="table"then
-		return nil
-	end
-	if type(entry.width)~="number"or type(entry.height)~="number"then
+	if type(entry)~="table"or type(entry.width)~="number"or type(entry.height)~="number"then
 		return nil
 	end
 
@@ -1016,8 +1073,6 @@ function A.anchorState(frame)
 	return table.concat(names,"+"),count
 end
 
-local anchorState=A.anchorState
-
 local function rectState(frame)
 	local ok,left,bottom,width,height=pcall(frame.GetRect,frame)
 	if not ok then
@@ -1093,7 +1148,7 @@ end
 
 local function traceGrip(frame,kind,source,step,total,repaint,stored)
 	local live=A.frameGeometry(frame)
-	local names,count=anchorState(frame)
+	local names,count=A.anchorState(frame)
 	A.trace("view",{
 		source=source,
 		state=live and sizeState(live)or nil,
@@ -1176,6 +1231,13 @@ function A.attachResize(frame,kind,onResize)
 
 	local pressed,steps,resizedInPress=false,0,false
 
+	local function fireRepaint()
+		queued[kind]=nil
+		if onResize then
+			pcall(onResize)
+		end
+	end
+
 	local function queueRepaint()
 		if queued[kind]then
 			return
@@ -1183,18 +1245,10 @@ function A.attachResize(frame,kind,onResize)
 		queued[kind]=true
 		local after=C_Timer and C_Timer.After
 		if type(after)~="function"then
-			queued[kind]=nil
-			if onResize then
-				pcall(onResize)
-			end
+			fireRepaint()
 			return
 		end
-		after(0,function()
-			queued[kind]=nil
-			if onResize then
-				pcall(onResize)
-			end
-		end)
+		after(0,fireRepaint)
 	end
 
 	frame:SetScript("OnSizeChanged",function()
@@ -1320,18 +1374,20 @@ function A.attachPooledResize(frame,kind,hooks)
 		resized=true
 	end)
 
+	local function paintNow()
+		pcall(hooks.repaint,frame)
+	end
+
 	local function repaint()
 		if type(hooks.repaint)~="function"then
 			return
 		end
 		local after=C_Timer and C_Timer.After
 		if type(after)~="function"then
-			pcall(hooks.repaint,frame)
+			paintNow()
 			return
 		end
-		after(0,function()
-			pcall(hooks.repaint,frame)
-		end)
+		after(0,paintNow)
 	end
 
 	local function released()

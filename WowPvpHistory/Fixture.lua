@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.7
+-- WowPvpHistory 0.70.16
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -58,13 +58,13 @@ local TRIOS={
 	{{spec="Fury",class="Warrior",token="WARRIOR"},
 		{spec="Marksmanship",class="Hunter",token="HUNTER"},
 		{spec="Holy",class="Paladin",token="PALADIN",heal=true}},
-	{{spec="Unholy",class="DeathKnight",token="DEATHKNIGHT"},
+	{{spec="Unholy",class="Death Knight",token="DEATHKNIGHT"},
 		{spec="Devastation",class="Evoker",token="EVOKER"},
 		{spec="Restoration",class="Shaman",token="SHAMAN",heal=true}},
 	{{spec="Subtlety",class="Rogue",token="ROGUE"},
 		{spec="Balance",class="Druid",token="DRUID"},
 		{spec="Discipline",class="Priest",token="PRIEST",heal=true}},
-	{{spec="Havoc",class="DemonHunter",token="DEMONHUNTER"},
+	{{spec="Havoc",class="Demon Hunter",token="DEMONHUNTER"},
 		{spec="Elemental",class="Shaman",token="SHAMAN"},
 		{spec="Mistweaver",class="Monk",token="MONK",heal=true}},
 }
@@ -102,10 +102,10 @@ local BLITZ_ROSTER={
 	{spec="Beast Mastery",class="Hunter",token="HUNTER"},
 	{spec="Devastation",class="Evoker",token="EVOKER"},
 	{spec="Retribution",class="Paladin",token="PALADIN"},
-	{spec="Unholy",class="DeathKnight",token="DEATHKNIGHT"},
+	{spec="Unholy",class="Death Knight",token="DEATHKNIGHT"},
 	{spec="Marksmanship",class="Hunter",token="HUNTER"},
 	{spec="Discipline",class="Priest",token="PRIEST",heal=true},
-	{spec="Havoc",class="DemonHunter",token="DEMONHUNTER"},
+	{spec="Havoc",class="Demon Hunter",token="DEMONHUNTER"},
 	{spec="Elemental",class="Shaman",token="SHAMAN"},
 	{spec="Affliction",class="Warlock",token="WARLOCK"},
 	{spec="Windwalker",class="Monk",token="MONK"},
@@ -122,7 +122,7 @@ local SHUFFLE_LOBBIES={
 			{spec="Arms",class="Warrior",token="WARRIOR"},
 			{spec="Shadow",class="Priest",token="PRIEST"},
 			{spec="Subtlety",class="Rogue",token="ROGUE"},
-			{spec="Havoc",class="DemonHunter",token="DEMONHUNTER"},
+			{spec="Havoc",class="Demon Hunter",token="DEMONHUNTER"},
 		},
 	},
 	{
@@ -298,16 +298,18 @@ local function participant(fields)
 end
 
 local function record(fields)
+	local duration=fields.duration or 300
+	local opened=fields.epoch-duration
 	local r={
 		[A.FIXTURE_KEY]=true,
 		format=fields.format,
 		rated=fields.rated,
-		openedEpoch=fields.epoch-(fields.duration or 300),
-		openedAt=A.stampAt(fields.epoch-(fields.duration or 300)),
+		openedEpoch=opened,
+		openedAt=A.stampAt(opened),
 		openedState="StartUp",
 		completedEpoch=fields.epoch,
 		completedAt=A.stampAt(fields.epoch),
-		duration=fields.duration or 300,
+		duration=duration,
 		map=fields.map,
 		participants={},
 		rounds=fields.rounds or{},
@@ -592,9 +594,11 @@ function A.fixtureRecords(n,now,options)
 
 		for c=1,#pool do
 			local enemies={}
-			for i=1,#pool[c]do
-				enemies[i]=mint({spec=pool[c][i].spec,class=pool[c][i].class,
-					token=pool[c][i].token,heal=pool[c][i].heal})
+			local comp=pool[c]
+			for i=1,#comp do
+				local pick=comp[i]
+				enemies[i]=mint({spec=pick.spec,class=pick.class,
+					token=pick.token,heal=pick.heal})
 			end
 			local mates={}
 			for i=1,size-1 do
@@ -733,9 +737,9 @@ function A.fixtureRecords(n,now,options)
 		}
 		for seat=1,15 do
 			local faction=(seat<=7)and 0 or 1
-			local other=mint({spec=BLITZ_ROSTER[seat].spec,class=BLITZ_ROSTER[seat].class,
-				token=BLITZ_ROSTER[seat].token})
-			local role,healing=roleAndHealing(BLITZ_ROSTER[seat],seat,540000)
+			local pick=BLITZ_ROSTER[seat]
+			local other=mint({spec=pick.spec,class=pick.class,token=pick.token})
+			local role,healing=roleAndHealing(pick,seat,540000)
 			rows[#rows+1]={guid=other.guid,p=participant({
 				name=other.name,faction=faction,class=other.class,token=other.token,
 				spec=other.spec,role=role,
@@ -915,8 +919,9 @@ function A.fixtureRecords(n,now,options)
 		r.openedAt=A.stampAt(r.openedEpoch)
 		r.completedEpoch=r.completedEpoch+shift
 		r.completedAt=A.stampAt(r.completedEpoch)
-		for rnd=1,#r.rounds do
-			r.rounds[rnd].endedEpoch=r.rounds[rnd].endedEpoch+shift
+		local rounds=r.rounds
+		for rnd=1,#rounds do
+			rounds[rnd].endedEpoch=rounds[rnd].endedEpoch+shift
 		end
 	end
 
@@ -993,7 +998,7 @@ function A.fixtureRefusalText(reason)
 	end
 	if reason=="too-many"then
 		return("%d generated records already stand in the history, which is the most the fixture "
-			.."will store. /pvph debug fixture clear removes them"):format(MAX_STORED)
+			.."will store. /pvph debug fixture clear confirm removes them"):format(MAX_STORED)
 	end
 	return"the fixture cannot be generated right now"
 end
@@ -1183,7 +1188,15 @@ function A.fixturePreview()
 		end
 	end
 
-	return{marked=marked,real=real,leaving=leaving,authored=authored}
+	local leftEarly=0
+	local incomplete=db and type(db.incomplete)=="table"and db.incomplete or{}
+	for i=1,#incomplete do
+		if type(incomplete[i])=="table"and incomplete[i][A.FIXTURE_KEY]then
+			leftEarly=leftEarly+1
+		end
+	end
+
+	return{marked=marked,real=real,leaving=leaving,authored=authored,leftEarly=leftEarly}
 end
 
 function A.clearFixture()
@@ -1239,6 +1252,6 @@ function A.clearFixture()
 
 	A.trace("fixture",{state="cleared",n=before.marked,kept=before.real,leftEarly=leftRemoved},"data")
 
-	return{removed=before.marked,kept=before.real,
-		leaving=before.leaving,authored=before.authored,noted=noted}
+	return{removed=before.marked,kept=before.real,leftEarly=leftRemoved,
+		leaving=before.leaving,authored=before.authored,noted=noted,indexRebuilt=rebuilt}
 end

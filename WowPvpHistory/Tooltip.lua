@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.7
+-- WowPvpHistory 0.70.16
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -50,10 +50,7 @@ local function tooltipGuid(tooltip)
 	end
 
 	local guid=data.guid
-	if type(guid)~="string"or not A.canRead(guid)then
-		return nil
-	end
-	if guid==""then
+	if type(guid)~="string"or not A.canRead(guid)or guid==""then
 		return nil
 	end
 	return guid

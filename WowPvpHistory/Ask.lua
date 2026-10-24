@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.7
+-- WowPvpHistory 0.70.16
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -460,12 +460,13 @@ function A.askAnswer(key,format,season,character,bound,comp)
 		answer.unit={"decided","decided"}
 		answer.floorUnit="decided matches"
 	end
+	local specMatches=(key=="beats"or key=="worth")and countsMatches(format)
 	if(key=="comp"and not(type(A.compRounds)=="function"and A.compRounds(format)))
-		or((key=="beats"or key=="worth")and countsMatches(format))then
+		or specMatches then
 		answer.unit={"match","matches"}
 		answer.floorUnit="decided matches"
 	end
-	if(key=="beats"or key=="worth")and countsMatches(format)then
+	if specMatches then
 		answer.headerNames={met="GAMES"}
 		if format=="duel"then
 			answer.headerNames.name="CLASS"
@@ -657,22 +658,23 @@ function A.askSpanLine()
 	local room=select(5,A.askColumnShares())
 	local parts,disagreeing,unread,sets={},0,0,0
 	for i=1,#QUESTIONS do
+		local question=QUESTIONS[i]
 		local span=nil
-		if QUESTIONS[i].columns~=nil then
-			sets=sets+1
-		end
-		if QUESTIONS[i].columns==nil then
+		if question.columns==nil then
 			span=false
-		elseif type(A.columnSpan)=="function"and type(A.rowColumns)=="function"then
-			span=A.columnSpan(A.rowColumns(QUESTIONS[i].columns))
+		else
+			sets=sets+1
+			if type(A.columnSpan)=="function"and type(A.rowColumns)=="function"then
+				span=A.columnSpan(A.rowColumns(question.columns))
+			end
 		end
 		if span==false then
-			parts[#parts+1]=QUESTIONS[i].key.." none"
+			parts[#parts+1]=question.key.." none"
 		elseif type(span)~="number"then
 			unread=unread+1
-			parts[#parts+1]=QUESTIONS[i].key.." unread"
+			parts[#parts+1]=question.key.." unread"
 		else
-			parts[#parts+1]=("%s %d"):format(QUESTIONS[i].key,span)
+			parts[#parts+1]=("%s %d"):format(question.key,span)
 			if span~=room then
 				disagreeing=disagreeing+1
 			end
@@ -1183,7 +1185,7 @@ function A.askSortLine(answer)
 	local column=A.askSort(answer.key)
 	local question=A.askQuestion(answer.key)
 	local heading=column
-	if question and(question.columns~=nil or answer.key=="comp")and type(A.rowColumns)=="function"then
+	if question and(question.columns~=nil or answer.key=="comp")then
 		local columns=answer.key=="comp"and COMP_SORT_COLUMNS or A.askHeaderColumns(answer)or{}
 		for i=1,#columns do
 			if columns[i].sort==column then
@@ -1495,7 +1497,7 @@ function A.askNoteText(answer)
 		return""
 	end
 	if type(answer.rows)~="table"or#answer.rows==0 then
-		return answer.reason==UNREADABLE and sentences({UNREADABLE})or NOTHING
+		return answer.reason==UNREADABLE and DASH or NOTHING
 	end
 
 	local parts={}

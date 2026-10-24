@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.7
+-- WowPvpHistory 0.70.16
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -36,21 +36,6 @@ local function text(parent,layer)
 	fs:SetJustifyH("LEFT")
 	fs:SetWordWrap(false)
 	return fs
-end
-
-local function hoverLine(owner,line)
-	if not(GameTooltip and type(line)=="string")then
-		return
-	end
-	pcall(function()
-		GameTooltip:SetOwner(owner,"ANCHOR_TOP")
-		if type(A.styleTooltip)=="function"then
-			A.styleTooltip(GameTooltip)
-		end
-		local r,g,b=A.color("text")
-		GameTooltip:SetText(line,r,g,b,1,true)
-		GameTooltip:Show()
-	end)
 end
 
 local function cursorX(frame)
@@ -104,7 +89,7 @@ local function buildHead(frame,index)
 	card.tagHover:EnableMouse(true)
 	card.tagHover:SetScript("OnEnter",function(self)
 		self.shownLine=BASE_LINE
-		hoverLine(self,BASE_LINE)
+		A.hoverLine(self,BASE_LINE)
 	end)
 	card.tagHover:SetScript("OnLeave",function(self)
 		A.hideOwnedTooltip(self)
@@ -124,7 +109,7 @@ local function buildHead(frame,index)
 		end
 	end)
 	card.drop:SetScript("OnEnter",function(self)
-		hoverLine(self,"Take this match out")
+		A.hoverLine(self,"Take this match out")
 	end)
 	card.drop:SetScript("OnLeave",function(self)
 		A.hideOwnedTooltip(self)
@@ -174,13 +159,7 @@ local function buildWindow()
 	local frame=CreateFrame("Frame",FRAME_NAME,UIParent,"BasicFrameTemplateWithInset")
 	frame:SetSize(A.metric("compareWidth"),A.metric("compareHeight"))
 	frame:SetPoint("CENTER",UIParent,"CENTER",A.metric("compareOffsetX"),A.metric("compareOffsetY"))
-	frame:SetFrameStrata("MEDIUM")
-	frame:SetToplevel(true)
-	frame:SetClampedToScreen(true)
-	frame:SetMovable(true)
-	frame:EnableMouse(true)
-	frame:RegisterForDrag("LeftButton")
-	frame:SetScript("OnDragStart",frame.StartMoving)
+	A.standMovableWindow(frame)
 	frame:SetScript("OnDragStop",function(self)
 		A.stopDrag(self)
 		if type(A.rememberWindow)=="function"then
@@ -192,11 +171,7 @@ local function buildWindow()
 
 	A.registerChrome(frame)
 
-	frame.heading=A.windowTitle(frame)
-	frame.heading:SetPoint("TOPLEFT",frame,"TOPLEFT",A.metric("titleInset"),-A.metric("titleTop"))
-	frame.heading:SetPoint("TOPRIGHT",frame,"TOPRIGHT",-A.metric("titleInset"),-A.metric("titleTop"))
-	frame.heading:SetJustifyH("CENTER")
-	frame.heading:SetWordWrap(false)
+	A.placeWindowHeading(frame)
 
 	frame.body=CreateFrame("Frame",nil,frame)
 	frame.body:SetPoint("TOPLEFT",frame,"TOPLEFT",A.metric("margin"),-A.metric("headerHeight"))
@@ -222,18 +197,7 @@ local function buildWindow()
 	end,A.metric("actionMin"))
 	frame.openEach:SetPoint("LEFT",frame.addMatch,"RIGHT",A.metric("paneGap"),0)
 
-	if type(UISpecialFrames)=="table"then
-		local seen=false
-		for i=1,#UISpecialFrames do
-			if UISpecialFrames[i]==FRAME_NAME then
-				seen=true
-				break
-			end
-		end
-		if not seen then
-			UISpecialFrames[#UISpecialFrames+1]=FRAME_NAME
-		end
-	end
+	A.closeOnEscape(FRAME_NAME)
 
 	window=frame
 	if type(A.attachResize)=="function"then
@@ -331,7 +295,8 @@ end
 local function paintIcons(cell,data,x,y,width)
 	local side=A.metric("compareIcon")
 	local step=side+2
-	local total=#(data.icons or{})
+	local icons=data.icons or{}
+	local total=#icons
 	A.style(cell.more,"rowNote","dim")
 	local moreRoom=A.textRoom(cell.more,("+%d"):format(total))+A.metric("chipGap")
 	local room=total
@@ -339,7 +304,7 @@ local function paintIcons(cell,data,x,y,width)
 		room=math.max(1,math.floor((width-moreRoom)/step))
 	end
 	local drawn=0
-	for i,entry in ipairs(data.icons or{})do
+	for i,entry in ipairs(icons)do
 		if i>room then
 			break
 		end
@@ -361,13 +326,14 @@ local function paintIcons(cell,data,x,y,width)
 		icon:Show()
 		drawn=drawn+1
 	end
-	local rest=#(data.icons or{})-drawn
+	local rest=total-drawn
 	if rest>0 then
+		local more=("+%d"):format(rest)
 		cell.more:ClearAllPoints()
 		cell.more:SetPoint("TOPLEFT",window.body,"TOPLEFT",x+drawn*step,y)
-		cell.more:SetText(("+%d"):format(rest))
+		cell.more:SetText(more)
 		cell.more:Show()
-		return drawn,A.textRoom(cell.more,("+%d"):format(rest))+A.metric("chipGap")
+		return drawn,A.textRoom(cell.more,more)+A.metric("chipGap")
 	end
 	return drawn,0
 end

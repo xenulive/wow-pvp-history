@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.7
+-- WowPvpHistory 0.70.16
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -106,27 +106,8 @@ function A.finderDockState()
 	return A.finderDocked(),"setting"
 end
 
-local function whole(value)
-	if type(value)~="number"or value~=value then
-		return nil
-	end
-	return math.floor(value+0.5)
-end
-
 function A.finderPosition()
-	local db=A.db()
-	if not db or type(db.ui)~="table"then
-		return nil
-	end
-	local held=db.ui.finderPosition
-	if type(held)~="table"or type(held.point)~="string"then
-		return nil
-	end
-	local x,y=whole(held.x),whole(held.y)
-	if x==nil or y==nil then
-		return nil
-	end
-	return{point=held.point,x=x,y=y}
+	return A.storedPosition("finderPosition")
 end
 
 local function heldPosition()
@@ -254,11 +235,13 @@ local function worldTally(season,character)
 		local record=db.matches[i]
 		if type(record)=="table"and record.format=="world"
 			and(season==nil or A.recordSeason(record)==season)
-			and A.recordedBy(record,character)
-			and(type(record.kills)=="number"or type(record.deaths)=="number")then
-			counted=counted+1
-			kills=kills+(type(record.kills)=="number"and record.kills or 0)
-			deaths=deaths+(type(record.deaths)=="number"and record.deaths or 0)
+			and A.recordedBy(record,character)then
+			local k,d=A.worldCounts(record)
+			if k~=nil then
+				counted=counted+1
+				kills=kills+k
+				deaths=deaths+d
+			end
 		end
 	end
 	if counted==0 then
@@ -395,8 +378,9 @@ local function drop(self,cause)
 		point,x,y=read.point,read.x*ratio,read.y*ratio
 	end
 	local kept="none"
-	if point~=nil and whole(x)~=nil and whole(y)~=nil then
-		local held={point=point,x=whole(x),y=whole(y)}
+	local wholeX,wholeY=A.wholeOffset(x),A.wholeOffset(y)
+	if point~=nil and wholeX~=nil and wholeY~=nil then
+		local held={point=point,x=wholeX,y=wholeY}
 		if from=="session"then
 			sessionPosition=held
 			kept="session"

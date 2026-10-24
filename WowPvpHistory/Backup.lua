@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.7
+-- WowPvpHistory 0.70.16
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -31,7 +31,8 @@ function A.backupAvailable()
 	return codec~=nil
 end
 
-local EXPORT_PREFIX="WPH!1!"
+local EXPORT_FORMAT=1
+local EXPORT_PREFIX="WPH!"..EXPORT_FORMAT.."!"
 
 local function encode(value)
 	local ok,serialized=pcall(codec.SerializeCBOR,value)
@@ -92,10 +93,7 @@ local function payload(db)
 end
 
 local function validate(value)
-	if type(value)~="table"then
-		return nil,"shape"
-	end
-	if type(value.matches)~="table"then
+	if type(value)~="table"or type(value.matches)~="table"then
 		return nil,"shape"
 	end
 	if type(value.schema)~="number"then
@@ -306,7 +304,7 @@ function A.takeBackup()
 	}
 
 	local replaced=current
-	held.previous=current
+	held.previous=current or held.previous
 	held.current=entry
 	held.failed=nil
 	held.refused=nil
@@ -455,13 +453,7 @@ end
 
 local function refill(db,value,keep,mergeRegistry)
 	local repairs=A.repairStore(value)
-	for i=1,#repairs do
-		A.trace("repair",{
-			field=repairs[i].field,
-			foundType=repairs[i].foundType,
-			position=repairs[i].position,
-		})
-	end
+	A.traceRepairs(repairs)
 	local kept={}
 	for _,key in ipairs(keep or{})do
 		kept[key]=db[key]
@@ -488,8 +480,9 @@ local function refill(db,value,keep,mergeRegistry)
 	local DERIVED={nextMatchId="next-id",nextFixtureId="next-fixture-id",
 		nextIncompleteId="next-incomplete-id"}
 	for i=1,#repairs do
-		local field=repairs[i].field
-		if DERIVED[field]and repairs[i].position==nil then
+		local repair=repairs[i]
+		local field=repair.field
+		if DERIVED[field]and repair.position==nil then
 			traceBackup("refill","derived",DERIVED[field],db[field])
 		end
 	end
@@ -504,10 +497,18 @@ local function refill(db,value,keep,mergeRegistry)
 
 	db.active=nil
 
-	if type(A.supersedeTypedResults)=="function"then
-		local superseded,supersedeError=pcall(A.supersedeTypedResults,db)
-		if not superseded then
-			A.noteError(supersedeError,"backup-typed-results")
+	local LOAD_PASSES={
+		{"backfillGameSeason","backup-game-season"},
+		{"refileArenaMapBattlegrounds","backup-refile"},
+		{"supersedeTypedResults","backup-typed-results"},
+	}
+	for i=1,#LOAD_PASSES do
+		local pass=A[LOAD_PASSES[i][1]]
+		if type(pass)=="function"then
+			local ran,passError=pcall(pass,db)
+			if not ran then
+				A.noteError(passError,LOAD_PASSES[i][2])
+			end
 		end
 	end
 
@@ -521,7 +522,21 @@ local function refill(db,value,keep,mergeRegistry)
 	end
 
 	pcall(A.noteCanary)
-	return charsKept,charsTaken,charsBoth
+	return charsKept,charsTaken,charsBoth,rebuilt
+end
+
+local function busyRefusal()
+	if A.sandboxed()then
+		return A.refusalText("sandbox"),"sandbox"
+	end
+	local db=A.db()
+	if db and db.active~=nil then
+		return A.refusalText("in-flight"),"in-flight"
+	end
+	if type(A.harvestsPending)=="function"and A.harvestsPending()>0 then
+		return A.refusalText("in-flight"),"in-flight"
+	end
+	return nil
 end
 
 function A.restorePreview(which)
@@ -554,12 +569,9 @@ function A.restorePreview(which)
 			:format(A.refusalText(why)),why
 	end
 
-	if A.sandboxed()then
-		return nil,A.refusalText("sandbox"),"sandbox"
-	end
-	local db=A.db()
-	if db and db.active~=nil then
-		return nil,A.refusalText("in-flight"),"in-flight"
+	local busy,busyToken=busyRefusal()
+	if busy then
+		return nil,busy,busyToken
 	end
 
 	return{payload=checked,entry=current}
@@ -579,7 +591,16 @@ function A.applyRestore(which)
 	end
 
 	local before=#db.matches
-	local charsKept,charsTaken,charsBoth=refill(db,preview.payload,RESTORE_KEEPS,true)
+	local charsKept,charsTaken,charsBoth,indexRebuilt=refill(db,preview.payload,RESTORE_KEEPS,true)
+	local held=A.backupStore()
+	local current=held and held.current
+	if type(current)=="table"and type(current.matches)=="number"then
+		local heldReal,restoredReal=gatePair(current.matches,current.generated,#db.matches,
+			generatedCount(db))
+		if heldReal>restoredReal then
+			held.previous,held.current,held.refused=current,nil,nil
+		end
+	end
 	pcall(A.notePrune,"restore",before)
 	A.storeReplaced()
 
@@ -591,7 +612,7 @@ function A.applyRestore(which)
 		charsBoth=charsBoth,
 	},"data")
 
-	return{matches=#db.matches,replaced=before,at=preview.entry.at}
+	return{matches=#db.matches,replaced=before,at=preview.entry.at,indexRebuilt=indexRebuilt}
 end
 
 function A.exportString()
@@ -628,6 +649,11 @@ function A.importPreview(text)
 	if cleaned==""then
 		return nil,A.refusalText("nothing"),"nothing"
 	end
+	local format=tonumber(cleaned:match("^WPH!(%d+)!")or"")
+	if format~=nil and format>EXPORT_FORMAT then
+		return nil,A.refusalText("newer")..(" (it holds format %s and this addon reads format %s)")
+			:format(tostring(format),tostring(EXPORT_FORMAT)),"newer"
+	end
 	if cleaned:sub(1,#EXPORT_PREFIX)~=EXPORT_PREFIX then
 		return nil,A.refusalText("not-ours"),"not-ours"
 	end
@@ -647,12 +673,9 @@ function A.importPreview(text)
 		return nil,text_,why
 	end
 
-	if A.sandboxed()then
-		return nil,A.refusalText("sandbox"),"sandbox"
-	end
-	local db=A.db()
-	if db and db.active~=nil then
-		return nil,A.refusalText("in-flight"),"in-flight"
+	local busy,busyToken=busyRefusal()
+	if busy then
+		return nil,busy,busyToken
 	end
 
 	return{payload=checked}
@@ -674,7 +697,7 @@ function A.applyImport(text)
 	end
 
 	local before=#db.matches
-	refill(db,preview.payload,IMPORT_KEEPS)
+	local _,_,_,indexRebuilt=refill(db,preview.payload,IMPORT_KEEPS)
 	if type(db.ui)=="table"then
 		db.ui.sessionFolds=nil
 	end
@@ -683,7 +706,7 @@ function A.applyImport(text)
 
 	traceBackup("import","applied",nil,#db.matches)
 
-	return{matches=#db.matches,replaced=before}
+	return{matches=#db.matches,replaced=before,indexRebuilt=indexRebuilt}
 end
 
 local function bytesText(bytes)
@@ -778,11 +801,7 @@ function A.backupLine()
 end
 
 function A.reportBackup()
-	local said={}
-	local function say(line)
-		said[#said+1]=line
-		A.say(line)
-	end
+	local said,say=A.chatCollector()
 
 	local result=A.takeBackup()
 
@@ -855,10 +874,9 @@ end
 
 local transfer
 
-local function buildFrame()
-	local frame=CreateFrame("Frame","WowPvpHistoryTransferFrame",UIParent,
-		"BasicFrameTemplateWithInset")
-	frame:SetSize(A.metric("transferWidth"),A.metric("transferHeight"))
+function A.buildCopyWindow(name,widthKey,heightKey)
+	local frame=CreateFrame("Frame",name,UIParent,"BasicFrameTemplateWithInset")
+	frame:SetSize(A.metric(widthKey),A.metric(heightKey))
 	frame:SetPoint("CENTER")
 	A.registerPlacedWindow(frame,"CENTER",0,0)
 	frame:SetFrameStrata("DIALOG")
@@ -883,6 +901,45 @@ local function buildFrame()
 	note:SetJustifyH("LEFT")
 	A.style(note,"bodyText","text")
 	frame.note=note
+	return frame,note
+end
+
+function A.showCopyWindow(frame,buttonKey,failText,title,note,text,confirmText,onConfirm)
+	local ok=pcall(function()
+		frame.title:SetText(title)
+		frame.note:SetText(note)
+		frame.box:SetText(text or"")
+
+		if onConfirm then
+			frame.confirm:SetText(confirmText)
+			A.fitControl(frame.confirm,A.metric(buttonKey))
+			frame.confirm:SetScript("OnClick",function()
+				local clicked,done=pcall(onConfirm,frame.box:GetText())
+				if not clicked then
+					A.say(failText..tostring(done))
+					return
+				end
+				if done then
+					frame:Hide()
+				end
+			end)
+			frame.confirm:Show()
+		else
+			frame.confirm:Hide()
+		end
+
+		frame:Show()
+		frame.box:SetFocus()
+		if text then
+			frame.box:HighlightText()
+		end
+	end)
+
+	return ok
+end
+
+local function buildFrame()
+	local frame,note=A.buildCopyWindow("WowPvpHistoryTransferFrame","transferWidth","transferHeight")
 
 	local box=A.entry(frame)
 	box:SetPoint("TOPLEFT",note,"BOTTOMLEFT",6,-12)
@@ -919,37 +976,8 @@ function A.showTransfer(title,note,text,confirmText,onConfirm)
 		return false
 	end
 
-	local ok=pcall(function()
-		frame.title:SetText(title)
-		frame.note:SetText(note)
-		frame.box:SetText(text or"")
-
-		if onConfirm then
-			frame.confirm:SetText(confirmText)
-			A.fitControl(frame.confirm,A.metric("transferButton"))
-			frame.confirm:SetScript("OnClick",function()
-				local clicked,done=pcall(onConfirm,frame.box:GetText())
-				if not clicked then
-					A.say("the transfer window failed: "..tostring(done))
-					return
-				end
-				if done then
-					frame:Hide()
-				end
-			end)
-			frame.confirm:Show()
-		else
-			frame.confirm:Hide()
-		end
-
-		frame:Show()
-		frame.box:SetFocus()
-		if text then
-			frame.box:HighlightText()
-		end
-	end)
-
-	return ok
+	return A.showCopyWindow(frame,"transferButton","the transfer window failed: ",title,note,text,
+		confirmText,onConfirm)
 end
 
 function A.transferConfirmText(text)
@@ -962,16 +990,8 @@ function A.transferConfirmText(text)
 	end))
 end
 
-local function collector()
-	local said={}
-	return said,function(line)
-		said[#said+1]=line
-		A.say(line)
-	end
-end
-
 function A.openRestore(which,confirmed)
-	local said,say=collector()
+	local said,say=A.chatCollector()
 	local named=which and(which.." ")or""
 
 	if not confirmed then
@@ -1002,12 +1022,14 @@ function A.openRestore(which,confirmed)
 	say(("restored %d %s from the %scopy taken %s, replacing %d")
 		:format(result.matches,result.matches==1 and"match"or"matches",
 			named,tostring(result.at),result.replaced))
-	say("the player index was rebuilt. /pvph list reads the records back")
+	if result.indexRebuilt then
+		say("the player index was rebuilt. /pvph list reads the records back")
+	end
 	return true,said,true
 end
 
 function A.openExport()
-	local said,say=collector()
+	local said,say=A.chatCollector()
 
 	local text,why,matches=A.exportString()
 	if not text then
@@ -1030,7 +1052,7 @@ end
 local importPending
 
 function A.openImport()
-	local said,say=collector()
+	local said,say=A.chatCollector()
 
 	if not A.backupAvailable()then
 		say("this client provides no encoding surface, so nothing can be imported")
@@ -1069,9 +1091,9 @@ function A.openImport()
 				A.say("import: "..tostring(why))
 				return false
 			end
-			A.say(("imported %d %s, replacing %d. The player index was rebuilt")
+			A.say(("imported %d %s, replacing %d%s")
 				:format(result.matches,result.matches==1 and"match"or"matches",
-					result.replaced))
+					result.replaced,result.indexRebuilt and". The player index was rebuilt"or""))
 			if A.refreshOptionsWindow then
 				pcall(A.refreshOptionsWindow)
 			end

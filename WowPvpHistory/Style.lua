@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.7
+-- WowPvpHistory 0.70.16
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -132,16 +132,21 @@ local DEFAULT_THEME="blizzard"
 
 local heldTheme
 
-function A.theme()
-	if heldTheme~=nil then
-		return heldTheme
-	end
+local function storedThemeName()
 	local db=A.db and A.db()
-	local stored=db and db.ui and db.ui.theme
+	local ui=db and db.ui
+	local stored=type(ui)=="table"and ui.theme or nil
 	if type(stored)=="string"and PALETTES[stored]then
 		return stored
 	end
 	return DEFAULT_THEME
+end
+
+function A.theme()
+	if heldTheme~=nil then
+		return heldTheme
+	end
+	return storedThemeName()
 end
 
 function A.palette()
@@ -154,19 +159,24 @@ function A.color(name)
 	return c[1],c[2],c[3],c[4]
 end
 
+local function channelByte(value)
+	return math.floor(value*255+0.5)
+end
+
 function A.colorHex(r,g,b,a)
 	local function byte(value,fallback)
-		return math.floor((type(value)=="number"and value or fallback)*255+0.5)
+		return channelByte(type(value)=="number"and value or fallback)
 	end
 	return("%02x%02x%02x%02x"):format(byte(r,0),byte(g,0),byte(b,0),byte(a,1))
 end
 
+function A.channelEscape(r,g,b)
+	return("|cff%02x%02x%02x"):format(channelByte(r),channelByte(g),channelByte(b))
+end
+
 function A.colorEscape(name)
 	local r,g,b=A.color(name)
-	return("|cff%02x%02x%02x"):format(
-		math.floor((r or 1)*255+0.5),
-		math.floor((g or 1)*255+0.5),
-		math.floor((b or 1)*255+0.5))
+	return A.channelEscape(r or 1,g or 1,b or 1)
 end
 
 A.REGISTERS={"fault","standing","event","routine"}
@@ -288,17 +298,34 @@ local function ensureSpecTables()
 		specIcons=ok and type(built)=="table"and built or{}
 		specIDs=ok and type(ids)=="table"and ids or{}
 	end
-	return specIcons or{},specIDs or{}
+	return specIcons,specIDs
 end
 
 function A.specShortName(classToken,spec)
+	local id=A.specID(classToken,spec)
+	return id~=nil and SPEC_SHORT[id]or nil
+end
+
+local HEALER_SPECS={
+	[65]=true,[256]=true,[257]=true,[264]=true,[270]=true,[105]=true,[1468]=true,
+}
+
+function A.specID(classToken,spec)
 	if type(classToken)~="string"or type(spec)~="string"or spec==""then
 		return nil
 	end
 	local _,ids=ensureSpecTables()
 	local idByName=ids[classToken]
 	local id=type(idByName)=="table"and idByName[spec]or nil
-	return id~=nil and SPEC_SHORT[id]or nil
+	return type(id)=="number"and id or nil
+end
+
+function A.specHealer(classToken,spec)
+	local id=A.specID(classToken,spec)
+	if id==nil then
+		return nil
+	end
+	return HEALER_SPECS[id]==true
 end
 
 function A.chipShortText(cell)
@@ -505,7 +532,7 @@ function A.setTheme(name)
 	end
 
 	local db=A.db and A.db()
-	if not(db and db.ui)then
+	if not(db and type(db.ui)=="table")then
 		return false
 	end
 
@@ -555,12 +582,7 @@ function A.heldTheme()
 end
 
 function A.storedTheme()
-	local db=A.db and A.db()
-	local stored=db and db.ui and db.ui.theme
-	if type(stored)=="string"and PALETTES[stored]then
-		return stored
-	end
-	return DEFAULT_THEME
+	return storedThemeName()
 end
 
 function A.themeChoices()
@@ -996,7 +1018,7 @@ function A.metRowWidths(room,roundsNeed,whereNeed,whenNeed)
 	return widths,fixed<=held
 end
 
-function A.metGridWidths(room,byRound)
+function A.metGridWidths(room,byRound,foes)
 	local gap=A.metric("rowCellGap")
 	local widths={
 		lead=gap,
@@ -1007,6 +1029,12 @@ function A.metGridWidths(room,byRound)
 	local fixed=widths.lead+widths.match+widths.result+gap*2
 		+(byRound and(widths.round+gap)or 0)
 	widths.side=math.max(0,math.floor((type(room)=="number"and room or 0)-fixed))
+	widths.foes=0
+	if foes then
+		local shared=math.max(0,widths.side-gap)
+		widths.side=math.floor(shared/2)
+		widths.foes=shared-widths.side
+	end
 	return widths
 end
 
@@ -1159,9 +1187,6 @@ local METRICS={
 	rowColRounds=92,
 	rowColChange=80,
 
-	rowSubLine=14,
-
-	rowMarkSize=9,
 	rowMarkGap=4,
 
 	participantRow=22,
@@ -1855,8 +1880,9 @@ end
 
 function A.plotFoldHeight()
 	local row=A.metric("plotLabelDrop")
-	if A.metric("segmentHeight")>row then
-		row=A.metric("segmentHeight")
+	local segment=A.metric("segmentHeight")
+	if segment>row then
+		row=segment
 	end
 	return row
 end
@@ -1869,8 +1895,9 @@ function A.plotFloor()
 	local face=A.fontSize("note")
 	local stack=(A.metric("plotTickMax")+1)*face
 	local curve=stack
-	if curve<A.metric("plotCurveMin")then
-		curve=A.metric("plotCurveMin")
+	local curveMin=A.metric("plotCurveMin")
+	if curve<curveMin then
+		curve=curveMin
 	end
 	return A.metric("plotLabelDrop")+curve+A.plotFoot()
 end
@@ -2250,10 +2277,7 @@ function A.rowStep(rows,offset,visible,base,steps,pin)
 end
 
 function A.unitFigure(value)
-	if type(value)~="number"then
-		return nil
-	end
-	if value~=value or value==math.huge or value==-math.huge then
+	if type(value)~="number"or value~=value or value==math.huge or value==-math.huge then
 		return nil
 	end
 	local scaled=value*100
@@ -2304,8 +2328,9 @@ function A.objectiveCellRoom(stripWidth,count)
 	local room=stripWidth-A.metric("objectivesPad")*2-A.metric("objectivesSide")
 		-count*A.metric("objectivesGap")
 	local each=math.floor(room/count)
-	if each<A.metric("objectivesCell")then
-		return A.metric("objectivesCell")
+	local floor=A.metric("objectivesCell")
+	if each<floor then
+		return floor
 	end
 	return each
 end
@@ -2313,8 +2338,9 @@ end
 function A.headHeight()
 	local tallest=A.fontSize("heading")
 	for _,role in ipairs({"headingLarge","number"})do
-		if A.fontSize(role)>tallest then
-			tallest=A.fontSize(role)
+		local size=A.fontSize(role)
+		if size>tallest then
+			tallest=size
 		end
 	end
 	return tallest+A.metric("headPad")*2
@@ -2375,6 +2401,25 @@ local function ensureTextures(frame)
 	e[4]:SetWidth(1)
 end
 
+function A.hairlineEdges(host)
+	local edges={}
+	for _,side in ipairs({"TOP","BOTTOM"})do
+		local edge=host:CreateTexture(nil,"BORDER")
+		edge:SetPoint(side.."LEFT",host,side.."LEFT",0,0)
+		edge:SetPoint(side.."RIGHT",host,side.."RIGHT",0,0)
+		edge:SetHeight(1)
+		edges[#edges+1]=edge
+	end
+	for _,side in ipairs({"LEFT","RIGHT"})do
+		local edge=host:CreateTexture(nil,"BORDER")
+		edge:SetPoint("TOP"..side,host,"TOP"..side,0,0)
+		edge:SetPoint("BOTTOM"..side,host,"BOTTOM"..side,0,0)
+		edge:SetWidth(1)
+		edges[#edges+1]=edge
+	end
+	return edges
+end
+
 function A.registerChrome(frame)
 	if type(frame)~="table"then
 		return false
@@ -2420,8 +2465,9 @@ function A.applyChrome()
 			if flat then
 				frame.styleBg:SetColorTexture(A.color("panel"))
 				frame.styleTitle:SetColorTexture(A.color("titleBar"))
+				local r,g,b,a=A.color("hairline")
 				for i=1,#frame.styleEdges do
-					frame.styleEdges[i]:SetColorTexture(A.color("hairline"))
+					frame.styleEdges[i]:SetColorTexture(r,g,b,a)
 				end
 			end
 		end)

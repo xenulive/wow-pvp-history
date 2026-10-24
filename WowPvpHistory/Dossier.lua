@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.7
+-- WowPvpHistory 0.70.16
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -81,13 +81,14 @@ end
 
 function A.repControlFloor()
 	local widest=0
-	for _,step in ipairs(A.ratingRamp())do
+	local ramp=A.ratingRamp()
+	for _,step in ipairs(ramp)do
 		local room=A.headerFloor((A.repLabel(step.rating)))+A.metric("pillGap")
 		if room>widest then
 			widest=room
 		end
 	end
-	local count=#A.ratingRamp()
+	local count=#ramp
 	return A.repLabelColumn()+count*widest+(count-1)*A.metric("repStepGap")
 end
 

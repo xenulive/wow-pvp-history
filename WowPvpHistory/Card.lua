@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.7
+-- WowPvpHistory 0.70.16
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -164,7 +164,7 @@ local function layoutHeader(f,said,inner,padX,padY)
 	f.head:Show()
 
 	local chip=f.chip
-	local filled=said.kind=="met"and said.rated==true
+	local filled=said.kind=="met"and said.rated
 	local word=filled and said.rep or(A.repLabel(nil))
 	local pad=A.metric("nameCardChipPad")
 	A.style(chip.label,"cardHead")
@@ -255,8 +255,9 @@ local function gridColumns(f,inner)
 			fits=false
 		end
 	end
+	local extra=math.max(0,math.floor((inner-need)/#GRID))
 	for i=1,#GRID do
-		widths[i]=fits and share or(floors[i]+math.max(0,math.floor((inner-need)/#GRID)))
+		widths[i]=fits and share or(floors[i]+extra)
 	end
 	return widths,need
 end
@@ -377,8 +378,8 @@ local function layout(f,said,finderClass)
 	y=y+layoutName(f,said,inner,padX,y,classToken)
 
 	local drew={note=false,tags=0,tagLines=0,nameClass=classFrom}
+	y=y+gap
 	if said.kind=="stranger"then
-		y=y+gap
 		A.style(f.line,"cardText","dim")
 		f.line:SetText("Not met before.")
 		f.line:ClearAllPoints()
@@ -393,7 +394,6 @@ local function layout(f,said,finderClass)
 		hideAll(f.tags)
 	else
 		f.line:Hide()
-		y=y+gap
 		local gridH,metLast=layoutGrid(f,said,inner,padX,y)
 		y=y+gridH
 		drew.metLast=metLast

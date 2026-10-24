@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.7
+-- WowPvpHistory 0.70.16
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -55,10 +55,8 @@ local function surface()
 	if type(CreateFrame)~="function"
 		or type(CreateScrollBoxListLinearView)~="function"
 		or type(CreateDataProvider)~="function"
-		or type(A.buildScroller)~="function"then
-		return false
-	end
-	if type(ScrollUtil)~="table"
+		or type(A.buildScroller)~="function"
+		or type(ScrollUtil)~="table"
 		or type(ScrollUtil.InitScrollBoxListWithScrollBar)~="function"then
 		return false
 	end
@@ -77,9 +75,10 @@ local function figureEdges()
 	local columns=figureColumns()
 	local edges={}
 	local at=A.metric("rowLabelPad")
+	local gap=A.metric("rowCellGap")
 	for i=#columns,1,-1 do
 		edges[i]=at
-		at=at+columns[i].width+A.metric("rowCellGap")
+		at=at+columns[i].width+gap
 	end
 	return edges,at
 end
@@ -309,18 +308,14 @@ local function initMet(line,data)
 	line:EnableMouse(data.line~=nil and data.line.matchId~=nil)
 end
 
-local function commitNote()
-	if not(window and selectedGuid)then
-		return
-	end
-
-	local ok,text=pcall(window.noteRow.box.GetText,window.noteRow.box)
+function A.commitNoteBox(box,guid)
+	local ok,text=pcall(box.GetText,box)
 	if not ok then
 		return
 	end
 
 	local stored,_,why,length,bound=
-		A.setPlayerNote(selectedGuid,(text~=nil and text~="")and text or nil)
+		A.setPlayerNote(guid,(text~=nil and text~="")and text or nil)
 	if not stored then
 		if why=="too-long"then
 			A.say(("that note is %d bytes and the bound is %d bytes. Nothing written")
@@ -331,7 +326,14 @@ local function commitNote()
 		return
 	end
 
-	pcall(window.noteRow.box.ClearFocus,window.noteRow.box)
+	pcall(box.ClearFocus,box)
+end
+
+local function commitNote()
+	if not(window and selectedGuid)then
+		return
+	end
+	A.commitNoteBox(window.noteRow.box,selectedGuid)
 end
 
 function A.paintNoteBox(box,owner,guid,stored)
@@ -364,7 +366,7 @@ local function repPicked(wanted)
 	end
 end
 
-local function tagRefusal(why,offender,bound)
+function A.sayTagRefusal(why,offender,bound)
 	if why=="tag-too-long"then
 		A.say(("%q is longer than %d bytes, so nothing was added")
 			:format(tostring(offender),tonumber(bound)or A.PLAYER_TAG_MAX))
@@ -376,33 +378,41 @@ local function tagRefusal(why,offender,bound)
 	end
 end
 
-local function commitTags()
-	if not(window and selectedGuid)then
-		return
-	end
-	local box=window.tagRow.box
-	local ok,text=pcall(box.GetText,box)
-	if not ok then
-		return
-	end
+local function boxWords(text)
 	local tags={}
 	for word in tostring(text or""):gmatch("%S+")do
 		tags[#tags+1]=word
 	end
+	return tags
+end
+
+function A.commitTagBox(box,guid)
+	local ok,text=pcall(box.GetText,box)
+	if not ok then
+		return
+	end
+	local tags=boxWords(text)
 	if#tags==0 then
 		return
 	end
 	pcall(box.SetText,box,"")
-	local stored,added,why,offender,bound=A.addPlayerTags(selectedGuid,tags)
+	local stored,added,why,offender,bound=A.addPlayerTags(guid,tags)
 	if not stored then
 		pcall(box.SetText,box,text)
-		tagRefusal(why,offender,bound)
+		A.sayTagRefusal(why,offender,bound)
 		return
 	end
 	if type(added)=="table"and#added==0 then
 		A.say("every one of those tags was already there. Nothing written")
 	end
 	pcall(box.ClearFocus,box)
+end
+
+local function commitTags()
+	if not(window and selectedGuid)then
+		return
+	end
+	A.commitTagBox(window.tagRow.box,selectedGuid)
 end
 
 local function tagClicked(button)
@@ -430,7 +440,7 @@ local function suggestClicked(button)
 		if box then
 			pcall(box.SetText,box,typed)
 		end
-		tagRefusal(why,offender,bound)
+		A.sayTagRefusal(why,offender,bound)
 	end
 end
 
@@ -468,10 +478,7 @@ local function commitRosterTags()
 		return
 	end
 
-	local tags={}
-	for word in tostring(text or""):gmatch("%S+")do
-		tags[#tags+1]=word
-	end
+	local tags=boxWords(text)
 	if#tags==0 then
 		return
 	end
@@ -575,7 +582,10 @@ local function paintRosterBand()
 		available=A.notesFrameWidth()-A.metric("margin")*2
 	end
 
+	local tagMin,tagPad,tagBoxMin=A.metric("tagMin"),A.metric("tagPad"),A.metric("tagBoxMin")
+	local paneGap,pillGap=A.metric("paneGap"),A.metric("pillGap")
 	local x,shown=0,0
+	local full=false
 	for i=1,#window.rosterChips do
 		local button=window.rosterChips[i]
 		local held=counts[i]
@@ -584,15 +594,15 @@ local function paintRosterBand()
 		else
 			button.tagValue=held.tag
 			button:SetText(("%s %d  x"):format(held.tag,held.count))
-			local width=A.fitControl(button,A.metric("tagMin"),A.metric("tagPad"))
-			if x>0 and x+width>available-A.metric("tagBoxMin")then
+			local width=A.fitControl(button,tagMin,tagPad)
+			if full or(x>0 and x+width>available-tagBoxMin)then
+				full=true
 				button:Hide()
 			else
 				button:ClearAllPoints()
-				button:SetPoint("TOPLEFT",window.rosterBand,"TOPLEFT",x,
-					-A.metric("paneGap"))
+				button:SetPoint("TOPLEFT",window.rosterBand,"TOPLEFT",x,-paneGap)
 				button:Show()
-				x=x+width+A.metric("pillGap")
+				x=x+width+pillGap
 				shown=shown+1
 			end
 		end
@@ -601,22 +611,21 @@ local function paintRosterBand()
 	local missed=#counts-shown
 	if missed>0 then
 		window.rosterMore:ClearAllPoints()
-		window.rosterMore:SetPoint("TOPLEFT",window.rosterBand,"TOPLEFT",x,
-			-A.metric("paneGap")-4)
+		window.rosterMore:SetPoint("TOPLEFT",window.rosterBand,"TOPLEFT",x,-paneGap-4)
 		window.rosterMore:SetText(("+%d"):format(missed))
 		A.style(window.rosterMore,"note","dimmer")
 		window.rosterMore:Show()
-		x=x+A.textRoom(window.rosterMore,("+%d"):format(missed))+A.metric("pillGap")
+		x=x+A.textRoom(window.rosterMore,("+%d"):format(missed))+pillGap
 	else
 		window.rosterMore:Hide()
 	end
 
 	local free=available-x
-	if free<A.metric("tagBoxMin")then
-		free=A.metric("tagBoxMin")
+	if free<tagBoxMin then
+		free=tagBoxMin
 	end
 	window.rosterBox:ClearAllPoints()
-	window.rosterBox:SetPoint("TOPRIGHT",window.rosterBand,"TOPRIGHT",0,-A.metric("paneGap"))
+	window.rosterBox:SetPoint("TOPRIGHT",window.rosterBand,"TOPRIGHT",0,-paneGap)
 	window.rosterBox:SetWidth(free)
 
 	window.rosterBand:SetHeight(A.notesRosterBandHeightFor(true))
@@ -675,13 +684,14 @@ local function buildStrip(frame)
 
 	frame.stripTiles={}
 	local x=pad
+	local tileWidth,paneGap=A.metric("standTile"),A.metric("paneGap")
 	for i=3,1,-1 do
 		local tile=stripBlock(frame.strip)
 		tile:SetPoint("TOPRIGHT",frame.strip,"TOPRIGHT",-x,-pad)
 		tile:SetPoint("BOTTOMRIGHT",frame.strip,"BOTTOMRIGHT",-x,pad)
-		tile:SetWidth(A.metric("standTile"))
+		tile:SetWidth(tileWidth)
 		frame.stripTiles[i]=tile
-		x=x+A.metric("standTile")+A.metric("paneGap")*2
+		x=x+tileWidth+paneGap*2
 	end
 
 	local rep=CreateFrame("Frame",nil,frame.strip)
@@ -698,9 +708,10 @@ local function buildStrip(frame)
 	rep.total:SetWordWrap(false)
 
 	rep.bars,rep.legend={},{}
+	local barHeight,keyHeight,swatch=A.metric("repBarHeight"),A.fontSize("note")+4,A.metric("repSwatch")
 	for i,step in ipairs(A.ratingRamp())do
 		local bar=CreateFrame("Button",nil,rep)
-		bar:SetHeight(A.metric("repBarHeight"))
+		bar:SetHeight(barHeight)
 		bar:RegisterForClicks("LeftButtonUp")
 		bar.fill=bar:CreateTexture(nil,"ARTWORK")
 		bar.fill:SetAllPoints(bar)
@@ -712,10 +723,10 @@ local function buildStrip(frame)
 		rep.bars[i]=bar
 
 		local key=CreateFrame("Button",nil,rep)
-		key:SetHeight(A.fontSize("note")+4)
+		key:SetHeight(keyHeight)
 		key:RegisterForClicks("LeftButtonUp")
 		key.swatch=key:CreateTexture(nil,"ARTWORK")
-		key.swatch:SetSize(A.metric("repSwatch"),A.metric("repSwatch"))
+		key.swatch:SetSize(swatch,swatch)
 		key.swatch:SetPoint("LEFT",key,"LEFT",0,0)
 		key.word=key:CreateFontString(nil,"ARTWORK","GameFontHighlightSmall")
 		key.word:SetPoint("LEFT",key.swatch,"RIGHT",4,0)
@@ -832,8 +843,9 @@ local function paintStrip(view)
 
 	local keyTop=barTop-A.metric("repBarHeight")-6
 	local keyGap=A.metric("paneGap")+6
+	local swatch=A.metric("repSwatch")
 	local function keyWidth(key,step,withWord)
-		local wide=A.metric("repSwatch")+4+A.textRoom(key.count,A.groupedCount(step.count))
+		local wide=swatch+4+A.textRoom(key.count,A.groupedCount(step.count))
 		if withWord then
 			wide=wide+A.textRoom(key.word,step.label)+4
 		end
@@ -886,16 +898,18 @@ local function paintStrip(view)
 			{("%s met before"):format(before),("%s before"):format(before)}},
 	}
 	local forms={}
+	local tileWidth=A.metric("standTile")
+	local ruleR,ruleG,ruleB,ruleA=A.color("hairline")
 	for i=1,3 do
 		local tile=tiles[i]
-		tile.rule:SetColorTexture(A.color("hairline"))
+		tile.rule:SetColorTexture(ruleR,ruleG,ruleB,ruleA)
 		A.style(tile.label,"label","dim")
 		tile.label:SetText(said[i][1])
 		A.style(tile.figure,"number",said[i][3])
 		tile.figure:SetText(said[i][2])
 		A.style(tile.sub,"numberMicro","dim")
 		if said[i][4]then
-			local _,at=fitted(tile.sub,A.metric("standTile"),said[i][4])
+			local _,at=fitted(tile.sub,tileWidth,said[i][4])
 			forms[i]=at
 		else
 			tile.sub:SetText("")
@@ -1037,14 +1051,15 @@ local function buildListHeader(frame)
 	frame.listHeader.rule:SetPoint("BOTTOMLEFT",frame.listHeader,"BOTTOMLEFT",0,0)
 	frame.listHeader.rule:SetPoint("BOTTOMRIGHT",frame.listHeader,"BOTTOMRIGHT",0,0)
 	frame.listHeader.rule:SetHeight(1)
-	frame.listHeader.labels={}
-	frame.listHeader.names={"PLAYER"}
-	frame.listHeader.keys={"player"}
+	local labels,names,keys={},{"PLAYER"},{"player"}
+	frame.listHeader.labels=labels
+	frame.listHeader.names=names
+	frame.listHeader.keys=keys
 	frame.listHeader.buttons={}
 	local name=frame.listHeader:CreateFontString(nil,"ARTWORK","GameFontDisableSmall")
 	name:SetPoint("LEFT",frame.listHeader,"LEFT",A.metric("playerLane")+A.metric("playerLaneGap"),0)
 	name:SetWordWrap(false)
-	frame.listHeader.labels[1]=name
+	labels[1]=name
 
 	local function sortButton(key)
 		local button=CreateFrame("Button",nil,frame.listHeader)
@@ -1071,9 +1086,9 @@ local function buildListHeader(frame)
 		label:SetWidth(column.width)
 		label:SetJustifyH("RIGHT")
 		label:SetWordWrap(false)
-		frame.listHeader.labels[#frame.listHeader.labels+1]=label
-		frame.listHeader.names[#frame.listHeader.names+1]=column.name
-		frame.listHeader.keys[#frame.listHeader.keys+1]=column.key
+		labels[#labels+1]=label
+		names[#names+1]=column.name
+		keys[#keys+1]=column.key
 		local button=sortButton(column.key)
 		button:SetPoint("RIGHT",frame.listHeader,"RIGHT",-edges[i],0)
 		button:SetWidth(column.width)
@@ -1225,13 +1240,15 @@ local function topFloor()
 	local strip=A.metric("standPad")*2+A.metric("standLead")+A.metric("paneGap")*3
 		+3*(A.metric("standTile")+A.metric("paneGap")*2)
 	local legend=0
+	local swatch,countFloor,paneGap=A.metric("repSwatch"),A.headerFloor("0,000"),A.metric("paneGap")
 	for _ in ipairs(A.ratingRamp())do
-		legend=legend+A.metric("repSwatch")+4+A.headerFloor("0,000")+A.metric("paneGap")+6
+		legend=legend+swatch+4+countFloor+paneGap+6
 	end
 	strip=strip+legend
 	local sorts=0
+	local segmentMin,segmentGap=A.metric("segmentMin"),A.metric("segmentGap")
 	for _,sort in ipairs(A.playerSorts())do
-		sorts=sorts+math.max(A.metric("segmentMin"),A.headerFloor(sort.label))+A.metric("segmentGap")
+		sorts=sorts+math.max(segmentMin,A.headerFloor(sort.label))+segmentGap
 	end
 	local toolbar=A.metric("playerSearch")+A.metric("paneGap")+sorts
 		+A.metric("paneGap")+A.headerFloor("Negative  x")+A.metric("tagPad")
@@ -1268,13 +1285,7 @@ local function buildWindow()
 	end
 	frame:SetSize(width,height)
 	frame:SetPoint(point,UIParent,point,x,y)
-	frame:SetFrameStrata("MEDIUM")
-	frame:SetToplevel(true)
-	frame:SetClampedToScreen(true)
-	frame:SetMovable(true)
-	frame:EnableMouse(true)
-	frame:RegisterForDrag("LeftButton")
-	frame:SetScript("OnDragStart",frame.StartMoving)
+	A.standMovableWindow(frame)
 	frame:SetScript("OnDragStop",function(self)
 		A.stopDrag(self)
 		if type(A.rememberWindow)=="function"then
@@ -1285,13 +1296,7 @@ local function buildWindow()
 
 	A.registerChrome(frame)
 
-	frame.heading=A.windowTitle(frame)
-	frame.heading:SetPoint("TOPLEFT",frame,"TOPLEFT",A.metric("titleInset"),
-		-A.metric("titleTop"))
-	frame.heading:SetPoint("TOPRIGHT",frame,"TOPRIGHT",-A.metric("titleInset"),
-		-A.metric("titleTop"))
-	frame.heading:SetJustifyH("CENTER")
-	frame.heading:SetWordWrap(false)
+	A.placeWindowHeading(frame)
 	A.style(frame.heading,"heading","bright")
 
 	buildStrip(frame)
@@ -1345,18 +1350,7 @@ local function buildWindow()
 	frame.footState:SetJustifyH("RIGHT")
 	frame.footState:SetWordWrap(false)
 
-	if type(UISpecialFrames)=="table"then
-		local seen=false
-		for i=1,#UISpecialFrames do
-			if UISpecialFrames[i]==FRAME_NAME then
-				seen=true
-				break
-			end
-		end
-		if not seen then
-			UISpecialFrames[#UISpecialFrames+1]=FRAME_NAME
-		end
-	end
+	A.closeOnEscape(FRAME_NAME)
 
 	frame.halfTabs=A.halfTabs(frame,"players")
 
@@ -1556,7 +1550,8 @@ local function anyPlayer()
 end
 
 local function emptyText()
-	if scopeMatchId and not A.match(scopeMatchId)then
+	local scoped=scopeMatchId and A.match(scopeMatchId)
+	if scopeMatchId and not scoped then
 		return("Match #%s is not in your history."):format(tostring(scopeMatchId)),"gone"
 	end
 	local filters={}
@@ -1573,7 +1568,7 @@ local function emptyText()
 		filters[#filters+1]=("matches %q"):format(searchText)
 	end
 	if scopeMatchId then
-		local roster=#A.rosterPlayers(A.match(scopeMatchId))
+		local roster=#A.rosterPlayers(scoped)
 		if#filters==0 then
 			return("No player in match #%s besides you."):format(tostring(scopeMatchId)),"roster"
 		end
@@ -1923,7 +1918,7 @@ local function hostRead(host,method)
 	return nil
 end
 
-local function sideReading(parts)
+function A.sideReading(parts)
 	local pieces=A.sideShort(parts)
 	if not pieces then
 		return nil
@@ -1965,19 +1960,21 @@ local function paintDossier(selected,index)
 
 	window.copyText,window.murlokText=A.playerCopyTexts(selected.guid,dossier.entry)
 	local edge=window.openWindow
+	local pillGap=A.metric("pillGap")
 	for _,pair in ipairs({{window.murlok,window.murlokText},{window.copyName,window.copyText}})do
 		local button,text=pair[1],pair[2]
 		button:ClearAllPoints()
 		if text then
-			button:SetPoint("TOPRIGHT",edge,"TOPLEFT",-A.metric("pillGap"),0)
+			button:SetPoint("TOPRIGHT",edge,"TOPLEFT",-pillGap,0)
 			button:Show()
 			edge=button
 		else
 			button:Hide()
 		end
 	end
+	local paneGap=A.metric("paneGap")
 	for _,line in ipairs({window.dossierName,window.dossierSub})do
-		line:SetPoint("RIGHT",edge,"LEFT",-A.metric("paneGap"),0)
+		line:SetPoint("RIGHT",edge,"LEFT",-paneGap,0)
 	end
 
 	local iconKind=A.drawSpec({icon=window.dossierIcon},identity.classToken,identity.spec,nil,
@@ -1989,7 +1986,7 @@ local function paintDossier(selected,index)
 	A.fitNameHead(window.dossierName,identity.bare or A.UNKNOWN_PLAYER,identity.realm,"dim")
 	A.style(window.dossierSub,"bodyText","dim")
 	local sub=dossier.specLine or"no spec recorded"
-	if type(A.debugTextEnabled)=="function"and A.debugTextEnabled()==true then
+	if type(A.debugTextEnabled)=="function"and A.debugTextEnabled()then
 		sub=sub.."  "..A.colorEscape("faint")..tostring(selected.guid).."|r"
 	end
 	window.dossierSub:SetText(sub)
@@ -2034,7 +2031,7 @@ function A.refreshNotes(searchOnly)
 	end
 
 	if not searchOnly and type(A.refreshPlayerWindows)=="function"then
-		pcall(A.refreshPlayerWindows,index)
+		A.containedPaint("notes/player-windows",A.refreshPlayerWindows,index)
 	end
 	if not window then
 		return false
@@ -2043,7 +2040,7 @@ function A.refreshNotes(searchOnly)
 	local rows,selected,view=listRows(index)
 	lastRows=view.shown
 
-	pcall(paintRosterBand)
+	A.containedPaint("notes/roster-band",paintRosterBand)
 
 	stagedFault=false
 
@@ -2052,16 +2049,17 @@ function A.refreshNotes(searchOnly)
 		A.noteError(("the players strip did not paint: %s"):format(tostring(stripErr)),"notes/strip")
 	end
 	local stripDrew=(stripOk and type(stripErr)=="table")and stripErr or{}
-	pcall(paintToolbar)
+	A.containedPaint("notes/toolbar",paintToolbar)
 
-	pcall(function()
+	A.containedPaint("notes/list-header",function()
 		window.listHeader.rule:SetColorTexture(A.color("hairline"))
 		for i,label in ipairs(window.listHeader.labels)do
 			A.style(label,"label",window.listHeader.keys[i]==view.sort and"accent"or"dimmer")
 			label:SetText(window.listHeader.names[i]or"")
 		end
+		local hoverR,hoverG,hoverB,hoverA=A.color("hover")
 		for _,button in ipairs(window.listHeader.buttons)do
-			button.hover:SetColorTexture(A.color("hover"))
+			button.hover:SetColorTexture(hoverR,hoverG,hoverB,hoverA)
 		end
 	end)
 
@@ -2135,9 +2133,9 @@ function A.refreshNotes(searchOnly)
 
 	local selectedIds=nil
 	if dossier and type(dossier.record)=="table"and type(dossier.record.ids)=="table"then
-		local ids={}
-		for i=1,#dossier.record.ids do
-			ids[i]=tostring(dossier.record.ids[i])
+		local held,ids=dossier.record.ids,{}
+		for i=1,#held do
+			ids[i]=tostring(held[i])
 		end
 		selectedIds=table.concat(ids,",")
 	end
@@ -2164,8 +2162,8 @@ function A.refreshNotes(searchOnly)
 		repBars=stripDrew.repBars,
 		search=searchText~=nil or nil,
 		empty=view.shown==0 and drawnEmpty or nil,
-		with=dossier and sideReading(dossier.with)or nil,
-		against=dossier and sideReading(dossier.against)or nil,
+		with=dossier and A.sideReading(dossier.with)or nil,
+		against=dossier and A.sideReading(dossier.against)or nil,
 		ids=selectedIds,
 		listUp=hostRead(window.listHost,"IsShown"),
 		metUp=hostRead(window.detailHost,"IsShown"),
@@ -2377,6 +2375,7 @@ function A.selectPlayer(guid,forWriting)
 		return false
 	end
 	A.refreshNotes()
+	A.takeHalf("players")
 	local shown=pcall(window.Show,window)
 	pcall(window.Raise,window)
 

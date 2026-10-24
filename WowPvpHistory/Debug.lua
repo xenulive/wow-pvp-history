@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.7
+-- WowPvpHistory 0.70.16
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -112,6 +112,7 @@ local FIELDS={
 	"typed","drafts",
 	"shape","sides",
 	"objectiveRows",
+	"rowKind","ended",
 	"tall","below",
 	"pillsAgainst","pillsWith","pillsUnsided","linesAgainst","linesWith","linesUnsided",
 	"shared","timedLines",
@@ -230,6 +231,7 @@ local FIELDS={
 	"default",
 	"switch","alerts","groupNotes",
 	"today","todayN","tileX","title","ruleWidth",
+	"blockMid","squareMid",
 	"counts","find","meter","band","slot","columns",
 	"meterRoom",
 	"pages","inert","word",
@@ -243,6 +245,7 @@ local FIELDS={
 	"scopeFrom","chipRoom",
 	"whereRoom","whereNeed","whenRoom",
 	"honorDelta",
+	"mapRead",
 	"heldCount",
 	"modifiers",
 	"tabFrom",
@@ -257,6 +260,7 @@ local FIELDS={
 	"tabLabel","tabAsked","tabFloor","tabWidth",
 	"outings","marks",
 	"stripBody","barsShed",
+	"chipFill","chipEdge",
 	"headIcon",
 	"cellOpens",
 	"yoursCounted","theirsCounted",
@@ -264,6 +268,9 @@ local FIELDS={
 	"rowsYours","rowsTheirs",
 	"action","count","rowKeys","hiddenRows","fromColumn","toColumn","closed",
 	"fit","sameRows",
+	"picked","open","dimmed",
+	"formFrom","written","healerless",
+	"pairTally",
 }
 
 function A.debugFields()
@@ -327,7 +334,8 @@ typed("number",{
 	"samplesRead","samplesSkipped","classColored",
 	"yoursCounted","theirsCounted",
 	"selfFaction","mmr0","rating0","ratingNew0","mmr1","rating1","ratingNew1","rowsYours","rowsTheirs",
-	"count","fromColumn","toColumn",
+	"count","fromColumn","toColumn","healerless","pairTally",
+	"picked","open","dimmed","blockMid","squareMid",
 })
 typed("string",{
 	"state","keptIn","format","source","reason","build","version","ids","tint","noteAt",
@@ -352,7 +360,7 @@ typed("string",{
 	"cardSet","soleView","lineScope","boxScope","scaleFrom","placesStored","stripBody","headIcon",
 	"outcome","mark","chatEvent","art","gripSeat",
 	"action","rowKeys","hiddenRows","fit","sameRows",
-	"reason0","reason1",
+	"reason0","reason1","formFrom","rowKind","chipFill","chipEdge",
 })
 typed("boolean",{
 	"rated","capped","head","named","pinned","evicted","listTook","met","dossier","panel",
@@ -363,7 +371,7 @@ typed("boolean",{
 	"rating","carriesNote","columnDrawn","rateClause",
 	"loadoutRead","heroRead","copyShown",
 	"carriesRating","levelAbove","cursorSet","tinted",
-	"closed",
+	"closed","written","mapRead","ended",
 })
 typed("number string",{
 	"id","fromId","repStep","topValue","bottomValue","yoursTop","theirsTop","sortFirst",
@@ -797,6 +805,17 @@ function A.trace(ev,fields,cat)
 	tracing=false
 end
 
+function A.traceRepairs(repairs)
+	for i=1,#repairs do
+		local repair=repairs[i]
+		A.trace("repair",{
+			field=repair.field,
+			foundType=repair.foundType,
+			position=repair.position,
+		})
+	end
+end
+
 function A.debugClear(cat)
 	local held=A.debugStore()
 	if not held then
@@ -1006,11 +1025,7 @@ function A.debugExport()
 end
 
 function A.openDebugExport()
-	local said={}
-	local function say(line)
-		said[#said+1]=line
-		A.say(line)
-	end
+	local said,say=A.chatCollector()
 
 	local text,why,entries=A.debugExport()
 	if not text then
@@ -1058,11 +1073,5 @@ A.on("PLAYER_LOGIN",function()
 	end
 
 	local repairs=type(A.loadRepairs)=="function"and A.loadRepairs()or{}
-	for i=1,#repairs do
-		A.trace("repair",{
-			field=repairs[i].field,
-			foundType=repairs[i].foundType,
-			position=repairs[i].position,
-		})
-	end
+	A.traceRepairs(repairs)
 end)

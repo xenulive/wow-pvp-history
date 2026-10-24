@@ -1,11 +1,9 @@
--- WowPvpHistory 0.70.7
+-- WowPvpHistory 0.70.16
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
 -- License: MIT, see LICENSE
 local _,A=...
-
-local GetNumBattlefieldScores=GetNumBattlefieldScores
 
 local SCREEN_UNITS=768
 
@@ -68,13 +66,9 @@ local OPACITY_MIN,OPACITY_MAX,OPACITY_STEP,OPACITY_DEFAULT=0,100,5,85
 local FIT_FLOOR=50
 
 local function percentage(value,min,max,step)
-	if type(value)~="number"or value~=value then
-		return nil
-	end
-	if value~=math.floor(value)or value<min or value>max then
-		return nil
-	end
-	if(value-min)%step~=0 then
+	if type(value)~="number"or value~=value
+		or value~=math.floor(value)or value<min or value>max
+		or(value-min)%step~=0 then
 		return nil
 	end
 	return value
@@ -362,49 +356,14 @@ local DEFAULT_POINT="TOP"
 local DEFAULT_X=0
 local DEFAULT_Y=-TOP_DROP
 
-local function whole(value)
-	if type(value)~="number"or value~=value or value==math.huge or value==-math.huge then
-		return nil
-	end
-	return math.floor(value+0.5)
-end
-
 function A.announcePosition()
-	local db=A.db()
-	if not db or type(db.ui)~="table"then
-		return nil
-	end
-	local held=db.ui.announcePosition
-	if type(held)~="table"or type(held.point)~="string"then
-		return nil
-	end
-	local x,y=whole(held.x),whole(held.y)
-	if x==nil or y==nil then
-		return nil
-	end
-	return{point=held.point,x=x,y=y}
+	return A.storedPosition("announcePosition")
 end
 
 function A.setAnnouncePosition(geometry)
-	local db=A.db()
-	if not db then
-		return false
-	end
-	db.ui=db.ui or{}
-
-	local point=type(geometry)=="table"and geometry.point or nil
-	local x=type(geometry)=="table"and whole(geometry.x)or nil
-	local y=type(geometry)=="table"and whole(geometry.y)or nil
-
-	if type(point)~="string"or x==nil or y==nil
-		or(point==DEFAULT_POINT and x==whole(DEFAULT_X)and y==whole(DEFAULT_Y))
-	then
-		db.ui.announcePosition=nil
-		return true
-	end
-
-	db.ui.announcePosition={point=point,x=x,y=y}
-	return true
+	return A.storePosition("announcePosition",geometry,function()
+		return DEFAULT_POINT,DEFAULT_X,DEFAULT_Y
+	end)
 end
 
 local function contained(fn,...)
@@ -570,6 +529,21 @@ local function compose(found,selfFaction,everyoneWith)
 	}
 end
 
+local function foundEntry(guid,name,classToken,faction,rating,text,tags,met,held)
+	return{
+		guid=guid,
+		name=name,
+		classToken=classToken,
+		faction=faction,
+		rating=rating,
+		mark=A.ratingMark(rating),
+		text=text,
+		tags=tags,
+		met=met,
+		held=held,
+	}
+end
+
 function A.announceKnown(rows,selfName,selfQualified,nameIndex)
 	if type(rows)~="table"or#rows==0 then
 		return nil
@@ -598,18 +572,8 @@ function A.announceKnown(rows,selfName,selfQualified,nameIndex)
 				local met=(type(held)=="table"and type(held.matches)=="number")
 					and held.matches or 0
 				if text~=nil or rating~=nil or met>0 then
-					found[#found+1]={
-						guid=guid,
-						name=name,
-						classToken=row.classToken,
-						faction=row.faction,
-						rating=rating,
-						mark=A.ratingMark(rating),
-						text=text,
-						tags=tags,
-						met=met,
-						held=held,
-					}
+					found[#found+1]=foundEntry(guid,name,row.classToken,row.faction,rating,text,tags,
+						met,held)
 				end
 			end
 		end
@@ -670,17 +634,7 @@ function A.announceGroup(guids,selfGuid)
 
 			if(text~=nil or rating~=nil or met>0)and type(name)=="string"and name~=""then
 				qualified[#qualified+1]=guid
-				found[#found+1]={
-					guid=guid,
-					name=name,
-					classToken=classFor(guid),
-					rating=rating,
-					mark=A.ratingMark(rating),
-					text=text,
-					tags=tags,
-					met=met,
-					held=held,
-				}
+				found[#found+1]=foundEntry(guid,name,classFor(guid),nil,rating,text,tags,met,held)
 			end
 		end
 	end
@@ -1510,9 +1464,6 @@ function A.announceFrame()
 end
 
 function A.announceDrawnSize()
-	if drawnPercent==nil then
-		return nil
-	end
 	return drawnPercent
 end
 
@@ -1539,6 +1490,13 @@ local SAMPLE_TAGS={
 }
 local SAMPLE_NOTED={[1]=true,[2]=true,[5]=true,[6]=true}
 
+local function sampleHeld(record,with)
+	return{
+		against={wins=record[1],decided=record[1]+record[2]},
+		with={wins=with[1],decided=with[1]+with[2]},
+	}
+end
+
 function A.announceSample(count)
 	local total=type(count)=="number"and count or SAMPLE_SIZE
 	if type(A.fixtureNames)~="function"then
@@ -1563,10 +1521,7 @@ function A.announceSample(count)
 			mark=A.ratingMark(rating[i]),
 			text=SAMPLE_NOTED[i]and"a note the banner does not draw"or nil,
 			tags=SAMPLE_TAGS[i],
-			held={
-				against={wins=record[1],decided=record[1]+record[2]},
-				with={wins=with[1],decided=with[1]+with[2]},
-			},
+			held=sampleHeld(record,with),
 		}
 	end
 
@@ -1646,10 +1601,7 @@ local function cardSample()
 			faction=(i%2==0)and 1 or 0,
 			rating=CARD_RATING[i],
 			mark=A.ratingMark(CARD_RATING[i]),
-			held={
-				against={wins=record[1],decided=record[1]+record[2]},
-				with={wins=with[1],decided=with[1]+with[2]},
-			},
+			held=sampleHeld(record,with),
 		}
 	end
 	return compose(found,1)
@@ -1697,7 +1649,7 @@ function A.announceCardPreview(host)
 	local opacity=A.announceOpacity()
 	applyOpacity(strip,opacity)
 	strip:Show()
-	local percent=math.floor(scale*100+0.5)
+	local percent=A.percentPoints(scale)
 	A.trace("announce",{
 		source="card",
 		shape=shape,
@@ -1890,7 +1842,8 @@ end
 
 local function attempt(ladder,n)
 	local record=ladder.record
-	if A.db()==nil or A.db().active~=record then
+	local db=A.db()
+	if db==nil or db.active~=record then
 		return
 	end
 

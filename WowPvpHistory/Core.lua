@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.7
+-- WowPvpHistory 0.70.16
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -36,10 +36,19 @@ A.ROUND_MATES=2
 
 A.FIXTURE_KEY="fixture"
 
-local canaccess=canaccessvalue
-local issecret=issecretvalue
+local HEX="0123456789abcdef"
 
-A.guard=(canaccess and"canaccessvalue")or(issecret and"issecretvalue")or"none"
+function A.hex8(value)
+	local out={}
+	for i=8,1,-1 do
+		local nibble=value%16
+		out[i]=HEX:sub(nibble+1,nibble+1)
+		value=(value-nibble)/16
+	end
+	return table.concat(out)
+end
+
+A.guard=(canaccessvalue and"canaccessvalue")or(issecretvalue and"issecretvalue")or"none"
 
 function A.index(tbl,key)
 	return tbl[key]
@@ -49,6 +58,7 @@ function A.canRead(value)
 	if type(value)=="nil"then
 		return false
 	end
+	local canaccess,issecret=canaccessvalue,issecretvalue
 	if canaccess then
 		local ok,res=pcall(canaccess,value)
 		return ok and res==true
@@ -58,6 +68,13 @@ function A.canRead(value)
 		return ok and res~=true
 	end
 	return true
+end
+
+function A.readableString(value)
+	if type(value)~="string"or not A.canRead(value)or value==""then
+		return nil
+	end
+	return value
 end
 
 function A.put(record,key,value)
@@ -188,10 +205,11 @@ function A.orderByCompletion(list)
 
 	local moved=0
 	for i=1,#keyed do
-		if list[i]~=keyed[i].record then
+		local record=keyed[i].record
+		if list[i]~=record then
 			moved=moved+1
 		end
-		list[i]=keyed[i].record
+		list[i]=record
 	end
 	return moved
 end
@@ -207,6 +225,15 @@ function A.matchIdRank(id)
 		end
 	end
 	return 0,0
+end
+
+function A.newerMatchId(a,b)
+	local ak,an=A.matchIdRank(a)
+	local bk,bn=A.matchIdRank(b)
+	if ak~=bk then
+		return ak>bk
+	end
+	return an>bn
 end
 
 local onDiskAtLoad=setmetatable({},{__mode="k"})
@@ -379,13 +406,15 @@ function A.assignIncompleteIds(list)
 	local nextId=1
 	for i=1,#list do
 		local entry=list[i]
-		if type(entry)=="table"then
-			if entry.id==nil then
-				entry.id=nextId
-			end
-			if type(entry.id)=="number"and entry.id>=nextId then
-				nextId=entry.id+1
-			end
+		if type(entry)=="table"and type(entry.id)=="number"and entry.id>=nextId then
+			nextId=entry.id+1
+		end
+	end
+	for i=1,#list do
+		local entry=list[i]
+		if type(entry)=="table"and entry.id==nil then
+			entry.id=nextId
+			nextId=nextId+1
 		end
 	end
 	return nextId
@@ -397,17 +426,21 @@ function A.loadRepairs()
 	return loadRepairs
 end
 
-local function repairField(store,repairs,field,wanted,fresh)
-	local held=store[field]
-	if held==nil or type(held)==wanted then
-		return
-	end
+local function keepOriginal(store,field,held)
 	if type(store.repaired)~="table"then
 		store.repaired={}
 	end
 	if store.repaired[field]==nil then
 		store.repaired[field]=held
 	end
+end
+
+local function repairField(store,repairs,field,wanted,fresh)
+	local held=store[field]
+	if held==nil or type(held)==wanted then
+		return
+	end
+	keepOriginal(store,field,held)
 	store[field]=fresh
 	repairs[#repairs+1]={field=field,foundType=type(held)}
 end
@@ -423,10 +456,11 @@ local function repairEntries(store,repairs,field)
 			if type(store.repaired)~="table"then
 				store.repaired={}
 			end
-			if type(store.repaired.entries)~="table"then
-				store.repaired.entries={}
-			end
 			local kept=store.repaired.entries
+			if type(kept)~="table"then
+				kept={}
+				store.repaired.entries=kept
+			end
 			kept[#kept+1]={field=field,position=i,value=entry}
 			table.remove(list,i)
 			repairs[#repairs+1]={field=field,foundType=type(entry),position=i}
@@ -445,12 +479,7 @@ local function raiseCounter(store,repairs,field,largest)
 		return
 	end
 	if held~=nil and type(held)~="number"then
-		if type(store.repaired)~="table"then
-			store.repaired={}
-		end
-		if store.repaired[field]==nil then
-			store.repaired[field]=held
-		end
+		keepOriginal(store,field,held)
 	end
 	store[field]=wanted
 	repairs[#repairs+1]={field=field,foundType=type(held)}
@@ -509,7 +538,8 @@ function A.repairStore(store)
 	repairEntries(store,repairs,"seasons")
 	repairNextIds(store,repairs)
 	for i=1,#repairs do
-		if repairs[i].field=="players"and repairs[i].position==nil then
+		local repair=repairs[i]
+		if repair.field=="players"and repair.position==nil then
 			store.playerIndexVersion=nil
 		end
 	end
@@ -526,8 +556,9 @@ local function initDB()
 	loadRepairs=A.repairStore(db)
 	db.matches=db.matches or{}
 	for i=1,#db.matches do
-		if type(db.matches[i])=="table"then
-			onDiskAtLoad[db.matches[i]]=true
+		local record=db.matches[i]
+		if type(record)=="table"then
+			onDiskAtLoad[record]=true
 		end
 	end
 	db.nextMatchId=db.nextMatchId or 1
@@ -557,7 +588,7 @@ function A.byteCut(text,bound)
 	return text:sub(1,stop)
 end
 
-function A.joinSentences(parts)
+local function joinTrimmed(parts,glue)
 	if type(parts)~="table"then
 		return nil
 	end
@@ -574,27 +605,23 @@ function A.joinSentences(parts)
 	if#kept==0 then
 		return nil
 	end
-	return table.concat(kept," ")
+	return table.concat(kept,glue)
+end
+
+function A.joinSentences(parts)
+	return joinTrimmed(parts," ")
 end
 
 function A.joinAnd(parts)
-	if type(parts)~="table"then
-		return nil
+	return joinTrimmed(parts," and ")
+end
+
+function A.chatCollector()
+	local said={}
+	return said,function(line)
+		said[#said+1]=line
+		A.say(line)
 	end
-	local kept={}
-	for i=1,#parts do
-		local piece=parts[i]
-		if type(piece)=="string"then
-			piece=piece:gsub("^%s+",""):gsub("%s+$","")
-			if piece~=""then
-				kept[#kept+1]=piece
-			end
-		end
-	end
-	if#kept==0 then
-		return nil
-	end
-	return table.concat(kept," and ")
 end
 
 function A.say(msg,register)
@@ -829,8 +856,50 @@ frame:SetScript("OnEvent",function(_,event,...)
 	end
 end)
 
-function A.pvpCall(name,...)
-	local fn=C_PvP and C_PvP[name]
+function A.wholeOffset(value)
+	if type(value)~="number"or value~=value or value==math.huge or value==-math.huge then
+		return nil
+	end
+	return math.floor(value+0.5)
+end
+
+function A.storedPosition(key)
+	local store=A.db()
+	if not store or type(store.ui)~="table"then
+		return nil
+	end
+	local held=store.ui[key]
+	if type(held)~="table"or type(held.point)~="string"then
+		return nil
+	end
+	local x,y=A.wholeOffset(held.x),A.wholeOffset(held.y)
+	if x==nil or y==nil then
+		return nil
+	end
+	return{point=held.point,x=x,y=y}
+end
+
+function A.storePosition(key,geometry,defaults)
+	local store=A.db()
+	if not store then
+		return false
+	end
+	store.ui=store.ui or{}
+	local point=type(geometry)=="table"and geometry.point or nil
+	local x=type(geometry)=="table"and A.wholeOffset(geometry.x)or nil
+	local y=type(geometry)=="table"and A.wholeOffset(geometry.y)or nil
+	local defaultPoint,defaultX,defaultY=defaults()
+	if type(point)~="string"or x==nil or y==nil
+		or(point==defaultPoint and x==A.wholeOffset(defaultX)and y==A.wholeOffset(defaultY))
+	then
+		store.ui[key]=nil
+		return true
+	end
+	store.ui[key]={point=point,x=x,y=y}
+	return true
+end
+
+function A.guardedCall(fn,...)
 	if type(fn)~="function"then
 		return nil
 	end
@@ -839,6 +908,18 @@ function A.pvpCall(name,...)
 		return nil
 	end
 	return res
+end
+
+function A.inCombatLockdown()
+	if type(InCombatLockdown)~="function"then
+		return false
+	end
+	local ok,value=pcall(InCombatLockdown)
+	return ok and value==true
+end
+
+function A.pvpCall(name,...)
+	return A.guardedCall(C_PvP and C_PvP[name],...)
 end
 
 local stateNames

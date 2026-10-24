@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.7
+-- WowPvpHistory 0.70.16
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -105,8 +105,9 @@ function A.formats()
 	end
 
 	local seen,out={},{}
-	for i=1,#db.matches do
-		local record=db.matches[i]
+	local list=db.matches
+	for i=1,#list do
+		local record=list[i]
 		local format=type(record)=="table"and record.format or nil
 		if type(format)=="string"and not seen[format]then
 			seen[format]=true
@@ -301,10 +302,7 @@ local function walkStoredSize()
 		tableBytes(view,realConstants)
 	end
 	local density,headroomMatches
-	local headroom=CONSTANT_CEILING-constants.n
-	if headroom<0 then
-		headroom=0
-	end
+	local headroom=math.max(CONSTANT_CEILING-constants.n,0)
 	if real>=DENSITY_FLOOR and realConstants.n>0 then
 		density=realConstants.n/real
 		headroomMatches=math.floor(headroom/density)
@@ -367,7 +365,7 @@ function A.sizeLines(size)
 		:format(size.matches,size.matches==1 and"match"or"matches",
 			size.participants,size.participants==1 and"row"or"rows")
 	if(size.generated or 0)>0 then
-		stored=stored..(". %d of those %s generated, and /pvph debug fixture clear removes them")
+		stored=stored..(". %d of those %s generated, and /pvph debug fixture clear confirm removes them")
 			:format(size.generated,size.generated==1 and"is"or"are")
 	end
 	lines[#lines+1]=stored
@@ -453,8 +451,9 @@ function A.historyFigures()
 			first=stamp
 		end
 	end
-	for i=1,#db.matches do
-		local record=db.matches[i]
+	local stored=db.matches
+	for i=1,#stored do
+		local record=stored[i]
 		if type(record)=="table"and record.format~=nil then
 			earliest(record)
 		end
@@ -553,7 +552,7 @@ function A.sizeShare(size)
 		return"0%",0
 	end
 	local share=used/ceiling
-	local percent=math.floor(share*100+0.5)
+	local percent=A.percentPoints(share)
 	if percent<1 then
 		return"<1%",share
 	end
@@ -637,7 +636,7 @@ local function notedNames(note)
 	return names
 end
 
-function A.playerEntry(guid)
+local function playerIndexFor(guid)
 	if type(guid)~="string"or guid==""then
 		return nil
 	end
@@ -647,7 +646,14 @@ function A.playerEntry(guid)
 		return nil
 	end
 
-	local index=type(db.players)=="table"and db.players or{}
+	return type(db.players)=="table"and db.players or{}
+end
+
+function A.playerEntry(guid)
+	local index=playerIndexFor(guid)
+	if not index then
+		return nil
+	end
 	if type(index[guid])=="table"then
 		return{guid=guid,entry=index[guid],indexed=true},true
 	end
@@ -959,7 +965,7 @@ function A.matchRoster(record,text)
 			if type(entry)~="table"then
 				indexed=false
 				entry={names={}}
-				if type(participant)=="table"and type(participant.name)=="string"then
+				if type(participant.name)=="string"then
 					entry.names[1]=participant.name
 				end
 			end
@@ -1187,16 +1193,10 @@ local function ratedFormat(entry)
 end
 
 function A.playerSummary(guid)
-	if type(guid)~="string"or guid==""then
+	local index=playerIndexFor(guid)
+	if not index then
 		return nil
 	end
-
-	local db=A.db()
-	if not db then
-		return nil
-	end
-
-	local index=type(db.players)=="table"and db.players or{}
 	local entry=index[guid]
 	if type(entry)~="table"then
 		entry=nil
@@ -1418,10 +1418,7 @@ function A.authoredGroupLines(noted)
 		return{}
 	end
 
-	local shown=#noted
-	if shown>NOTED_LINE_CAP then
-		shown=NOTED_LINE_CAP
-	end
+	local shown=math.min(#noted,NOTED_LINE_CAP)
 
 	local lines={}
 	for i=1,shown do
@@ -1449,9 +1446,11 @@ function A.incompleteList(character)
 	end
 
 	local out={}
-	for i=#db.incomplete,1,-1 do
-		if A.recordedBy(db.incomplete[i],character)then
-			out[#out+1]=db.incomplete[i]
+	local list=db.incomplete
+	for i=#list,1,-1 do
+		local entry=list[i]
+		if A.recordedBy(entry,character)then
+			out[#out+1]=entry
 		end
 	end
 	return out
@@ -1809,12 +1808,11 @@ function A.effectiveResult(record)
 	end
 	return nil,false
 end
-local effectiveResult=A.effectiveResult
 
 local CELL_WORD={win="won",loss="lost",draw="draw"}
 
 local function resultCell(record)
-	local outcome,byHand=effectiveResult(record)
+	local outcome,byHand=A.effectiveResult(record)
 	if outcome==nil then
 		return nil
 	end
@@ -1824,14 +1822,10 @@ end
 A.resultCellText=resultCell
 
 function A.worldTally(record)
-	if type(record)~="table"or record.format~="world"then
+	local kills,deaths=A.worldCounts(record)
+	if kills==nil then
 		return nil
 	end
-	if type(record.kills)~="number"and type(record.deaths)~="number"then
-		return nil
-	end
-	local kills=type(record.kills)=="number"and record.kills or 0
-	local deaths=type(record.deaths)=="number"and record.deaths or 0
 	return("%d %s, %d %s"):format(kills,kills==1 and"kill"or"kills",deaths,
 		deaths==1 and"death"or"deaths")
 end
@@ -1910,10 +1904,7 @@ function A.noteLead(text,bound)
 		return nil
 	end
 
-	local max=type(bound)=="number"and bound or NOTE_LEAD_MAX
-	if max<1 then
-		max=1
-	end
+	local max=math.max(type(bound)=="number"and bound or NOTE_LEAD_MAX,1)
 	if#trimmed<=max then
 		return trimmed
 	end
@@ -1980,11 +1971,7 @@ function A.rowCells(record,room)
 		local name=cells[mapAt]
 		local over=#table.concat(cells,"  ")-room
 		if over>0 then
-			local keep=#name-over-3
-			local floor=A.metric("rowMapMin")
-			if keep<floor then
-				keep=floor
-			end
+			local keep=math.max(#name-over-3,A.metric("rowMapMin"))
 			if keep<#name then
 				cells[mapAt]=(A.byteCut(name,keep):gsub("%s+$","")).."..."
 			end
@@ -2401,8 +2388,8 @@ function A.flatRowColumns(format,subjects,flat)
 				if subject.participantCount~=nil then
 					sizes[tostring(subject.participantCount)]=true
 				end
-				if A.rowChips(subject,kind)~=nil
-					or(subject.format=="duel"and type(subject.opponentName)=="string")then
+				if not opponents and(A.rowChips(subject,kind)~=nil
+					or(subject.format=="duel"and type(subject.opponentName)=="string"))then
 					opponents=true
 				end
 				if not mmr and A.teamMmr(subject)~=nil then
@@ -2411,14 +2398,7 @@ function A.flatRowColumns(format,subjects,flat)
 			end
 		end
 	end
-	local function count(set)
-		local n=0
-		for _ in pairs(set)do
-			n=n+1
-		end
-		return n
-	end
-	local varied=count(formats)+(held and 1 or 0)>1
+	local varied=distinctKeys(formats)+(held and 1 or 0)>1
 
 	local out={}
 	local function add(key,name)
@@ -2471,7 +2451,7 @@ function A.flatRowColumns(format,subjects,flat)
 		add("where","ZONE");add("tally");add("ratio");add("span")
 	else
 		lead()
-		if count(sizes)>1 and format~="arena-unrated"then
+		if distinctKeys(sizes)>1 and format~="arena-unrated"then
 			add("size")
 		end
 		add("result");add("where")
@@ -2534,6 +2514,47 @@ local DUEL_CELL={
 	end,
 }
 
+local function kindCell(subject,kind)
+	if kind=="incomplete"then
+		return subject.reason=="abandoned"and"Abandoned"or"Left early"
+	end
+	if subject.format==nil then
+		return"-"
+	end
+	return A.formatLabel(subject.format)
+end
+
+local function sizeCell(subject,kind)
+	if kind=="incomplete"or subject.participantCount==nil then
+		return"-"
+	end
+	return("%sp"):format(tostring(subject.participantCount))
+end
+
+local function lengthCell(subject,kind)
+	if kind=="incomplete"then
+		return spanText(subject.seconds)or"-"
+	end
+	return spanText(subject.duration)or"-"
+end
+
+local function verdictCell(subject,kind)
+	if kind=="incomplete"then
+		return"-"
+	end
+	return resultCell(subject)or"-"
+end
+
+local function roundsFace(subject)
+	local verdict,won,played=A.roundsVerdict(subject)
+	if verdict==nil then
+		return"-"
+	elseif verdict=="unsummed"then
+		return"?"
+	end
+	return("%d of %d"):format(won,played)
+end
+
 local BUCKET_CELL={
 	id=function(subject,kind)
 		return A.rowIdText(subject,kind)
@@ -2541,33 +2562,10 @@ local BUCKET_CELL={
 	map=function(subject)
 		return tostring(subject.map and subject.map.name or"-")
 	end,
-	kind=function(subject,kind)
-		if kind=="incomplete"then
-			return subject.reason=="abandoned"and"Abandoned"or"Left early"
-		end
-		if subject.format==nil then
-			return"-"
-		end
-		return A.formatLabel(subject.format)
-	end,
-	size=function(subject,kind)
-		if kind=="incomplete"or subject.participantCount==nil then
-			return"-"
-		end
-		return("%sp"):format(tostring(subject.participantCount))
-	end,
-	length=function(subject,kind)
-		if kind=="incomplete"then
-			return spanText(subject.seconds)or"-"
-		end
-		return spanText(subject.duration)or"-"
-	end,
-	result=function(subject,kind)
-		if kind=="incomplete"then
-			return"-"
-		end
-		return resultCell(subject)or"-"
-	end,
+	kind=kindCell,
+	size=sizeCell,
+	length=lengthCell,
+	result=verdictCell,
 }
 
 local MATCH_CELL={
@@ -2577,27 +2575,14 @@ local MATCH_CELL={
 	id=function(subject,kind)
 		return A.rowIdText(subject,kind)
 	end,
-	kind=function(subject,kind)
-		if kind=="incomplete"then
-			return subject.reason=="abandoned"and"Abandoned"or"Left early"
-		end
-		if subject.format==nil then
-			return"-"
-		end
-		return A.formatLabel(subject.format)
-	end,
+	kind=kindCell,
 	map=function(subject,kind)
 		if kind~="incomplete"and subject.format=="duel"then
 			return tostring(subject.opponentName or"-")
 		end
 		return tostring(subject.map and subject.map.name or"-")
 	end,
-	size=function(subject,kind)
-		if kind=="incomplete"or subject.participantCount==nil then
-			return"-"
-		end
-		return("%sp"):format(tostring(subject.participantCount))
-	end,
+	size=sizeCell,
 	rating=function(subject,kind)
 		if kind=="incomplete"then
 			return"-"
@@ -2624,13 +2609,7 @@ local MATCH_CELL={
 		if kind=="incomplete"then
 			return"-"
 		end
-		local verdict,won,played=A.roundsVerdict(subject)
-		if verdict==nil then
-			return"-"
-		elseif verdict=="unsummed"then
-			return"?"
-		end
-		return("%d of %d"):format(won,played)
+		return roundsFace(subject)
 	end,
 	lobby=function(subject,kind)
 		local chips=A.rowChips(subject,kind)
@@ -2665,12 +2644,7 @@ local MATCH_CELL={
 	time=function(subject)
 		return A.clockKey(subject.openedAt or subject.completedAt or subject.endedAt)or"-"
 	end,
-	verdict=function(subject,kind)
-		if kind=="incomplete"then
-			return"-"
-		end
-		return resultCell(subject)or"-"
-	end,
+	verdict=verdictCell,
 	span=function(subject,kind)
 		if kind=="incomplete"then
 			return spanText(subject.seconds)or""
@@ -2702,12 +2676,7 @@ local MATCH_CELL={
 	ratio=function(subject)
 		return A.kdText(A.worldCounts(subject))or(A.colorEscape("dim").."-|r")
 	end,
-	length=function(subject,kind)
-		if kind=="incomplete"then
-			return spanText(subject.seconds)or"-"
-		end
-		return spanText(subject.duration)or"-"
-	end,
+	length=lengthCell,
 	result=function(subject,kind)
 		if kind=="incomplete"then
 			return"-"
@@ -2715,14 +2684,8 @@ local MATCH_CELL={
 		if subject.format=="world"then
 			return A.worldTally(subject)or"-"
 		end
-		if effectiveResult(subject)==nil then
-			local verdict,won,played=A.roundsVerdict(subject)
-			if verdict==nil then
-				return"-"
-			elseif verdict=="unsummed"then
-				return"?"
-			end
-			return("%d of %d"):format(won,played)
+		if A.effectiveResult(subject)==nil then
+			return roundsFace(subject)
 		end
 		return resultCell(subject)or"-"
 	end,
@@ -2763,12 +2726,10 @@ function A.rowColumnCells(subject,format,kind,columns)
 	end
 
 	local named=format
-	if type(named)~="string"or not ROW_COLUMN_SETS[named]then
-		if type(columns)~="table"then
-			local own=subject.format
-			if type(own)=="string"and ROW_COLUMN_SETS[own]then
-				named=own
-			end
+	if(type(named)~="string"or not ROW_COLUMN_SETS[named])and type(columns)~="table"then
+		local own=subject.format
+		if type(own)=="string"and ROW_COLUMN_SETS[own]then
+			named=own
 		end
 	end
 
@@ -2862,36 +2823,59 @@ function A.dayLabel(stamp)
 	return(text:gsub("^(%a+) 0","%1 "))
 end
 
-function A.rowExpansion(subject,kind)
+function A.rowExpansion(subject)
 	if type(subject)~="table"then
 		return{}
 	end
 
 	local lines={}
-
-	if kind=="incomplete"then
-		local manual=type(subject.manual)=="table"and subject.manual or nil
-		clause(lines,A.reasonLabel(manual and manual.reason),"reason %s")
-		if subject.rated==true then
-			put(lines,"cost rating")
-		elseif subject.rated==false then
-			put(lines,"no rating at stake")
-		end
-		clause(lines,subject.endedAt,subject.reason=="abandoned"and"noticed %s"or"ended %s")
-		if type(subject.rounds)=="number"and subject.rounds>0 then
-			put(lines,("%d rounds"):format(subject.rounds))
-		end
-	else
-		clause(lines,subject.outcome)
-		if subject.duelToTheDeath then
-			put(lines,"to the death")
-		end
-		put(lines,A.durationCaveat(subject.openedState))
+	clause(lines,subject.outcome)
+	if subject.duelToTheDeath then
+		put(lines,"to the death")
 	end
-
+	put(lines,A.durationCaveat(subject.openedState))
 	put(lines,A.seasonText(subject,true))
 
 	return lines
+end
+
+function A.leftTooltipLines(entry)
+	if type(entry)~="table"then
+		return nil
+	end
+	local abandoned=entry.reason=="abandoned"
+	local lines={{kind="head",text=kindCell(entry,"incomplete"),tone=abandoned and"caveat"or"loss"}}
+	local kinds={}
+	local function add(kind,text,tone)
+		if text~=nil then
+			lines[#lines+1]={kind=kind,text=text,tone=tone}
+			kinds[kind]=(kinds[kind]or 0)+1
+		end
+	end
+
+	if entry.endedAt~=nil then
+		add("ended",(abandoned and"noticed %s"or"ended %s"):format(tostring(entry.endedAt)),"text")
+	end
+	local when={}
+	clause(when,entry.openedAt,"opened %s")
+	clause(when,spanText(entry.seconds),"ran %s")
+	put(when,A.durationCaveat(entry.openedState))
+	if#when>0 then
+		add("opened",table.concat(when,"  "),"text")
+	end
+	if entry.rated==true then
+		add("rated","cost rating","loss")
+	elseif entry.rated==false then
+		add("rated","no rating at stake","dim")
+	end
+	if type(entry.rounds)=="number"and entry.rounds>0 then
+		add("rounds",("%d rounds"):format(entry.rounds),"text")
+	end
+	local manual=type(entry.manual)=="table"and entry.manual or nil
+	local reason=A.reasonLabel(manual and manual.reason)
+	add("reason",reason and("reason "..reason)or nil,"dim")
+	add("season",A.seasonText(entry,true),"dim")
+	return lines,kinds
 end
 
 function A.summaryLine(record)
@@ -2899,10 +2883,7 @@ function A.summaryLine(record)
 end
 
 local function lessThan(a,b)
-	if a==b then
-		return false
-	end
-	if a==nil then
+	if a==b or a==nil then
 		return false
 	end
 	if b==nil then
@@ -3020,11 +3001,17 @@ local function objectives(record,participant)
 end
 
 local function rosterOrder(a,b)
-	if a.p.faction~=b.p.faction then
-		return lessThan(a.p.faction,b.p.faction)
+	if lessThan(a.p.faction,b.p.faction)then
+		return true
 	end
-	if a.p.name~=b.p.name then
-		return lessThan(a.p.name,b.p.name)
+	if lessThan(b.p.faction,a.p.faction)then
+		return false
+	end
+	if lessThan(a.p.name,b.p.name)then
+		return true
+	end
+	if lessThan(b.p.name,a.p.name)then
+		return false
 	end
 	return lessThan(a.guid,b.guid)
 end
@@ -3294,10 +3281,18 @@ local function chipOf(p)
 	return{classToken=p.classToken,text=A.chipLetters(p.spec)or"",spec=p.spec,icon=icon}
 end
 
-function A.rowSelfChip(subject)
+local function ownSpecRow(subject)
 	local own=type(subject)=="table"and subject.character~=nil
 		and type(subject.participants)=="table"and subject.participants[subject.character]or nil
 	if type(own)~="table"or type(own.spec)~="string"or own.spec==""then
+		return nil
+	end
+	return own
+end
+
+function A.rowSelfChip(subject)
+	local own=ownSpecRow(subject)
+	if own==nil then
 		return nil
 	end
 	return chipOf(own)
@@ -3314,10 +3309,9 @@ function A.rowChips(subject,kind)
 	for i=1,#roster do
 		local entry=roster[i]
 		local p=entry.p
-		if entry.guid~=subject.character and type(p)=="table"then
-			if sides==nil or(p.faction~=nil and p.faction~=sides.own)then
-				picked[#picked+1]=p
-			end
+		if entry.guid~=subject.character and type(p)=="table"
+			and(sides==nil or(p.faction~=nil and p.faction~=sides.own))then
+			picked[#picked+1]=p
 		end
 	end
 	if#picked==0 then
@@ -3340,9 +3334,8 @@ function A.rowChipLimit()
 end
 
 function A.rowSelfSpec(subject)
-	local own=type(subject)=="table"and subject.character~=nil
-		and type(subject.participants)=="table"and subject.participants[subject.character]or nil
-	if type(own)~="table"or type(own.spec)~="string"or own.spec==""then
+	local own=ownSpecRow(subject)
+	if own==nil then
 		return nil
 	end
 	return A.chipText({spec=own.spec,class=own.class})
@@ -3521,6 +3514,8 @@ function A.participantCells(record,entry,sides,columns)
 		dispels,meterReason=A.participantMeter(record,guid)
 	end
 
+	local roleWord,lead=A.roleParts(roleMask)
+
 	return{
 		guid=guid,
 		self=guid==record.character,
@@ -3532,8 +3527,8 @@ function A.participantCells(record,entry,sides,columns)
 		specLabel=(type(p.spec)=="string"and p.spec~="")
 			and A.chipText({spec=p.spec,class=p.class})or nil,
 		role=A.roleText(roleMask),
-		roleWord=select(1,A.roleParts(roleMask)),
-		lead=select(2,A.roleParts(roleMask))or nil,
+		roleWord=roleWord,
+		lead=lead or nil,
 		kb=p.killingBlows,hk=p.honorableKills,d=p.deaths,
 		damage=p.damage,healing=p.healing,
 		dispels=dispels,meterReason=meterReason,
@@ -3684,7 +3679,7 @@ function A.seasonCounterLines(counters)
 			unsummed=0}
 	end
 
-	local unsized=0
+	local unsized,unsizedIds=0,{}
 	local db=A.db()
 	local matches=db and type(db.matches)=="table"and db.matches or{}
 	for i=1,#matches do
@@ -3693,7 +3688,13 @@ function A.seasonCounterLines(counters)
 			and record[A.FIXTURE_KEY]~=true and A.recordGameSeason(record)==game then
 			local bucket=held[record.format]
 			if record.format=="arena"then
-				unsized=unsized+1
+				local id=record.id
+				if id==nil or not unsizedIds[id]then
+					if id~=nil then
+						unsizedIds[id]=true
+					end
+					unsized=unsized+1
+				end
 			elseif bucket then
 				bucket.records=bucket.records+1
 				local id=record.id
@@ -3828,8 +3829,9 @@ function A.seasonCounterLines(counters)
 
 	if weekStart~=nil and db and type(db.incomplete)=="table"then
 		local left=0
-		for i=1,#db.incomplete do
-			local entry=db.incomplete[i]
+		local incomplete=db.incomplete
+		for i=1,#incomplete do
+			local entry=incomplete[i]
 			if type(entry)=="table"and entry.character==character and entry.rated==true
 				and A.recordSince(entry,weekStart)then
 				left=left+1
@@ -3895,7 +3897,7 @@ function A.resultTone(record)
 	if type(record)~="table"then
 		return nil
 	end
-	local decided=effectiveResult(record)
+	local decided=A.effectiveResult(record)
 	if decided~=nil then
 		return RESULT_TONE[decided]
 	end
@@ -3923,7 +3925,7 @@ function A.resultLetter(record)
 			return tostring(won)
 		end
 	end
-	local decided=effectiveResult(record)
+	local decided=A.effectiveResult(record)
 	return RESULT_LETTER[decided]or"-"
 end
 
@@ -3936,7 +3938,7 @@ function A.matchVerdict(record)
 		return{words=tally or"-",tone=tally and"text"or"dim"}
 	end
 	local words
-	local decided=effectiveResult(record)
+	local decided=A.effectiveResult(record)
 	if decided~=nil then
 		words=RESULT_WORD[decided]or tostring(decided):upper()
 	else
@@ -3959,7 +3961,7 @@ function A.matchVerdict(record)
 		local known=0
 		for i=1,#rounds do
 			local ok,won,_,byHand=pcall(A.roundResult,record,i)
-			if ok and type(won)=="boolean"and byHand~=true then
+			if ok and type(won)=="boolean"and not byHand then
 				pips[i]=won
 				known=known+1
 			end
@@ -4496,6 +4498,26 @@ local function fitAssignments(n,fixed,sides,totals,mineTotal)
 	return fits,agree
 end
 
+local function solveInputs(record,n)
+	local sides=roundSideGuids(record)
+	if not sides then
+		return nil
+	end
+	local totals,sum=roundsWonTotals(record)
+	if not totals then
+		return nil
+	end
+	local expect=0
+	for i=1,n do
+		expect=expect+sides[i].size
+	end
+	local mineTotal=totals[record.character]
+	if sum~=expect or type(mineTotal)~="number"then
+		return nil
+	end
+	return sides,totals,mineTotal
+end
+
 function A.roundTypedFits(record,index,won)
 	local rounds={}
 	if type(record)=="table"and type(record.rounds)=="table"then
@@ -4505,20 +4527,8 @@ function A.roundTypedFits(record,index,won)
 	if n==0 or n>MAX_SOLVE_ROUNDS or type(index)~="number"or type(won)~="boolean"then
 		return nil
 	end
-	local sides=roundSideGuids(record)
-	local totals,sum=nil,nil
-	if sides then
-		totals,sum=roundsWonTotals(record)
-	end
-	if not(sides and totals)then
-		return nil
-	end
-	local expect=0
-	for i=1,n do
-		expect=expect+sides[i].size
-	end
-	local mineTotal=totals[record.character]
-	if sum~=expect or type(mineTotal)~="number"then
+	local sides,totals,mineTotal=solveInputs(record,n)
+	if not sides then
 		return nil
 	end
 
@@ -4556,20 +4566,8 @@ function A.roundsFit(record,won)
 	if n==0 or n>MAX_SOLVE_ROUNDS then
 		return nil
 	end
-	local sides=roundSideGuids(record)
+	local sides,totals,mineTotal=solveInputs(record,n)
 	if not sides then
-		return nil
-	end
-	local totals,sum=roundsWonTotals(record)
-	if not totals then
-		return nil
-	end
-	local expect=0
-	for i=1,n do
-		expect=expect+sides[i].size
-	end
-	local mineTotal=totals[record.character]
-	if sum~=expect or type(mineTotal)~="number"then
 		return nil
 	end
 	local fixed={}
@@ -4606,6 +4604,9 @@ function A.roundsVerdict(record)
 	if won==nil or type(played)~="number"or played<=0 then
 		return nil
 	end
+	if won<0 or won>played then
+		return"unsummed",won,played
+	end
 	if A.roundsSummed(record)==false then
 		local _,sum=roundsWonTotals(record)
 		local scored=type(sum)=="number"and sum%ROUND_SIDE==0 and sum/ROUND_SIDE or nil
@@ -4630,8 +4631,9 @@ function A.applyRoundWins(record)
 	end
 
 	local written=0
-	for i=1,#record.rounds do
-		local round=record.rounds[i]
+	local rounds=record.rounds
+	for i=1,#rounds do
+		local round=rounds[i]
 		if type(round)=="table"and type(proposed[i])=="boolean"then
 			round.won=proposed[i]
 			written=written+1
@@ -4702,8 +4704,9 @@ function A.roundWinsRefusal(record)
 		return nil
 	end
 	local read=false
-	for i=1,#record.rounds do
-		local round=record.rounds[i]
+	local rounds=record.rounds
+	for i=1,#rounds do
+		local round=rounds[i]
 		if type(round)=="table"and type(round.winsPost)=="number"then
 			read=true
 			break
@@ -4960,6 +4963,14 @@ function A.roundTable(record)
 	return{rounds=out,read=read,total=#rounds,won=won,decided=decided}
 end
 
+local function headPart(kind,parts)
+	local out={kind=kind}
+	for key,value in pairs(parts)do
+		out[key]=value
+	end
+	return out
+end
+
 function A.outingHeadLines(record,head)
 	local game=A.theme()~="flat"
 	local zone=A.recordZone(record)
@@ -4987,14 +4998,7 @@ function A.outingHeadLines(record,head)
 	if not game then
 		parts.result,parts.resultTone=zone or"-",zone and"bright"or"dim"
 	end
-	local function with(kind)
-		local out={kind=kind}
-		for key,value in pairs(parts)do
-			out[key]=value
-		end
-		return out
-	end
-	local top,sub=with("heading"),with("headline")
+	local top,sub=headPart("heading",parts),headPart("headline",parts)
 	local rest={}
 	for i=2,#details do
 		rest[#rest+1]=details[i].text
@@ -5024,6 +5028,16 @@ function A.outingHeadLines(record,head)
 		words[#words+1]=cells[i].label.." "..cells[i].value
 	end
 	return top,sub,nil,{kind="tally",cells=cells,text=table.concat(words,"  ")}
+end
+
+local function instanceText(map)
+	local where={}
+	clause(where,map.instanceType,"instance type %s")
+	clause(where,map.instanceId,"instance id %s")
+	if#where==0 then
+		return nil
+	end
+	return table.concat(where,", ")
 end
 
 function A.windowHeadLines(record,head,provenance)
@@ -5057,12 +5071,7 @@ function A.windowHeadLines(record,head,provenance)
 		detail("to the death","caveat")
 	end
 	if record.map and provenance then
-		local where={}
-		clause(where,record.map.instanceType,"instance type %s")
-		clause(where,record.map.instanceId,"instance id %s")
-		if#where>0 then
-			detail(table.concat(where,", "),"dim")
-		end
+		detail(instanceText(record.map),"dim")
 	end
 
 	local verdict=A.matchVerdict(record)
@@ -5093,14 +5102,7 @@ function A.windowHeadLines(record,head,provenance)
 		parts.mmr=("%d"):format(own.mmrPost)
 	end
 
-	local function with(kind)
-		local out={kind=kind}
-		for key,value in pairs(parts)do
-			out[key]=value
-		end
-		return out
-	end
-	local top,sub=with("heading"),with("headline")
+	local top,sub=headPart("heading",parts),headPart("headline",parts)
 
 	local function ratingWords(words)
 		if parts.ratingFrom~=nil and parts.ratingTo~=nil then
@@ -5250,7 +5252,7 @@ function A.setScoreSort(key,up,index)
 	index=(key=="objective"and type(index)=="number"and index>=1)and math.floor(index)or 1
 	up=up==true
 	local held=scoreState.roster
-	if key~=held.key or up~=held.up or index~=held.index or held.set~=true then
+	if key~=held.key or up~=held.up or index~=held.index or not held.set then
 		A.noteScoreSortChange("roster")
 	end
 	scoreState.roster={key=key,up=up,index=index,set=true}
@@ -5266,7 +5268,7 @@ function A.toggleScoreSort(key,index,drawnUp)
 		return A.setScoreSort(key,not drawnUp,slot)
 	end
 	local held=scoreState.roster
-	if held.set==true and key==held.key and slot==held.index then
+	if held.set and key==held.key and slot==held.index then
 		return A.setScoreSort(key,not held.up,slot)
 	end
 	return A.setScoreSort(key,nil,slot)
@@ -5390,6 +5392,17 @@ local function rosterOrderFor(filled,slots,look)
 	return"name",true,1,true,true
 end
 
+local function roundsHeadWord(verdict,won,played)
+	if verdict=="draw"then
+		return RESULT_WORD.draw
+	elseif verdict=="unsummed"then
+		return"RESULT NOT KNOWN"
+	elseif verdict=="count"then
+		return("WON %d OF %d"):format(won,played)
+	end
+	return nil
+end
+
 function A.detailLines(record,pane)
 	local lines,heads={},{}
 
@@ -5397,7 +5410,7 @@ function A.detailLines(record,pane)
 
 	local head={kind="headline"}
 
-	local decided,byHand=effectiveResult(record)
+	local decided,byHand=A.effectiveResult(record)
 	if decided~=nil then
 		head.result=RESULT_WORD[decided]or tostring(decided):upper()
 		head.resultTone=A.resultTone(record)
@@ -5408,14 +5421,8 @@ function A.detailLines(record,pane)
 	if head.result==nil then
 		local verdict
 		verdict,roundsWon,roundsPlayed=A.roundsVerdict(record)
-		if verdict=="draw"then
-			head.result=RESULT_WORD.draw
-			head.resultTone=A.resultTone(record)
-		elseif verdict=="unsummed"then
-			head.result="RESULT NOT KNOWN"
-			head.resultTone=A.resultTone(record)
-		elseif verdict=="count"then
-			head.result=("WON %d OF %d"):format(roundsWon,roundsPlayed)
+		head.result=roundsHeadWord(verdict,roundsWon,roundsPlayed)
+		if head.result~=nil then
 			head.resultTone=A.resultTone(record)
 		end
 	end
@@ -5498,12 +5505,7 @@ function A.detailLines(record,pane)
 		clause(when,record.map.name)
 	end
 	if record.map and provenance then
-		local where={}
-		clause(where,record.map.instanceType,"instance type %s")
-		clause(where,record.map.instanceId,"instance id %s")
-		if#where>0 then
-			put(when,table.concat(where,", "))
-		end
+		put(when,instanceText(record.map))
 	end
 	if pane then
 		local top,sub,ladder,cards=A.windowHeadLines(record,head,provenance)
@@ -6139,7 +6141,7 @@ function A.playerDossierLines(dossier)
 		end
 		local record=encounter.record
 		if type(record)=="table"and(encounter.side=="with"or encounter.side=="against")
-			and select(2,effectiveResult(record))==true then
+			and(select(2,A.effectiveResult(record)))then
 			byHand=byHand+1
 		end
 	end
@@ -6303,11 +6305,7 @@ function A.noteCountText(text,bound)
 	if type(bound)~="number"or bound<=0 then
 		return nil
 	end
-	local left=bound-#text
-	if left<0 then
-		left=0
-	end
-	return("%d left"):format(left)
+	return("%d left"):format(math.max(bound-#text,0))
 end
 
 local MURLOK_REGIONS={"us","kr","eu","tw"}
@@ -6357,7 +6355,7 @@ local function shuffleSeats(record)
 	if type(A.roundResult)=="function"then
 		for r=1,count do
 			local answered,won,_,typed=pcall(A.roundResult,record,r)
-			if answered and type(won)=="boolean"and typed~=true then
+			if answered and type(won)=="boolean"and not typed then
 				results[r]=won
 			end
 		end
@@ -6786,12 +6784,7 @@ function A.newestSession()
 		if as~=bs then
 			return as>bs
 		end
-		local ak,an=A.matchIdRank(a.subject.id)
-		local bk,bn=A.matchIdRank(b.subject.id)
-		if ak~=bk then
-			return ak>bk
-		end
-		return an>bn
+		return A.newerMatchId(a.subject.id,b.subject.id)
 	end)
 	local ids={}
 	if type(A.buildSessions)~="function"then
@@ -7712,8 +7705,7 @@ local function classEscape(token)
 	if not ok or type(r)~="number"then
 		return nil
 	end
-	return("|cff%02x%02x%02x"):format(
-		math.floor(r*255+0.5),math.floor((g or 1)*255+0.5),math.floor((b or 1)*255+0.5))
+	return A.channelEscape(r,g or 1,b or 1)
 end
 
 local function tooltipRosterLine(record,entry,sides)
@@ -7737,18 +7729,11 @@ function A.matchTooltipLines(record)
 	local kinds={roster=0,rounds=0,objectives=0}
 
 	local head={}
-	local decided=effectiveResult(record)
+	local decided=A.effectiveResult(record)
 	if decided~=nil then
 		put(head,RESULT_WORD[decided]or tostring(decided):upper())
 	else
-		local verdict,won,played=A.roundsVerdict(record)
-		if verdict=="draw"then
-			put(head,RESULT_WORD.draw)
-		elseif verdict=="unsummed"then
-			put(head,"RESULT NOT KNOWN")
-		elseif verdict=="count"then
-			put(head,("WON %d OF %d"):format(won,played))
-		end
+		put(head,roundsHeadWord(A.roundsVerdict(record)))
 	end
 	put(head,record.format~=nil and A.formatLabel(record.format)or nil)
 	put(head,record.map and record.map.name or nil)
@@ -7793,7 +7778,7 @@ function A.matchTooltipLines(record)
 	for i=1,rounds and#rounds or 0 do
 		local won,_,byHand=A.roundResult(record,i)
 		local word,tone="-",nil
-		if won==true then
+		if won then
 			word,tone="WON","win"
 		elseif won==false then
 			word,tone="LOST","loss"

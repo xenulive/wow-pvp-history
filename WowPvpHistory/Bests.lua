@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.7
+-- WowPvpHistory 0.70.16
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -126,11 +126,13 @@ function A.bestsTally(format,season,character,bound)
 		local record=admitted[i]
 		local own=ownRow(record)or{}
 		local spec=type(own.spec)=="string"and own.spec or"?"
-		local row=rows[spec]
+		local classToken=type(own.classToken)=="string"and own.classToken or nil
+		local key=classToken and(spec.." "..classToken)or spec
+		local row=rows[key]
 		if not row then
-			row={key=spec,name=spec,spec=spec,classToken=own.classToken,class=own.class,
-				matches=0,bests={}}
-			rows[spec]=row
+			row={key=key,name=A.chipText({spec=spec,class=own.class}),
+				spec=spec,classToken=classToken,class=own.class,matches=0,bests={}}
+			rows[key]=row
 			order[#order+1]=row
 		end
 		row.matches=row.matches+1

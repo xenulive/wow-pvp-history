@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.7
+-- WowPvpHistory 0.70.16
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -51,7 +51,8 @@ local function count(manual)
 	end
 end
 
-local function traceEdit(source,subject,state,reason)
+local function traceEdit(source,subject,state,reason,text,bound)
+	local counted=type(text)=="string"
 	A.trace("edit",{
 		source=source,
 		id=type(subject)=="table"and subject.id or nil,
@@ -59,6 +60,9 @@ local function traceEdit(source,subject,state,reason)
 		reason=reason,
 		n=type(subject)=="table"and type(subject.manual)=="table"
 			and subject.manual.edits or nil,
+		bytes=counted and#text or nil,
+		letters=counted and type(A.letterCount)=="function"and A.letterCount(text)or nil,
+		bound=counted and bound or nil,
 	},"data")
 end
 
@@ -90,15 +94,15 @@ local function writeNote(subject,text,source)
 	end
 
 	if text~=nil and#text>A.MANUAL_NOTE_MAX then
-		traceEdit(source,subject,"refused","too-long")
+		traceEdit(source,subject,"refused","too-long",text,A.MANUAL_NOTE_MAX)
 		return false,nil,"too-long",#text,A.MANUAL_NOTE_MAX
 	end
 
 	local cleared=text==nil or text==""
-	if cleared and clearsNothing(source,subject,typedValue(subject,"note"))then
+	local held=typedValue(subject,"note")
+	if cleared and clearsNothing(source,subject,held)then
 		return true,nil
 	end
-	local held=typedValue(subject,"note")
 	if not cleared and fillsNothing(source,subject,held,text)then
 		return true,held
 	end
@@ -137,10 +141,11 @@ function A.editResult(record,value)
 		return false,nil,"bad-result"
 	end
 
-	if value==nil and clearsNothing("result",record,typedValue(record,"result"))then
+	local typed=typedValue(record,"result")
+	if value==nil and clearsNothing("result",record,typed)then
 		return true,nil
 	end
-	if fillsNothing("result",record,typedValue(record,"result"),value)then
+	if fillsNothing("result",record,typed,value)then
 		return true,value
 	end
 	local manual=block(record)
@@ -276,10 +281,11 @@ function A.editReason(entry,token)
 		return false,nil,"bad-reason"
 	end
 
-	if token==nil and clearsNothing("reason",entry,typedValue(entry,"reason"))then
+	local typed=typedValue(entry,"reason")
+	if token==nil and clearsNothing("reason",entry,typed)then
 		return true,nil
 	end
-	if fillsNothing("reason",entry,typedValue(entry,"reason"),token)then
+	if fillsNothing("reason",entry,typed,token)then
 		return true,token
 	end
 	local manual=block(entry)

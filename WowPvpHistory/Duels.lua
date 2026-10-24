@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.7
+-- WowPvpHistory 0.70.16
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -62,17 +62,6 @@ local function contained(fn,...)
 	end
 end
 
-local function guarded(fn,...)
-	if type(fn)~="function"then
-		return nil
-	end
-	local ok,res=pcall(fn,...)
-	if not ok then
-		return nil
-	end
-	return res
-end
-
 local function restricted()
 	return(A.pvpRestricted())
 end
@@ -101,10 +90,7 @@ local function build(text)
 		pos=to+1
 	end
 
-	if#args~=2 then
-		return nil
-	end
-	if not((args[1]==1 and args[2]==2)or(args[1]==2 and args[2]==1))then
+	if#args~=2 or not((args[1]==1 and args[2]==2)or(args[1]==2 and args[2]==1))then
 		return nil
 	end
 
@@ -146,7 +132,7 @@ local function isNamed(names,wanted)
 end
 
 local function tokenMatches(token,wanted)
-	local isPlayer=guarded(UnitIsPlayer,token)
+	local isPlayer=A.guardedCall(UnitIsPlayer,token)
 	if not(A.canRead(isPlayer)and isPlayer==true)then
 		return false
 	end
@@ -173,7 +159,7 @@ local function resolveOpponent(wanted)
 	for i=1,#tokens do
 		local token=tokens[i]
 		if tokenMatches(token,wanted)then
-			local guid=guarded(UnitGUID,token)
+			local guid=A.guardedCall(UnitGUID,token)
 			if type(guid)=="string"and A.canRead(guid)then
 				local source=(i<=#TOKENS)and token or"nameplate"
 				return guid,source
@@ -242,7 +228,7 @@ local function storeDuel(opened,result,ended)
 	local participants={}
 	local kept=0
 
-	local selfGuid=guarded(UnitGUID,"player")
+	local selfGuid=A.guardedCall(UnitGUID,"player")
 	if not(type(selfGuid)=="string"and A.canRead(selfGuid))then
 		selfGuid=nil
 	end

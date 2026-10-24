@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.7
+-- WowPvpHistory 0.70.16
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -622,6 +622,13 @@ for _,name in ipairs({"setPlayerNote","setPlayerRating","addPlayerTags","removeP
 	end
 end
 
+local function byCountThenTag(a,b)
+	if a.count~=b.count then
+		return a.count>b.count
+	end
+	return a.tag<b.tag
+end
+
 function A.rosterTagCounts(record)
 	local out={}
 	if type(record)~="table"then
@@ -643,12 +650,7 @@ function A.rosterTagCounts(record)
 	for tag,count in pairs(counts)do
 		out[#out+1]={tag=tag,count=count}
 	end
-	table.sort(out,function(a,b)
-		if a.count~=b.count then
-			return a.count>b.count
-		end
-		return a.tag<b.tag
-	end)
+	table.sort(out,byCountThenTag)
 	return out
 end
 
@@ -668,12 +670,7 @@ local function countedTags(notes)
 	for tag,count in pairs(counts)do
 		ranked[#ranked+1]={tag=tag,count=count,folded=A.foldText(tostring(tag))}
 	end
-	table.sort(ranked,function(a,b)
-		if a.count~=b.count then
-			return a.count>b.count
-		end
-		return a.tag<b.tag
-	end)
+	table.sort(ranked,byCountThenTag)
 	vocabulary={notes=notes,ranked=ranked}
 	return ranked
 end
