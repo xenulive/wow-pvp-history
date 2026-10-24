@@ -32,7 +32,7 @@ companion app.
   any time range you pick.
 - Solo Shuffle round by round: who was on your team each round, who won it, and how each player's
   results changed your rating.
-- The team comps and specs you struggle against, taken from your own games.
+- The team comps, enemy healer pairs and specs you struggle against, taken from your own games.
 - **Ask** answers four questions from your own games: what beats you, your best teammate spec, the comp
   you do worst against, and the map you lose on most.
 - Everyone you've met, with your own notes, tags and a rep from **Strong** to **Bad**. Your notes show

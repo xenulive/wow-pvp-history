@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.7
+-- WowPvpHistory 0.70.16
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -137,13 +137,13 @@ function A.canaryLossLines(state)
 	local lines={}
 
 	local held=("%d %s"):format(state.held,state.held==1 and"match"or"matches")
+	local now=state.stored==0 and"empty"or("down to "..state.stored)
 	if state.via then
 		lines[#lines+1]=("the stored history is %s and held %s after the last %s")
-			:format(state.stored==0 and"empty"or("down to "..state.stored),held,
-				pruneWord(state.via))
+			:format(now,held,pruneWord(state.via))
 	else
 		lines[#lines+1]=("the stored history is %s and this character last saw %s")
-			:format(state.stored==0 and"empty"or("down to "..state.stored),held)
+			:format(now,held)
 	end
 
 	if state.state=="short"then

@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.7
+-- WowPvpHistory 0.70.16
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -140,13 +140,7 @@ local function buildWindow()
 	frame:SetPoint("CENTER",UIParent,"CENTER",
 		A.metric("storeOffsetX"),A.metric("storeOffsetY"))
 	A.registerPlacedWindow(frame,"CENTER",A.metric("storeOffsetX"),A.metric("storeOffsetY"))
-	frame:SetFrameStrata("MEDIUM")
-	frame:SetToplevel(true)
-	frame:SetClampedToScreen(true)
-	frame:SetMovable(true)
-	frame:EnableMouse(true)
-	frame:RegisterForDrag("LeftButton")
-	frame:SetScript("OnDragStart",frame.StartMoving)
+	A.standMovableWindow(frame)
 	frame:SetScript("OnDragStop",function(self)
 		A.stopDrag(self)
 	end)
@@ -154,13 +148,7 @@ local function buildWindow()
 
 	A.registerChrome(frame)
 
-	frame.heading=A.windowTitle(frame)
-	frame.heading:SetPoint("TOPLEFT",frame,"TOPLEFT",A.metric("titleInset"),
-		-A.metric("titleTop"))
-	frame.heading:SetPoint("TOPRIGHT",frame,"TOPRIGHT",-A.metric("titleInset"),
-		-A.metric("titleTop"))
-	frame.heading:SetJustifyH("CENTER")
-	frame.heading:SetWordWrap(false)
+	A.placeWindowHeading(frame)
 	A.style(frame.heading,"heading","bright")
 
 	frame.body=CreateFrame("Frame",nil,frame)
@@ -183,18 +171,7 @@ local function buildWindow()
 		buildRow(frame,frame.body,i)
 	end
 
-	if type(UISpecialFrames)=="table"then
-		local seen=false
-		for i=1,#UISpecialFrames do
-			if UISpecialFrames[i]==FRAME_NAME then
-				seen=true
-				break
-			end
-		end
-		if not seen then
-			UISpecialFrames[#UISpecialFrames+1]=FRAME_NAME
-		end
-	end
+	A.closeOnEscape(FRAME_NAME)
 
 	return frame
 end
@@ -220,12 +197,12 @@ function A.refreshStoreWindow()
 		return false
 	end
 
-	pcall(function()
+	A.containedPaint("store/heading",function()
 		window.heading:SetText(A.storeWindowTitle())
 		A.style(window.sectionHeading,"label","accent")
 	end)
 
-	local ok,rows=pcall(A.storeRows)
+	local ok,rows=A.containedPaint("store/rows",A.storeRows)
 	if not ok or type(rows)~="table"then
 		return false
 	end
@@ -233,7 +210,7 @@ function A.refreshStoreWindow()
 	for i=1,#window.rows do
 		local widget=window.rows[i]
 		local row=rows[i]
-		pcall(function()
+		A.containedPaint("store/row",function()
 			if not row then
 				widget.dot:Hide()
 				widget.name:SetText("")

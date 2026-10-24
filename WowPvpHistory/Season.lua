@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.7
+-- WowPvpHistory 0.70.16
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -29,15 +29,7 @@ function A.displaySeasonNow()
 end
 
 local function seasonPair()
-	local game=A.arenaSeasonNow()
-	if game==nil or game==NO_SEASON then
-		return nil,nil
-	end
-	local display=A.displaySeasonNow()
-	if display==nil or display<=NO_SEASON then
-		return nil,nil
-	end
-	return game,display
+	return A.seasonPairOf(A.arenaSeasonNow(),A.displaySeasonNow())
 end
 
 function A.seasonNow()
@@ -48,6 +40,17 @@ end
 function A.gameSeasonNow()
 	local game=seasonPair()
 	return game
+end
+
+function A.seasonPairNow()
+	return seasonPair()
+end
+
+function A.seasonPairOf(game,display)
+	if game==nil or game==NO_SEASON or display==nil or display<=NO_SEASON then
+		return nil,nil
+	end
+	return game,display
 end
 
 local function store(create,db)
@@ -218,8 +221,10 @@ function A.seasonOpen(number,when,source,game,db)
 			end
 		end
 	else
+		local current=A.gameSeasonNow()
 		for i=1,#list do
-			if list[i].season==number then
+			local held=list[i]
+			if held.season==number and(current==nil or held.gameSeason==nil or held.gameSeason==current)then
 				taken=true
 			end
 		end
@@ -345,7 +350,7 @@ local function remember(db,season)
 end
 
 local function onSeasonState()
-	local season=A.seasonNow()
+	local game,season=A.seasonPairNow()
 	if season==nil then
 		A.trace("season",{source="client",reason="no-answer"},"data")
 		return
@@ -356,7 +361,6 @@ local function onSeasonState()
 		return
 	end
 
-	local game=A.gameSeasonNow()
 	local seenGame=type(db.gameSeasonSeen)=="number"and db.gameSeasonSeen or nil
 	db.gameSeasonSeen=game
 	local seen=remember(db,season)
@@ -425,13 +429,13 @@ local function forgetFabricated()
 		.."season change. /pvph season start <n> <date> declares the real one")
 end
 
-local function backfillGameSeason()
+function A.backfillGameSeason()
 	local db=A.db()
 	if not db or db.gameSeasonFilled then
 		return
 	end
 
-	local game,display=A.gameSeasonNow(),A.seasonNow()
+	local game,display=A.seasonPairNow()
 	if game==nil or display==nil then
 		return
 	end
@@ -490,7 +494,7 @@ end
 A.on("ADDON_LOADED",function(_,name)
 	if name==ADDON then
 		forgetFabricated()
-		backfillGameSeason()
+		A.backfillGameSeason()
 	end
 end)
 
@@ -567,8 +571,6 @@ local heardRated=false
 local ratedAsked,ratedWaiting=false,false
 
 local ladders={}
-
-local ladderTraced={}
 
 local function tierNumber(info,key)
 	local value=info[key]
@@ -713,19 +715,32 @@ function A.ratingLadder(format)
 		local ladder,reason=buildLadder(format)
 		held=ladder or{reason=reason}
 		ladders[format]=held
-		if not ladderTraced[format]then
-			ladderTraced[format]=true
-			A.trace("tiers",{
-				format=format,
-				ladder=ladder and ladderText(ladder)or nil,
-				reason=reason,
-			},"data")
-		end
+		A.trace("tiers",{
+			format=format,
+			ladder=ladder and ladderText(ladder)or nil,
+			reason=reason,
+		},"data")
 	end
 	if held.tiers==nil then
 		return nil,held.reason
 	end
 	return held
+end
+
+local function tierAt(format,rating)
+	if type(rating)~="number"then
+		return nil,"no-rating"
+	end
+	local ladder,reason=A.ratingLadder(format)
+	if ladder==nil then
+		return nil,reason
+	end
+	for i=#ladder.tiers,1,-1 do
+		if ladder.tiers[i].entry<=rating then
+			return ladder.tiers[i]
+		end
+	end
+	return nil,"out-of-range"
 end
 
 local function component(value)
@@ -736,20 +751,11 @@ local function component(value)
 end
 
 function A.ratingColour(format,rating)
-	if type(rating)~="number"then
-		return nil,nil,"no-rating"
-	end
-	local ladder,reason=A.ratingLadder(format)
-	if ladder==nil then
+	local tier,reason=tierAt(format,rating)
+	if tier==nil then
 		return nil,nil,reason
 	end
-	local enum
-	for i=#ladder.tiers,1,-1 do
-		if ladder.tiers[i].entry<=rating then
-			enum=ladder.tiers[i].enum
-			break
-		end
-	end
+	local enum=tier.enum
 	local quality=enum~=nil and TIER_QUALITY[enum]or nil
 	if quality==nil then
 		return nil,nil,"out-of-range"
@@ -767,40 +773,23 @@ function A.ratingColour(format,rating)
 	if r==nil or g==nil or b==nil then
 		return nil,nil,"no-colour"
 	end
-	return enum,("|cff%02x%02x%02x"):format(
-		math.floor(r*255+0.5),math.floor(g*255+0.5),math.floor(b*255+0.5)),nil,r,g,b
+	return enum,A.channelEscape(r,g,b),nil,r,g,b
 end
 
 function A.ratingTierName(format,rating)
-	if type(rating)~="number"then
-		return nil,"no-rating"
-	end
-	local ladder,reason=A.ratingLadder(format)
-	if ladder==nil then
+	local tier,reason=tierAt(format,rating)
+	if tier==nil then
 		return nil,reason
 	end
-	for i=#ladder.tiers,1,-1 do
-		if ladder.tiers[i].entry<=rating then
-			return A.tierWord(ladder.tiers[i].enum,ladder.tiers[i].name)
-		end
-	end
-	return nil,"out-of-range"
+	return A.tierWord(tier.enum,tier.name)
 end
 
 function A.ratingTierEnum(format,rating)
-	if type(rating)~="number"then
-		return nil,"no-rating"
-	end
-	local ladder,reason=A.ratingLadder(format)
-	if ladder==nil then
+	local tier,reason=tierAt(format,rating)
+	if tier==nil then
 		return nil,reason
 	end
-	for i=#ladder.tiers,1,-1 do
-		if ladder.tiers[i].entry<=rating then
-			return ladder.tiers[i].enum
-		end
-	end
-	return nil,"out-of-range"
+	return tier.enum
 end
 
 function A.tierWord(enum,raw)

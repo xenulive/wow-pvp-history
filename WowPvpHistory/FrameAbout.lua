@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.7
+-- WowPvpHistory 0.70.16
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -127,13 +127,14 @@ local function longestStreak()
 		end
 	end
 	for _,item in ipairs(items)do
-		if item.record then
-			local format=item.record.format
-			if A.recordVerdict(item.record)=="win"then
+		local record=item.record
+		if record then
+			local format=record.format
+			if A.recordVerdict(record)=="win"then
 				local run=open[format]or{format=format,count=0}
 				run.count=run.count+1
 				run.at=item.at
-				run.stamp=item.record.openedAt or item.record.completedAt
+				run.stamp=record.openedAt or record.completedAt
 				open[format]=run
 			else
 				close(format)
@@ -468,8 +469,9 @@ end
 
 local function addSegment(half)
 	local i=#half.segments+1
-	half.segments[i]=texture(half)
-	half.segments[i]:SetHeight(A.metric("aboutFormatBar"))
+	local segment=texture(half)
+	half.segments[i]=segment
+	segment:SetHeight(A.metric("aboutFormatBar"))
 	local entry={}
 	entry.swatch=texture(half)
 	entry.swatch:SetSize(10,10)
@@ -537,21 +539,7 @@ local function buildRight(frame)
 		local tile=CreateFrame("Frame",nil,half)
 		tile.ground=texture(tile,"BACKGROUND")
 		tile.ground:SetAllPoints(tile)
-		tile.edges={}
-		for _,side in ipairs({"TOP","BOTTOM"})do
-			local edge=texture(tile,"BORDER")
-			edge:SetPoint(side.."LEFT",tile,side.."LEFT",0,0)
-			edge:SetPoint(side.."RIGHT",tile,side.."RIGHT",0,0)
-			edge:SetHeight(1)
-			tile.edges[#tile.edges+1]=edge
-		end
-		for _,side in ipairs({"LEFT","RIGHT"})do
-			local edge=texture(tile,"BORDER")
-			edge:SetPoint("TOP"..side,tile,"TOP"..side,0,0)
-			edge:SetPoint("BOTTOM"..side,tile,"BOTTOM"..side,0,0)
-			edge:SetWidth(1)
-			tile.edges[#tile.edges+1]=edge
-		end
+		tile.edges=A.hairlineEdges(tile)
 		tile.key=text(tile)
 		tile.figure=text(tile)
 		tile.sub=text(tile)
@@ -791,7 +779,8 @@ local function paintRight(half,x,width)
 	local keys={"MATCHES","PLAYERS MET","NOTES WRITTEN","CHARACTERS"}
 	local tiles={}
 	for i,tile in ipairs(half.tiles)do
-		local held=by[keys[i]]
+		local key=keys[i]
+		local held=by[key]
 		tile:ClearAllPoints()
 		tile:SetPoint("TOPLEFT",half,"TOPLEFT",pad+(i-1)*(tileW+tileGap),-y)
 		tile:SetSize(tileW,tileH)
@@ -800,15 +789,15 @@ local function paintRight(half,x,width)
 			edge:SetColorTexture(A.color("hairline"))
 		end
 		A.style(tile.key,"label","dim")
-		tile.key:SetText(keys[i])
+		tile.key:SetText(key)
 		at(tile.key,tile,12,10)
-		A.style(tile.figure,"numberHuge",keys[i]=="NOTES WRITTEN"and"noteWord"or"text")
+		A.style(tile.figure,"numberHuge",key=="NOTES WRITTEN"and"noteWord"or"text")
 		A.style(tile.sub,"cardLabel","dim")
 		if held and held.value~=nil then
 			tile.figure:SetText(held.value)
 			tile.sub:SetText(held.sub or"")
 			tile:Show()
-			tiles[#tiles+1]=("%s=%s"):format(keys[i]:lower():gsub(" ","_"),held.value)
+			tiles[#tiles+1]=("%s=%s"):format(key:lower():gsub(" ","_"),held.value)
 		else
 			tile.figure:SetText("")
 			tile.sub:SetText("")
@@ -902,8 +891,18 @@ local function paintRight(half,x,width)
 	for _,held in ipairs(characters)do
 		largest=math.max(largest,held.total)
 	end
-	local nameW=A.metric("aboutCharName")
 	local countW=A.metric("aboutCharCount")
+	local nameW=A.metric("aboutCharName")
+	for i,row in ipairs(half.characters)do
+		local held=characters[i]
+		if held then
+			A.style(row.name,"cardText","text")
+			A.style(row.spec,"rowNote","dim")
+			local need=A.textRoom(row.name,held.name or"")+6+A.textRoom(row.spec,held.spec or"")
+			nameW=math.max(nameW,need)
+		end
+	end
+	nameW=math.min(nameW,math.max(math.floor(inner/2),A.metric("aboutCharName")))
 	local barX=pad+nameW+10
 	local barW=math.max(inner-nameW-countW-20,1)
 	local charH=A.metric("aboutCharRow")
@@ -923,6 +922,9 @@ local function paintRight(half,x,width)
 			at(row.name,half,pad,y+(charH-A.fontSize("cardText"))/2)
 			A.style(row.spec,"rowNote","dim")
 			row.spec:SetText(held.spec or"")
+			local nameRoom=math.min(A.textRoom(row.name,held.name or""),nameW)
+			row.name:SetWidth(nameRoom)
+			row.spec:SetWidth(math.max(nameW-nameRoom-6,1))
 			row.spec:ClearAllPoints()
 			row.spec:SetPoint("BOTTOMLEFT",row.name,"BOTTOMRIGHT",6,0)
 			row.track:SetColorTexture(A.color("divider"))
@@ -973,18 +975,20 @@ local function paintRight(half,x,width)
 		at(half.formatHeading,half,pad,y)
 		y=y+A.fontSize("label")+8
 	end
-	local sx=pad
+	local before=0
 	local legendX,legendY=pad,y+A.metric("aboutFormatBar")+8
 	for i,part in ipairs(half.segments)do
 		local segment=segments[i]
 		local entry=half.legend[i]
 		if segment and total>0 and segment.count>0 then
-			local w=math.max(math.floor(inner*segment.count/total+0.5)-2,1)
+			local from=math.floor(inner*before/total+0.5)
+			before=before+segment.count
+			local to=math.floor(inner*before/total+0.5)
+			local w=math.max(to-from-2,1)
 			part:SetColorTexture(A.color(segment.tone))
 			part:SetWidth(w)
-			at(part,half,sx,y)
+			at(part,half,pad+math.min(from,inner-1),y)
 			part:Show()
-			sx=sx+w+2
 			entry.swatch:SetColorTexture(A.color(segment.tone))
 			A.style(entry.label,"cardLabel","text")
 			entry.label:SetText(segment.label)

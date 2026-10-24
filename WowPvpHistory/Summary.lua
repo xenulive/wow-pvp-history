@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.7
+-- WowPvpHistory 0.70.16
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -148,6 +148,7 @@ end
 local MEMO_WALKERS={
 	summarize=true,
 	compTally=true,
+	compPairTally=true,
 	specTally=true,
 	specMatchTally=true,
 	formatCounts=true,
@@ -452,6 +453,33 @@ function A.recordLevel(record,outcome,derived)
 	return ok and face=="draw"
 end
 
+function A.tallyVerdict(row,record)
+	local outcome,_,derived=A.recordVerdict(record)
+	if outcome==nil then
+		return false
+	end
+	row.decided=row.decided+1
+	if outcome=="win"then
+		row.wins=row.wins+1
+	elseif A.recordLevel(record,outcome,derived)then
+		row.draws=row.draws+1
+	end
+	return true
+end
+
+function A.rankByPlayed(order,key)
+	for i=1,#order do
+		local row=order[i]
+		row.winRate=select(4,A.winRecord(row))
+	end
+	table.sort(order,function(a,b)
+		if a.played~=b.played then
+			return a.played>b.played
+		end
+		return a[key]<b[key]
+	end)
+end
+
 function A.roundsOutcome(record)
 	if type(A.roundsVerdict)~="function"then
 		return nil
@@ -464,6 +492,16 @@ function A.roundsOutcome(record)
 		return"win",won,played
 	end
 	return"loss",won,played
+end
+
+local function solvedOutcomes(record)
+	if type(A.roundOutcomes)=="function"then
+		local answered,got=pcall(A.roundOutcomes,record)
+		if answered then
+			return got
+		end
+	end
+	return nil
 end
 
 function A.mapTally(format,season,character,bound,comp)
@@ -492,11 +530,7 @@ function A.mapTally(format,season,character,bound,comp)
 			and A.recordedBy(record,character)and A.recordSince(record,bound)
 		if admitted and comp~=nil then
 			local name=type(record.map)=="table"and record.map.name or nil
-			local outcomes=nil
-			if type(A.roundOutcomes)=="function"then
-				local answered,got=pcall(A.roundOutcomes,record)
-				outcomes=answered and got or nil
-			end
+			local outcomes=solvedOutcomes(record)
 			local listed=false
 			for r=1,(type(record.rounds)=="table"and#record.rounds or 0)do
 				local round=record.rounds[r]
@@ -538,31 +572,14 @@ function A.mapTally(format,season,character,bound,comp)
 					row.ids[#row.ids+1]=record.id
 				end
 
-				local outcome,_,derived=A.recordVerdict(record)
-				if outcome~=nil then
+				if A.tallyVerdict(row,record)then
 					decided=decided+1
-					row.decided=row.decided+1
-					if outcome=="win"then
-						row.wins=row.wins+1
-					elseif A.recordLevel(record,outcome,derived)then
-						row.draws=row.draws+1
-					end
 				end
 			end
 		end
 	end
 
-	for i=1,#order do
-		local row=order[i]
-		row.winRate=select(4,A.winRecord(row))
-	end
-
-	table.sort(order,function(a,b)
-		if a.played~=b.played then
-			return a.played>b.played
-		end
-		return a.map<b.map
-	end)
+	A.rankByPlayed(order,"map")
 
 	return order,considered,decided,unplaced
 end
@@ -603,12 +620,10 @@ local function trendPoints(key,buckets,seed)
 		local bucket=buckets[slot]
 		local value=nil
 		if key=="winRate"then
-			if bucket then
+			if bucket~=nil then
 				running.wins=running.wins+bucket.wins
 				running.decided=running.decided+bucket.decided
 				running.draws=running.draws+bucket.draws
-			end
-			if bucket~=nil then
 				value=select(4,A.winRecord(running))
 			end
 		elseif bucket~=nil and key=="matches"then
@@ -690,15 +705,7 @@ function A.cardTrend(key,format,season,character,bound)
 			end
 			bucket.count=bucket.count+1
 		end
-		local outcome,_,derived=A.recordVerdict(record)
-		if outcome~=nil then
-			bucket.decided=bucket.decided+1
-			if outcome=="win"then
-				bucket.wins=bucket.wins+1
-			elseif A.recordLevel(record,outcome,derived)then
-				bucket.draws=bucket.draws+1
-			end
-		end
+		A.tallyVerdict(bucket,record)
 		if back<TREND_WEEKS then
 			local seconds=type(record.duration)=="number"and record.duration or nil
 			if seconds~=nil and seconds>0 then
@@ -856,7 +863,7 @@ function A.summarize(format,season,character,bound)
 					summary.draws=summary.draws+1
 				end
 				if format==nil then
-					verdicts[#verdicts+1]={at=A.recordEpoch(record),won=outcome=="win",
+					verdicts[#verdicts+1]={at=at,won=outcome=="win",
 						level=level,format=record.format}
 				end
 				if byHand then
@@ -1408,7 +1415,7 @@ function A.allOverview(season,character,bound,now)
 		if read and type(own)=="table"and own.rating~=nil then
 			row.rating=own.rating
 			row.peak=own.peak
-			if own.ratingFromReset~=true then
+			if not own.ratingFromReset then
 				row.from=own.ratingFrom
 			end
 			if type(A.ratingTierName)=="function"then
@@ -1532,7 +1539,8 @@ function A.classTokens(keys)
 		return out
 	end
 	for i=#db.matches,1,-1 do
-		local participants=type(db.matches[i])=="table"and db.matches[i].participants or nil
+		local record=db.matches[i]
+		local participants=type(record)=="table"and record.participants or nil
 		if type(participants)=="table"then
 			for key in pairs(need)do
 				local p=participants[key]
@@ -1552,9 +1560,10 @@ end
 
 local function className(token,stored)
 	local count=type(GetNumClasses)=="function"and GetNumClasses()or 0
-	if type(GetClassInfo)=="function"and type(count)=="number"then
+	local getClassInfo=GetClassInfo
+	if type(getClassInfo)=="function"and type(count)=="number"then
 		for classID=1,count do
-			local ok,name,held=pcall(GetClassInfo,classID)
+			local ok,name,held=pcall(getClassInfo,classID)
 			if ok and held==token and type(name)=="string"and name~=""then
 				return name
 			end
@@ -1567,7 +1576,7 @@ local function className(token,stored)
 end
 
 function A.duelClassTally(season,character,bound)
-	local rows,read={},{counted=0,skipped=0,undecided=0}
+	local rows,read={},{counted=0,skipped=0,drawn=0,undecided=0}
 	local db=A.db()
 	if not(db and type(db.matches)=="table")then
 		return rows,read
@@ -1586,6 +1595,8 @@ function A.duelClassTally(season,character,bound)
 				if key~=nil then
 					keys[key]=true
 				end
+			elseif outcome=="draw"then
+				read.drawn=read.drawn+1
 			else
 				read.undecided=read.undecided+1
 			end
@@ -1835,8 +1846,7 @@ function A.compShareText(row)
 	for i=1,#row.members do
 		local m=row.members[i]
 		if type(m)=="table"and type(m.share)=="number"then
-			parts[#parts+1]=("%s %d%%"):format(tostring(m.spec),
-				math.floor(m.share*100+0.5))
+			parts[#parts+1]=("%s %d%%"):format(tostring(m.spec),A.percentPoints(m.share))
 		end
 	end
 	if#parts==0 then
@@ -1883,7 +1893,67 @@ local function tallyRow(byKey,ranked,key,members)
 	return row
 end
 
-local function tallyRounds(record,byKey,ranked)
+local PAIR_PREFIX="pair:"
+
+local function enemyPairs(members)
+	if type(members)~="table"or#members<2 then
+		return nil,"short"
+	end
+	local healer,any={},false
+	for m=1,#members do
+		local member=members[m]
+		local heals=nil
+		if type(A.specHealer)=="function"then
+			heals=A.specHealer(member.classToken,member.spec)
+		end
+		if type(heals)~="boolean"then
+			return nil,"unreadable"
+		end
+		healer[m]=heals
+		any=any or heals
+	end
+	local out,made={},{}
+	for i=1,#members-1 do
+		for j=i+1,#members do
+			if not any or healer[i]or healer[j]then
+				local first,second=members[i],members[j]
+				if healer[j]and not healer[i]then
+					first,second=second,first
+				end
+				local key=("%s%s/%s+%s/%s"):format(PAIR_PREFIX,first.spec,tostring(first.classToken),
+					second.spec,tostring(second.classToken))
+				if not made[key]then
+					made[key]=true
+					out[#out+1]={key=key,members={first,second}}
+				end
+			end
+		end
+	end
+	return out,not any
+end
+
+local function sampleRows(byKey,ranked,key,members,byPair,counts)
+	if not byPair then
+		return{tallyRow(byKey,ranked,key,members)},{members}
+	end
+	local found,second=enemyPairs(members)
+	if found==nil then
+		counts[second]=(counts[second]or 0)+1
+		return nil
+	end
+	if second==true then
+		counts.healerless=counts.healerless+1
+	end
+	local rows,lists={},{}
+	for p=1,#found do
+		rows[p]=tallyRow(byKey,ranked,found[p].key,found[p].members)
+		rows[p].pair=true
+		lists[p]=found[p].members
+	end
+	return rows,lists
+end
+
+local function tallyRounds(record,byKey,ranked,byPair,counts)
 	local stored=type(record.rounds)=="table"and record.rounds or nil
 	if not stored or#stored==0 then
 		return 0,0,0
@@ -1897,13 +1967,7 @@ local function tallyRounds(record,byKey,ranked)
 	end
 	local previousEpoch=type(record.openedEpoch)=="number"and record.openedEpoch or nil
 
-	local outcomes=nil
-	if type(A.roundOutcomes)=="function"then
-		local ok,answered=pcall(A.roundOutcomes,record)
-		if ok then
-			outcomes=answered
-		end
-	end
+	local outcomes=solvedOutcomes(record)
 
 	local seen,missed,undecided=0,0,0
 	for i=1,#stored do
@@ -1925,36 +1989,39 @@ local function tallyRounds(record,byKey,ranked)
 		elseif type(won)~="boolean"then
 			undecided=undecided+1
 		else
-			local row=tallyRow(byKey,ranked,key,members)
-			row.games=row.games+1
-			row.rounds=row.rounds or{}
-			row.rounds[#row.rounds+1]={id=record.id,round=i,won=won}
-			row.ids=row.ids or{}
-			if row.ids[#row.ids]~=record.id then
-				row.ids[#row.ids+1]=record.id
-			end
-			if won==true then
-				row.wins=row.wins+1
-			else
-				row.losses=row.losses+1
-			end
-			if type(round.ratingPost)=="number"and type(previousRating)=="number"then
-				row.ratingDelta=row.ratingDelta+(round.ratingPost-previousRating)
-				row.ratingCount=row.ratingCount+1
-			end
-			if type(round.endedEpoch)=="number"and type(previousEpoch)=="number"then
-				local seconds=round.endedEpoch-previousEpoch
-				if seconds>=0 then
-					row.durationTotal=row.durationTotal+seconds
-					row.durationCount=row.durationCount+1
+			local rows=sampleRows(byKey,ranked,key,members,byPair,counts)or{}
+			for r=1,#rows do
+				local row=rows[r]
+				row.games=row.games+1
+				row.rounds=row.rounds or{}
+				row.rounds[#row.rounds+1]={id=record.id,round=i,won=won}
+				row.ids=row.ids or{}
+				if row.ids[#row.ids]~=record.id then
+					row.ids[#row.ids+1]=record.id
+				end
+				if won then
+					row.wins=row.wins+1
+				else
+					row.losses=row.losses+1
+				end
+				if type(round.ratingPost)=="number"and type(previousRating)=="number"then
+					row.ratingDelta=row.ratingDelta+(round.ratingPost-previousRating)
+					row.ratingCount=row.ratingCount+1
+				end
+				if type(round.endedEpoch)=="number"and type(previousEpoch)=="number"then
+					local seconds=round.endedEpoch-previousEpoch
+					if seconds>=0 then
+						row.durationTotal=row.durationTotal+seconds
+						row.durationCount=row.durationCount+1
+					end
 				end
 			end
 		end
 
-		if type(round)=="table"and type(round.ratingPost)=="number"then
-			previousRating=round.ratingPost
-		end
 		if type(round)=="table"then
+			if type(round.ratingPost)=="number"then
+				previousRating=round.ratingPost
+			end
 			if type(round.endedEpoch)=="number"then
 				previousEpoch=round.endedEpoch
 			end
@@ -1963,17 +2030,18 @@ local function tallyRounds(record,byKey,ranked)
 	return seen,missed,undecided
 end
 
-function A.compTally(format,season,character,bound)
+local function tallyComps(format,season,character,bound,byPair)
 	local rows,skipped,belowFloor,considered,undecided,rankedCount={},0,0,0,0,0
 	local allDrawn=0
+	local counts={unreadable=0,short=0,healerless=0}
 
 	if not A.compFormat(format)then
-		return rows,skipped,belowFloor,considered,undecided,rankedCount,allDrawn
+		return rows,skipped,belowFloor,considered,undecided,rankedCount,allDrawn,0,0
 	end
 
 	local db=A.db()
 	if not(db and type(db.matches)=="table")then
-		return rows,skipped,belowFloor,considered,undecided,rankedCount,allDrawn
+		return rows,skipped,belowFloor,considered,undecided,rankedCount,allDrawn,0,0
 	end
 
 	local roundFormat=A.compRounds(format)
@@ -1985,7 +2053,7 @@ function A.compTally(format,season,character,bound)
 			and A.recordedBy(record,character)
 			and A.recordSince(record,bound)
 		if held and record.format==format and roundFormat then
-			local seen,missed,unrated=tallyRounds(record,byKey,ranked)
+			local seen,missed,unrated=tallyRounds(record,byKey,ranked,byPair,counts)
 			considered=considered+seen
 			skipped=skipped+missed
 			undecided=undecided+unrated
@@ -1998,37 +2066,41 @@ function A.compTally(format,season,character,bound)
 			elseif not decided then
 				undecided=undecided+1
 			else
-				local row=tallyRow(byKey,ranked,key,members)
-
-				row.games=row.games+1
-				row.ids=row.ids or{}
-				row.ids[#row.ids+1]=record.id
-				if record.result=="win"then
-					row.wins=row.wins+1
-				elseif record.result=="draw"then
-					row.draws=row.draws+1
-				else
-					row.losses=row.losses+1
-				end
-
-				for m=1,#members do
-					local member=members[m]
-					local d=type(member)=="table"and member.damage or nil
-					if type(d)=="number"then
-						row.memberDamage[m]=(row.memberDamage[m]or 0)+d
-						row.damageTotal=row.damageTotal+d
-					end
-				end
-
+				local sampled,lists=sampleRows(byKey,ranked,key,members,byPair,counts)
+				sampled,lists=sampled or{},lists or{}
 				local mine=ownRow(record)
-				if mine and type(mine.ratingChange)=="number"
-					and not(type(A.ladderSilent)=="function"and A.ladderSilent(mine))then
-					row.ratingDelta=row.ratingDelta+mine.ratingChange
-					row.ratingCount=row.ratingCount+1
-				end
-				if type(record.duration)=="number"then
-					row.durationTotal=row.durationTotal+record.duration
-					row.durationCount=row.durationCount+1
+				for r=1,#sampled do
+					local row,rowMembers=sampled[r],lists[r]or{}
+
+					row.games=row.games+1
+					row.ids=row.ids or{}
+					row.ids[#row.ids+1]=record.id
+					if record.result=="win"then
+						row.wins=row.wins+1
+					elseif record.result=="draw"then
+						row.draws=row.draws+1
+					else
+						row.losses=row.losses+1
+					end
+
+					for m=1,#rowMembers do
+						local member=rowMembers[m]
+						local d=type(member)=="table"and member.damage or nil
+						if type(d)=="number"then
+							row.memberDamage[m]=(row.memberDamage[m]or 0)+d
+							row.damageTotal=row.damageTotal+d
+						end
+					end
+
+					if mine and type(mine.ratingChange)=="number"
+						and not(type(A.ladderSilent)=="function"and A.ladderSilent(mine))then
+						row.ratingDelta=row.ratingDelta+mine.ratingChange
+						row.ratingCount=row.ratingCount+1
+					end
+					if type(record.duration)=="number"then
+						row.durationTotal=row.durationTotal+record.duration
+						row.durationCount=row.durationCount+1
+					end
 				end
 			end
 		end
@@ -2072,7 +2144,7 @@ function A.compTally(format,season,character,bound)
 
 	table.sort(rows,function(a,b)
 		if a.ranked~=b.ranked then
-			return a.ranked==true
+			return a.ranked
 		end
 		if not a.ranked then
 			if a.games~=b.games then
@@ -2095,7 +2167,96 @@ function A.compTally(format,season,character,bound)
 		end
 		return a.order<b.order
 	end)
+	skipped=skipped+counts.unreadable+counts.short
+	return rows,skipped,belowFloor,considered,undecided,rankedCount,allDrawn,
+		counts.unreadable,counts.healerless
+end
+
+function A.compTally(format,season,character,bound)
+	local rows,skipped,belowFloor,considered,undecided,rankedCount,allDrawn=
+		tallyComps(format,season,character,bound,false)
 	return rows,skipped,belowFloor,considered,undecided,rankedCount,allDrawn
+end
+
+function A.compPairTally(format,season,character,bound)
+	return tallyComps(format,season,character,bound,true)
+end
+
+function A.compPairRowLines(row)
+	local lines=type(A.compRowLines)=="function"and A.compRowLines(row)or{}
+	for i=1,#lines do
+		local line=lines[i]
+		if line.kind=="metGridHead"then
+			line.foes=true
+		elseif line.kind=="specMet"and type(line.grid)=="table"then
+			local record=type(A.match)=="function"and A.match(line.id)or nil
+			local members=nil
+			local roundIndex=tonumber(tostring(line.grid.round or""):match("^R(%d+)$"))
+			if type(record)=="table"and roundIndex~=nil and type(record.rounds)=="table"then
+				local round=record.rounds[roundIndex]
+				if type(round)=="table"then
+					local _,held=A.roundCompKey(record,round)
+					members=held
+				end
+			elseif type(record)=="table"then
+				local _,held=A.compKey(record)
+				members=held
+			end
+			line.grid.foes=members or{}
+			if type(members)=="table"then
+				line.text=("%s   %s"):format(line.text,A.compText(members)or"")
+			end
+		end
+	end
+	return lines
+end
+
+function A.compPairAnswer(answer,format,season,character,bound)
+	if type(answer)~="table"then
+		return answer,0,0
+	end
+	local out={}
+	for key,value in pairs(answer)do
+		out[key]=value
+	end
+	local ok,rows,_,_,_,_,_,allDrawn,unreadable,healerless=
+		pcall(A.paintWalk,"compPairTally",format,season,character,bound)
+	out.rows,out.under={},{}
+	out.pairs=true
+	out.noun={"pair","pairs"}
+	out.floorUnit=A.compRounds(format)and"rounds"or"decided matches"
+	out.allDrawn=0
+	out.pairsDrawn=ok and tonumber(allDrawn)or 0
+	if not ok or type(rows)~="table"then
+		return out,0,0
+	end
+	for i=1,#rows do
+		local row=rows[i]
+		local names={}
+		for m=1,#(row.members or{})do
+			names[m]=A.chipText(row.members[m])
+		end
+		local entry={key=row.key,name=table.concat(names," + "),
+			met=(row.wins or 0)+(row.losses or 0),wins=row.wins,losses=row.losses,
+			drawn=row.draws or 0,winRate=row.winRate,ids=row.ids,
+			ranked=row.ranked~=false,tally=row}
+		if entry.ranked then
+			out.rows[#out.rows+1]=entry
+		else
+			out.under[#out.under+1]=entry
+		end
+	end
+	out.ranked=#out.rows
+	return out,tonumber(unreadable)or 0,tonumber(healerless)or 0
+end
+
+function A.compPairDrawnText(format,count)
+	count=tonumber(count)or 0
+	if count<=0 then
+		return nil
+	end
+	return("%d pair%s drawn in every %s, not ranked"):format(count,count==1 and""or"s",
+		A.compRounds(format)and"round"or"game")
 end
 
 function A.compText(members)
@@ -2112,6 +2273,30 @@ function A.compText(members)
 		parts[i]=who
 	end
 	return table.concat(parts," + ")
+end
+
+local function decidedRate(row)
+	local decided=row.wins+row.losses
+	if decided==0 then
+		return nil
+	end
+	return row.wins/decided
+end
+
+local function countSpec(byKey,order,side,key,spec,p,won)
+	local row=byKey[side][key]
+	if not row then
+		row={key=key,spec=spec,classToken=p.classToken,class=p.class,
+			rounds=0,wins=0,losses=0,order=#order[side]+1}
+		byKey[side][key]=row
+		order[side][#order[side]+1]=row
+	end
+	row.rounds=row.rounds+1
+	if won then
+		row.wins=row.wins+1
+	else
+		row.losses=row.losses+1
+	end
 end
 
 function A.specTally(format,season,character,bound,comp)
@@ -2149,19 +2334,7 @@ function A.specTally(format,season,character,bound,comp)
 				local key=spec.."/"..tostring(p.classToken)
 				if not seen[key]then
 					seen[key]=true
-					local row=byKey[side][key]
-					if not row then
-						row={key=key,spec=spec,classToken=p.classToken,class=p.class,
-							rounds=0,wins=0,losses=0,order=#order[side]+1}
-						byKey[side][key]=row
-						order[side][#order[side]+1]=row
-					end
-					row.rounds=row.rounds+1
-					if won==true then
-						row.wins=row.wins+1
-					elseif won==false then
-						row.losses=row.losses+1
-					end
+					countSpec(byKey,order,side,key,spec,p,won)
 				end
 			end
 		end
@@ -2174,13 +2347,7 @@ function A.specTally(format,season,character,bound,comp)
 			and A.recordedBy(record,character)
 			and A.recordSince(record,bound)
 		if held and record.format==format and type(record.rounds)=="table"then
-			local outcomes=nil
-			if type(A.roundOutcomes)=="function"then
-				local answered,got=pcall(A.roundOutcomes,record)
-				if answered then
-					outcomes=got
-				end
-			end
+			local outcomes=solvedOutcomes(record)
 
 			for r=1,#record.rounds do
 				local round=record.rounds[r]
@@ -2222,17 +2389,9 @@ function A.specTally(format,season,character,bound,comp)
 		end
 	end
 
-	local function rate(row)
-		local decided=row.wins+row.losses
-		if decided==0 then
-			return nil
-		end
-		return row.wins/decided
-	end
-
 	for _,list in ipairs({against,alongside})do
 		for i=1,#list do
-			list[i].winRate=rate(list[i])
+			list[i].winRate=decidedRate(list[i])
 		end
 	end
 
@@ -2304,19 +2463,7 @@ function A.specMatchTally(format,season,character,bound)
 				local key=spec.."/"..tostring(p.classToken)
 				if not seen[key]then
 					seen[key]=true
-					local row=byKey[side][key]
-					if not row then
-						row={key=key,spec=spec,classToken=p.classToken,class=p.class,
-							rounds=0,wins=0,losses=0,order=#order[side]+1}
-						byKey[side][key]=row
-						order[side][#order[side]+1]=row
-					end
-					row.rounds=row.rounds+1
-					if won then
-						row.wins=row.wins+1
-					else
-						row.losses=row.losses+1
-					end
+					countSpec(byKey,order,side,key,spec,p,won)
 					local met=metIn[key]
 					if not met then
 						met={ids={},seen={}}
@@ -2454,13 +2601,7 @@ function A.compRoundRows(format,key,season,character,bound)
 		if type(record)=="table"and record.format==format and type(record.rounds)=="table"
 			and(season==nil or A.recordSeason(record)==season)
 			and A.recordedBy(record,character)and A.recordSince(record,bound)then
-			local outcomes=nil
-			if type(A.roundOutcomes)=="function"then
-				local answered,got=pcall(A.roundOutcomes,record)
-				if answered then
-					outcomes=got
-				end
-			end
+			local outcomes=solvedOutcomes(record)
 
 			for r=1,#record.rounds do
 				local round=record.rounds[r]
@@ -2607,15 +2748,22 @@ function A.specSortOpens(key)
 	return true
 end
 
+local function listCopy(rows)
+	local out={}
+	if type(rows)=="table"then
+		for i=1,#rows do
+			out[i]=rows[i]
+		end
+	end
+	return out
+end
+
 function A.specSorted(rows,key,ascending)
 	local sort=SPEC_SORTS[key]or SPEC_SORTS[SPEC_SORT_DEFAULT]
 	local up=ascending==true
-	local out={}
+	local out=listCopy(rows)
 	if type(rows)~="table"then
 		return out
-	end
-	for i=1,#rows do
-		out[i]=rows[i]
 	end
 
 	local function valueOf(row)
@@ -2917,29 +3065,23 @@ function A.specPaneSentence(row)
 	local floor=A.specCardFloor()
 	local against,alongside=row.against,row.alongside
 	local said=""
-	if against and alongside and against.winRate~=nil and alongside.winRate~=nil then
-		if against.rounds>=floor and alongside.rounds>=floor then
-			local points=A.swingPoints(against,alongside)
-			if points>0 then
-				said=("Your rounds go %d %s better with it on your side than with it against you.")
-					:format(points,points==1 and"point"or"points")
-			elseif points<0 then
-				said=("Your rounds go %d %s better with it against you than on your side.")
-					:format(-points,points==-1 and"point"or"points")
-			else
-				said="Your rounds go the same with it on your side as with it against you."
-			end
+	if against and alongside and against.winRate~=nil and alongside.winRate~=nil
+		and against.rounds>=floor and alongside.rounds>=floor then
+		local points=A.swingPoints(against,alongside)
+		if points>0 then
+			said=("Your rounds go %d %s better with it on your side than with it against you.")
+				:format(points,points==1 and"point"or"points")
+		elseif points<0 then
+			said=("Your rounds go %d %s better with it against you than on your side.")
+				:format(-points,points==-1 and"point"or"points")
+		else
+			said="Your rounds go the same with it on your side as with it against you."
 		end
 	end
 	return said
 end
 
-function A.matchRowLook(id)
-	local record=type(A.match)=="function"and A.match(id)or nil
-	if type(record)~="table"then
-		return nil
-	end
-	local columns=A.flatRowColumns(record.format,{record})
+local function keyedCells(record,columns)
 	local cells=type(columns)=="table"and A.rowColumnCells(record,record.format,nil,columns)or nil
 	local held={}
 	if type(cells)=="table"then
@@ -2947,6 +3089,15 @@ function A.matchRowLook(id)
 			held[columns[c].key]=cells[c]
 		end
 	end
+	return held
+end
+
+function A.matchRowLook(id)
+	local record=type(A.match)=="function"and A.match(id)or nil
+	if type(record)~="table"then
+		return nil
+	end
+	local held=keyedCells(record,A.flatRowColumns(record.format,{record}))
 	if held.day==nil then
 		local stamp=A.flatRowCells(record,nil,{{key="day"}})
 		held.day=type(stamp)=="table"and stamp[1]or nil
@@ -2991,15 +3142,7 @@ function A.matchLineText(id)
 	if type(record)~="table"then
 		return nil
 	end
-	local columns=A.rowColumns(record.format,{record})
-	local cells=type(columns)=="table"and A.rowColumnCells(record,record.format,nil,columns)
-		or nil
-	local held={}
-	if type(cells)=="table"then
-		for c=1,#columns do
-			held[columns[c].key]=cells[c]
-		end
-	end
+	local held=keyedCells(record,A.rowColumns(record.format,{record}))
 	local parts={("#%s"):format(tostring(record.id))}
 	for _,key in ipairs({"map","result"})do
 		if type(held[key])=="string"and held[key]~=""then
@@ -3176,14 +3319,6 @@ function A.specElements(rows)
 	return out
 end
 
-local function lobbyRate(side)
-	local decided=side.wins+side.losses
-	if decided==0 then
-		return nil
-	end
-	return side.wins/decided
-end
-
 function A.lobbyTally(record)
 	local rows,byGuid={},{}
 	if type(record)~="table"then
@@ -3277,8 +3412,8 @@ function A.lobbyTally(record)
 
 	for i=1,#rows do
 		local row=rows[i]
-		row.with.winRate=lobbyRate(row.with)
-		row.against.winRate=lobbyRate(row.against)
+		row.with.winRate=decidedRate(row.with)
+		row.against.winRate=decidedRate(row.against)
 		row.swing=A.lobbySwing(row)
 	end
 
@@ -3370,12 +3505,9 @@ end
 function A.lobbySorted(rows,key,ascending)
 	local sort=LOBBY_SORTS[key]or LOBBY_SORTS[LOBBY_SORT_DEFAULT]
 	local up=ascending==true
-	local out={}
+	local out=listCopy(rows)
 	if type(rows)~="table"then
 		return out
-	end
-	for i=1,#rows do
-		out[i]=rows[i]
 	end
 
 	local function reading(row)
@@ -3596,10 +3728,9 @@ function A.lobbyRows(record,sort,ascending,columns,joined)
 		end
 
 		local meter=nil
-		local lanes=type(columns)=="table"and columns or{}
 		if type(A.roundMeterLines)=="function"and type(row.guid)=="string"then
-			for c=1,#lanes do
-				local round=lanes[c].lane=="round"and lanes[c].round or nil
+			for c=1,#columns do
+				local round=columns[c].lane=="round"and columns[c].round or nil
 				local lines=round and A.roundMeterLines(record,row.guid,round)or nil
 				if lines and round then
 					local held=meter or{}
@@ -3905,6 +4036,19 @@ function A.compDivider(format)
 		"not ranked, most met first"
 end
 
+local function compRowLine(lines,format,row,i,rankedCount,unknown,unit)
+	if i==rankedCount+1 then
+		local key,clause=A.compDivider(format)
+		lines[#lines+1]=("  %s: %s"):format(key:lower(),clause)
+	end
+	local rate=A.percentText(row.winRate)or"no result"
+	local delta=A.signedText(row.ratingDelta)or(A.movesRating(format)and"not read"or"none")
+	local length=row.avgDuration and A.clockText(row.avgDuration)or"unknown"
+	lines[#lines+1]=("  %d. %s -- %d %ss, %s, %s, rating %s, avg %s"):format(
+		i,A.compText(row.members)or unknown,row.games,unit,
+		A.compRecordText(row)or"-",rate,delta,length)
+end
+
 function A.compLines(format,season,character,bound)
 	local rows,skipped,belowFloor,considered,undecided,rankedCount,allDrawn=
 		A.compTally(format,season,character,bound)
@@ -3918,18 +4062,8 @@ function A.compLines(format,season,character,bound)
 	}
 
 	for i=1,#rows do
-		local row=rows[i]
-		if i==rankedCount+1 then
-			local key,clause=A.compDivider(format)
-			lines[#lines+1]=("  %s: %s"):format(key:lower(),clause)
-		end
-		local rate=row.winRate and("%d%%"):format(math.floor(row.winRate*100+0.5))or"no result"
-		local delta=A.signedText(row.ratingDelta)or(A.movesRating(format)and"not read"or"none")
-		local length=row.avgDuration and A.clockText(row.avgDuration)or"unknown"
-		lines[#lines+1]=("  %d. %s -- %d %ss, %s, %s, rating %s, avg %s"):format(
-			i,A.compText(row.members)or"unknown comp",
-			row.games,A.compRounds(format)and"round"or"game",
-			A.compRecordText(row)or"-",rate,delta,length)
+		compRowLine(lines,format,rows[i],i,rankedCount,"unknown comp",
+			A.compRounds(format)and"round"or"game")
 	end
 
 	local unlisted=belowFloor-(#rows-rankedCount)
@@ -3962,6 +4096,51 @@ function A.compLines(format,season,character,bound)
 	if undecided>0 then
 		lines[#lines+1]=A.compUnratedLine(format,undecided)
 	end
+	return lines
+end
+
+function A.compPairLines(format,season,character,bound)
+	local rows,skipped,belowFloor,considered,undecided,rankedCount,allDrawn,unreadable,healerless=
+		A.compPairTally(format,season,character,bound)
+	if#rows==0 and considered==0 then
+		return{}
+	end
+	local unit=A.compRounds(format)and"round"or"game"
+	local listFloor=A.metric("compListGames")
+	local lines={
+		("%s: the enemy pairs you faced in at least %d %ss%s"):format(A.formatLabel(format),listFloor,
+			unit,rankedCount==0 and""or", worst first"),
+	}
+	for i=1,#rows do
+		compRowLine(lines,format,rows[i],i,rankedCount,"unknown pair",unit)
+	end
+	local unlisted=belowFloor-(#rows-rankedCount)
+	if unlisted>0 then
+		lines[#lines+1]=("  %d pair%s met fewer than %d %ss, not listed"):format(
+			unlisted,unlisted==1 and""or"s",listFloor,unit)
+	end
+	local drawnText=A.compPairDrawnText(format,allDrawn)
+	if drawnText~=nil then
+		lines[#lines+1]="  "..drawnText
+	end
+	unreadable,healerless=tonumber(unreadable)or 0,tonumber(healerless)or 0
+	if unreadable>0 then
+		lines[#lines+1]=("  %d %s%s gave no pair: a member's spec has no ID in the client's spec list"):format(
+			unreadable,A.compUnit(format),unreadable==1 and""or"s")
+	end
+	if skipped-unreadable>0 then
+		lines[#lines+1]=("  %d %s%s named no enemy pair"):format(skipped-unreadable,
+			A.compUnit(format),skipped-unreadable==1 and""or"s")
+	end
+	if healerless>0 then
+		lines[#lines+1]=("  %d %s%s met a side with no healer, which adds to every one of its pairs"):format(
+			healerless,A.compUnit(format),healerless==1 and""or"s")
+	end
+	if undecided>0 then
+		lines[#lines+1]="  "..A.compUnratedLine(format,undecided)
+	end
+	lines[#lines+1]=("  each %s adds to one or more pairs, so the pairs' counts do not add up to "
+		.."the %ss played"):format(unit,unit)
 	return lines
 end
 
@@ -4303,7 +4482,8 @@ function A.readingLines(summary,notRated,pane)
 	end
 
 	local pair=A.winRecordText(summary,summary.format)
-	if pair~=nil and select(4,A.winRecord(summary))~=nil then
+	local rateWins,rateLosses,_,rate=A.winRecord(summary)
+	if pair~=nil and rate~=nil then
 		local text
 		if summary.decided<summary.matches then
 			text=("%s over %d of %d matches"):format(pair,summary.decided,summary.matches)
@@ -4317,7 +4497,7 @@ function A.readingLines(summary,notRated,pane)
 				byHand==1 and"one"or tostring(byHand),
 				byHand==1 and"result"or"results")
 		end
-		put("WIN RATE",text,A.percentText(select(4,A.winRecord(summary))))
+		put("WIN RATE",text,A.percentText(rate))
 	end
 
 	if summary.factions~=nil and(summary.factionDecided or 0)>0 then
@@ -4337,7 +4517,6 @@ function A.readingLines(summary,notRated,pane)
 		end
 		local text=table.concat(parts,FACTION_JOIN)
 		local denominator
-		local rateWins,rateLosses=A.winRecord(summary)
 		local bgWins,bgLosses=A.winRecord({wins=summary.factionWins or 0,decided=summary.factionDecided,
 			draws=summary.factionDraws or 0})
 		local covered=(bgWins or 0)+(bgLosses or 0)
@@ -4359,7 +4538,7 @@ function A.readingLines(summary,notRated,pane)
 		if lobbies>0 and shuffles>lobbies then
 			text=text..(" over %d of %d matches"):format(lobbies,shuffles)
 		end
-		if(summary.roundLobbies or 0)>0 then
+		if lobbies>0 then
 			local bar
 			if type(summary.roundThreshold)=="number"then
 				bar=ROUND_ORDINAL[summary.roundThreshold]

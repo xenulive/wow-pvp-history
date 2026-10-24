@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.7
+-- WowPvpHistory 0.70.16
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -208,11 +208,7 @@ end
 local resetArmed=false
 
 function A.openResetConfirm()
-	local said={}
-	local function say(line)
-		said[#said+1]=line
-		A.say(line)
-	end
+	local said,say=A.chatCollector()
 
 	local before=A.resetPreview()
 	if not before then

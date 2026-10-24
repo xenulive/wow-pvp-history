@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.7
+-- WowPvpHistory 0.70.16
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -19,14 +19,21 @@ function A.bandVerdict(band)
 		return false,"empty"
 	end
 
-	local contents=type(band.contents)=="number"and band.contents or 0
+	local contents=band.contents
 	local minimum=type(band.minimum)=="number"and band.minimum or 1
 	if minimum<0 then
 		minimum=0
 	end
 
-	if band.heading==nil or band.heading==false then
+	if not band.heading then
 		return true,"unnamed"
+	end
+
+	if type(contents)~="number"then
+		if band.folded==true then
+			return false,"folded"
+		end
+		return true,"unmeasured"
 	end
 
 	if contents<minimum then
@@ -476,12 +483,10 @@ function A.notePlacedRows(name,rows)
 	if type(name)~="string"or name==""or type(rows)~="table"then
 		return false
 	end
-	local count=0
 	for i=1,#rows do
 		A.notePlacedRow(("%s %d"):format(name,i),rows[i])
-		count=i
 	end
-	local i=count+1
+	local i=#rows+1
 	while placed[("%s %d"):format(name,i)]~=nil do
 		placed[("%s %d"):format(name,i)]=nil
 		i=i+1

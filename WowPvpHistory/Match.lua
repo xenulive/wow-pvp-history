@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.7
+-- WowPvpHistory 0.70.16
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -142,8 +142,9 @@ end
 
 local function sampleSeason(record)
 	local arena,display=A.arenaSeasonNow(),A.displaySeasonNow()
-	local stored=A.put(record,"season",A.seasonNow())
-	A.put(record,"gameSeason",A.gameSeasonNow())
+	local game,season=A.seasonPairOf(arena,display)
+	local stored=A.put(record,"season",season)
+	A.put(record,"gameSeason",game)
 	local fields={arena=arena,season=display}
 	if stored then
 		fields.source="client"

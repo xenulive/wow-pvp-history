@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.7
+-- WowPvpHistory 0.70.16
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -102,18 +102,6 @@ local function xorByte(a,b)
 	return row[b]
 end
 
-local HEX="0123456789abcdef"
-
-local function hex8(value)
-	local out={}
-	for i=8,1,-1 do
-		local nibble=value%16
-		out[i]=HEX:sub(nibble+1,nibble+1)
-		value=(value-nibble)/16
-	end
-	return table.concat(out)
-end
-
 local function fnv1a(text)
 	local hash=FNV_OFFSET
 	for i=1,#text do
@@ -123,7 +111,7 @@ local function fnv1a(text)
 		local lo=hash%65536
 		hash=(((hi*FNV_PRIME)%65536)*65536+lo*FNV_PRIME)%WORD
 	end
-	return hex8(hash)
+	return A.hex8(hash)
 end
 
 function A.csvChecksum(text)
@@ -895,26 +883,24 @@ local function buildParts(db,filter)
 	local list,leftOut=selected(db,filter)
 	for i=1,#list do
 		local record=list[i]
-		do
-			local rows={}
-			matchRows(record,rows)
+		local rows={}
+		matchRows(record,rows)
 
-			local lines,cost={},0
-			for j=1,#rows do
-				lines[j]=renderRow(rows[j])
-				cost=cost+#lines[j]+1
-			end
-
-			if not current or(current.bytes+cost>PART_LIMIT and#current.rows>0)then
-				open()
-			end
-			for j=1,#rows do
-				current.rows[#current.rows+1]=rows[j]
-				current.lines[#current.lines+1]=lines[j]
-			end
-			current.matches=current.matches+1
-			current.bytes=current.bytes+cost
+		local lines,cost={},0
+		for j=1,#rows do
+			lines[j]=renderRow(rows[j])
+			cost=cost+#lines[j]+1
 		end
+
+		if not current or(current.bytes+cost>PART_LIMIT and#current.rows>0)then
+			open()
+		end
+		for j=1,#rows do
+			current.rows[#current.rows+1]=rows[j]
+			current.lines[#current.lines+1]=lines[j]
+		end
+		current.matches=current.matches+1
+		current.bytes=current.bytes+cost
 	end
 
 	if#parts==0 then
@@ -1334,10 +1320,16 @@ function A.csvImport(text,forced)
 				current,currentKey,currentRow=record,key,row
 				current.participants={}
 			end
+			local placed=current~=nil
 			if current and guid~=nil then
-				current.participants[guid]=participant
+				if current.participants[guid]~=nil then
+					refused=refused+1
+					placed=false
+				else
+					current.participants[guid]=participant
+				end
 			end
-			if current then
+			if current and placed then
 				droppedBy[current]=(droppedBy[current]or 0)+(dropped or 0)
 			end
 		end
@@ -1356,10 +1348,11 @@ function A.csvImport(text,forced)
 			added==1 and"record"or"records",tostring(commitError)))
 	end
 
-	local moved
+	local moved,indexRebuilt
 	if added>0 then
 		moved=A.orderByCompletion(db.matches)
 		local rebuilt,rebuildError=pcall(A.rebuildIndex)
+		indexRebuilt=rebuilt
 		if not rebuilt then
 			A.noteError(rebuildError,"csv-index")
 			A.say(("the records are stored and the player index was not rebuilt: %s. /pvph rebuild")
@@ -1370,7 +1363,7 @@ function A.csvImport(text,forced)
 	end
 
 	A.trace("csv-import",{
-		state=forced and"forced"or"applied",
+		state=not committed and"stopped"or forced and"forced"or"applied",
 		rows=preview.dataRows,
 		n=added,
 		skipped=skipped,
@@ -1386,39 +1379,13 @@ function A.csvImport(text,forced)
 
 	return{added=added,skipped=skipped,refused=refused,roundsDropped=roundsDropped,
 		resultDropped=resultDropped,cellsDropped=cellsDropped,fixtureDropped=fixtureDropped,
-		stopped=not committed and tostring(commitError)or nil}
+		stopped=not committed and tostring(commitError)or nil,indexRebuilt=indexRebuilt}
 end
 
 local sheet
 
 local function buildFrame()
-	local frame=CreateFrame("Frame","WowPvpHistoryCsvFrame",UIParent,
-		"BasicFrameTemplateWithInset")
-	frame:SetSize(A.metric("sheetWidth"),A.metric("sheetHeight"))
-	frame:SetPoint("CENTER")
-	A.registerPlacedWindow(frame,"CENTER",0,0)
-	frame:SetFrameStrata("DIALOG")
-	frame:SetClampedToScreen(true)
-	frame:SetMovable(true)
-	frame:EnableMouse(true)
-	frame:RegisterForDrag("LeftButton")
-	frame:SetScript("OnDragStart",frame.StartMoving)
-	frame:SetScript("OnDragStop",function(self)
-		A.stopDrag(self)
-	end)
-	frame:Hide()
-
-	local title=A.windowTitle(frame)
-	title:SetPoint("TOP",frame,"TOP",0,-6)
-	A.style(title,"heading","bright")
-	frame.title=title
-
-	local note=frame:CreateFontString(nil,"ARTWORK","GameFontHighlightSmall")
-	note:SetPoint("TOPLEFT",frame,"TOPLEFT",16,-34)
-	note:SetPoint("TOPRIGHT",frame,"TOPRIGHT",-16,-34)
-	note:SetJustifyH("LEFT")
-	A.style(note,"bodyText","text")
-	frame.note=note
+	local frame,note=A.buildCopyWindow("WowPvpHistoryCsvFrame","sheetWidth","sheetHeight")
 
 	local scroll=CreateFrame("ScrollFrame","WowPvpHistoryCsvScroll",frame,
 		"ScrollFrameTemplate")
@@ -1463,35 +1430,6 @@ function A.showCsvSheet(title,note,text,confirmText,onConfirm)
 		return false
 	end
 
-	local ok=pcall(function()
-		frame.title:SetText(title)
-		frame.note:SetText(note)
-		frame.box:SetText(text or"")
-
-		if onConfirm then
-			frame.confirm:SetText(confirmText)
-			A.fitControl(frame.confirm,A.metric("sheetButton"))
-			frame.confirm:SetScript("OnClick",function()
-				local clicked,done=pcall(onConfirm,frame.box:GetText())
-				if not clicked then
-					A.say("the CSV window failed: "..tostring(done))
-					return
-				end
-				if done then
-					frame:Hide()
-				end
-			end)
-			frame.confirm:Show()
-		else
-			frame.confirm:Hide()
-		end
-
-		frame:Show()
-		frame.box:SetFocus()
-		if text then
-			frame.box:HighlightText()
-		end
-	end)
-
-	return ok
+	return A.showCopyWindow(frame,"sheetButton","the CSV window failed: ",title,note,text,
+		confirmText,onConfirm)
 end

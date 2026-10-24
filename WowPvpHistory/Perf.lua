@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.7
+-- WowPvpHistory 0.70.16
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -40,10 +40,7 @@ local function metric(api,name)
 		return nil
 	end
 	local ok,value=pcall(api.GetAddOnMetric,ADDON,id)
-	if not ok or type(value)~="number"or not A.canRead(value)then
-		return nil
-	end
-	if value~=value then
+	if not ok or type(value)~="number"or not A.canRead(value)or value~=value then
 		return nil
 	end
 	return value

@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.7
+-- WowPvpHistory 0.70.16
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -54,30 +54,6 @@ function A.menuTagCount()
 	return#TAGS
 end
 
-local function guarded(fn,...)
-	if type(fn)~="function"then
-		return nil
-	end
-	local ok,res=pcall(fn,...)
-	if not ok then
-		return nil
-	end
-	return res
-end
-
-local function readable(value)
-	if type(value)~="string"then
-		return nil
-	end
-	if not A.canRead(value)then
-		return nil
-	end
-	if value==""then
-		return nil
-	end
-	return value
-end
-
 local function resolve(contextData)
 	if type(contextData)~="table"then
 		return nil,nil
@@ -85,14 +61,14 @@ local function resolve(contextData)
 
 	local location=contextData.playerLocation
 	if type(location)=="table"then
-		local guid=readable(location.guid)
+		local guid=A.readableString(location.guid)
 		if guid then
 			return guid,"location"
 		end
 
 		local line=location.chatLineID
 		if A.canRead(line)then
-			local sender=readable(guarded(
+			local sender=A.readableString(A.guardedCall(
 				C_ChatInfo and C_ChatInfo.GetChatLineSenderGUID,line))
 			if sender then
 				return sender,"chatline"
@@ -102,7 +78,7 @@ local function resolve(contextData)
 
 	local unit=contextData.unit
 	if A.canRead(unit)then
-		local guid=readable(guarded(UnitGUID,unit))
+		local guid=A.readableString(A.guardedCall(UnitGUID,unit))
 		if guid then
 			return guid,"unit"
 		end
@@ -122,12 +98,12 @@ function A.clientPlayerName(guid)
 		return nil
 	end
 
-	local name=readable(rawName)
+	local name=A.readableString(rawName)
 	if not name then
 		return nil
 	end
 
-	local realm=readable(rawRealm)
+	local realm=A.readableString(rawRealm)
 	if not realm then
 		return name
 	end

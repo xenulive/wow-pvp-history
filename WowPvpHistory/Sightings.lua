@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.7
+-- WowPvpHistory 0.70.16
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -57,28 +57,17 @@ function A.setSight(enabled)
 	return true
 end
 
-local function guarded(fn,...)
-	if type(fn)~="function"then
-		return nil
-	end
-	local ok,res=pcall(fn,...)
-	if not ok then
-		return nil
-	end
-	return res
-end
-
 local function plateFrame(token)
 	local plates=C_NamePlate
-	return guarded(plates and plates.GetNamePlateForUnit,token)
+	return A.guardedCall(plates and plates.GetNamePlateForUnit,token)
 end
 
 local function clock()
-	local now=guarded(GetTime)
+	local now=A.guardedCall(GetTime)
 	if type(now)=="number"then
 		return now
 	end
-	return guarded(time)or 0
+	return A.guardedCall(time)or 0
 end
 
 local function markedCount()
@@ -132,19 +121,19 @@ local function examine(token,source)
 		return nil
 	end
 
-	local isPlayer=guarded(UnitIsPlayer,token)
+	local isPlayer=A.guardedCall(UnitIsPlayer,token)
 	if not(A.canRead(isPlayer)and isPlayer==true)then
 		traceSight("refused","not-player",source)
 		return nil
 	end
 
-	local guid=guarded(UnitGUID,token)
+	local guid=A.guardedCall(UnitGUID,token)
 	if not(type(guid)=="string"and A.canRead(guid))then
 		traceSight("refused","secret",source)
 		return nil
 	end
 
-	local own=guarded(UnitGUID,"player")
+	local own=A.guardedCall(UnitGUID,"player")
 	if type(own)=="string"and A.canRead(own)and own==guid then
 		traceSight("refused","self",source)
 		return nil
@@ -287,7 +276,8 @@ function A.reportSight(word)
 		return
 	end
 
+	local state=A.sightEnabled()and"on"or"off"
+	local marked=markedCount()
 	A.say(("marking people you have written about %s, %d %s marked")
-		:format(A.sightEnabled()and"on"or"off",markedCount(),
-			markedCount()==1 and"plate"or"plates"))
+		:format(state,marked,marked==1 and"plate"or"plates"))
 end

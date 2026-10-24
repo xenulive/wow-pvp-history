@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.7
+-- WowPvpHistory 0.70.16
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -161,6 +161,8 @@ local function open(db,now)
 	db.matches[#db.matches+1]=record
 	current,currentIndex=record,#db.matches
 
+	A.trace("world",{id=record.id,state="stored",kept=kept,mapRead=map~=nil})
+
 	A.recordStored("world")
 	pcall(A.noteCanary)
 	return record
@@ -239,13 +241,6 @@ local RETRY_SECONDS=0.5
 
 local VICTIM_TOKENS={"target","mouseover","focus"}
 
-local function readableGuid(value)
-	if type(value)=="string"and A.canRead(value)and value~=""then
-		return value
-	end
-	return nil
-end
-
 local function guidFields(guid)
 	local fields=0
 	for _ in guid:gmatch("[^%-]+")do
@@ -257,22 +252,15 @@ end
 local function victimToken(guid)
 	for i=1,#VICTIM_TOKENS do
 		local token=VICTIM_TOKENS[i]
-		if readableGuid(readable(UnitGUID,token))==guid then
+		if A.readableString(readable(UnitGUID,token))==guid then
 			return token,token
 		end
 	end
 	local plates=A.nameplateTokens()
 	for i=1,#plates do
-		if readableGuid(readable(UnitGUID,plates[i]))==guid then
+		if A.readableString(readable(UnitGUID,plates[i]))==guid then
 			return plates[i],"nameplate"
 		end
-	end
-	return nil
-end
-
-local function unitString(value)
-	if type(value)=="string"and A.canRead(value)and value~=""then
-		return value
 	end
 	return nil
 end
@@ -288,14 +276,14 @@ local function readTraits(row,guid)
 	if type(UnitClass)=="function"then
 		local ok,className,classToken=pcall(UnitClass,token)
 		if ok then
-			row.class=row.class or unitString(className)
-			row.classToken=row.classToken or unitString(classToken)
+			row.class=row.class or A.readableString(className)
+			row.classToken=row.classToken or A.readableString(classToken)
 		end
 	end
 	if row.race==nil and type(UnitRace)=="function"then
 		local ok,raceName=pcall(UnitRace,token)
 		if ok then
-			row.race=unitString(raceName)
+			row.race=A.readableString(raceName)
 		end
 	end
 	if row.faction==nil then
@@ -360,17 +348,21 @@ local function onPartyKill(attackerGuid,targetGuid)
 		return
 	end
 
-	local attacker=readableGuid(attackerGuid)
+	local attacker=A.readableString(attackerGuid)
 	if not attacker then
 		A.trace("worldkill",{state="refused",reason="secret-attacker"})
 		return
 	end
 	local selfGuid=A.ownGuid()
+	if selfGuid==nil then
+		A.trace("worldkill",{state="refused",reason="no-self"})
+		return
+	end
 	if attacker~=selfGuid then
 		A.trace("worldkill",{state="refused",reason="other-attacker"})
 		return
 	end
-	local target=readableGuid(targetGuid)
+	local target=A.readableString(targetGuid)
 	if not target then
 		A.trace("worldkill",{state="refused",reason="secret-target"})
 		return

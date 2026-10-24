@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.7
+-- WowPvpHistory 0.70.16
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -16,14 +16,6 @@ local waiters={}
 
 local watches=setmetatable({},{__mode="k"})
 
-local function lockdown()
-	if type(InCombatLockdown)~="function"then
-		return false
-	end
-	local ok,value=pcall(InCombatLockdown)
-	return ok and value==true
-end
-
 local function enumValue(enumName,key)
 	local enum=type(Enum)=="table"and Enum[enumName]or nil
 	local value=type(enum)=="table"and enum[key]or nil
@@ -34,10 +26,8 @@ local function enumValue(enumName,key)
 end
 
 function A.meterAvailable()
-	if type(C_DamageMeter)~="table"or type(C_DamageMeter.GetCombatSessionFromType)~="function"then
-		return false
-	end
-	if enumValue("DamageMeterSessionType","Overall")==nil
+	if type(C_DamageMeter)~="table"or type(C_DamageMeter.GetCombatSessionFromType)~="function"
+		or enumValue("DamageMeterSessionType","Overall")==nil
 		or enumValue("DamageMeterSessionType","Current")==nil then
 		return false
 	end
@@ -123,11 +113,10 @@ local function figure(read,entry,key)
 	if type(entry[key])=="number"then
 		return entry[key]
 	end
-	if read.listRead[key]~=true then
+	if not read.listRead[key]then
 		return nil,"list-unread"
 	end
-	local unread=read.typeUnread[key]or 0
-	if unread>0 and unread==(read.typeSources[key]or 0)then
+	if(read.typeUnread[key]or 0)>0 then
 		return nil,"secret"
 	end
 	if entry.seen then
@@ -180,6 +169,14 @@ local function traceMeter(w,sources,matched,unmatched,reason,read)
 		storeLockdown=w.storeLockdown,
 		early=w.early,
 	})
+end
+
+local function waitingNow()
+	local due={}
+	for i=1,#waiters do
+		due[i]=waiters[i]
+	end
+	return due
 end
 
 local function settle(w)
@@ -283,7 +280,7 @@ end
 function A.meterComplete(record)
 	if type(record)=="table"then
 		watches[record]={
-			lockdown=lockdown(),
+			lockdown=A.inCombatLockdown(),
 			regen=false,
 			resets=0,
 			at=type(A.precise)=="function"and A.precise()or nil,
@@ -300,7 +297,7 @@ function A.meterAttach(record,since,superseded)
 	record.meter={pending=true}
 
 	local db=A.db()
-	local locked=lockdown()
+	local locked=A.inCombatLockdown()
 	local atComplete=locked
 	if watch then
 		atComplete=watch.lockdown
@@ -397,7 +394,7 @@ function A.meterRoundBoundary(record,round,index)
 		round=round,
 		index=index,
 		since=type(A.precise)=="function"and A.precise()or nil,
-		lockdown=lockdown(),
+		lockdown=A.inCombatLockdown(),
 	}
 	if not A.meterAvailable()then
 		w.done=true
@@ -412,10 +409,7 @@ function A.meterRoundBoundary(record,round,index)
 end
 
 function A.meterStateChanged(record,name)
-	local due={}
-	for i=1,#waiters do
-		due[i]=waiters[i]
-	end
+	local due=waitingNow()
 	for i=1,#due do
 		local w=due[i]
 		if w.kind=="round"and w.record==record
@@ -503,10 +497,7 @@ end
 
 local function onRegen()
 	holdRegen()
-	local due={}
-	for i=1,#waiters do
-		due[i]=waiters[i]
-	end
+	local due=waitingNow()
 	local db=A.db()
 	for i=1,#due do
 		local w=due[i]
@@ -534,13 +525,11 @@ local function onReset()
 		watch.resets=watch.resets+1
 	end
 	local db=A.db()
-	if db and type(db.active)=="table"then
-		db.active.meterResets=(type(db.active.meterResets)=="number"and db.active.meterResets or 0)+1
+	local active=db and db.active
+	if type(active)=="table"then
+		active.meterResets=(type(active.meterResets)=="number"and active.meterResets or 0)+1
 	end
-	local due={}
-	for i=1,#waiters do
-		due[i]=waiters[i]
-	end
+	local due=waitingNow()
 	for i=1,#due do
 		local w=due[i]
 		if w.kind=="attach"then

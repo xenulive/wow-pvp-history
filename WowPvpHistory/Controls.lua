@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.7
+-- WowPvpHistory 0.70.16
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -58,7 +58,7 @@ local function paintPill(button)
 	if not off and not button.controlOver and button.controlTone then
 		tone=button.controlTone
 	end
-	if not off and button.controlSelected==true then
+	if not off and button.controlSelected then
 		tone="bright"
 	end
 	A.style(label,button.controlRole or"bodyMedium",tone)
@@ -316,19 +316,20 @@ end
 
 local function paint(button)
 	return pcall(function()
-		if button.controlKind=="tab"then
+		local kind=button.controlKind
+		if kind=="tab"then
 			paintTab(button)
-		elseif button.controlKind=="panelTab"then
+		elseif kind=="panelTab"then
 			paintPanelTab(button)
-		elseif button.controlKind=="segment"then
+		elseif kind=="segment"then
 			paintSegment(button)
-		elseif button.controlKind=="segmentTrack"then
+		elseif kind=="segmentTrack"then
 			paintSegmentTrack(button)
-		elseif button.controlKind=="entry"then
+		elseif kind=="entry"then
 			paintEntry(button)
-		elseif button.controlKind=="grip"then
+		elseif kind=="grip"then
 			paintGrip(button)
-		elseif button.controlKind=="dropdown"then
+		elseif kind=="dropdown"then
 			paintDropdown(button)
 		else
 			paintPill(button)
@@ -433,6 +434,19 @@ local function attachStates(button)
 	button:SetScript("OnDisable",paint)
 end
 
+local function attachAction(button,text,onClick)
+	attachStates(button)
+
+	if text then
+		button:SetText(text)
+	end
+	if onClick then
+		button:SetScript("OnClick",onClick)
+	end
+
+	A.registerControl(button)
+end
+
 local function stringWidth(fontString)
 	if type(fontString)~="table"or not fontString.GetStringWidth then
 		return 0
@@ -465,16 +479,7 @@ function A.pill(parent,text,onClick,minWidth)
 
 	attachSurface(button)
 	attachLabel(button)
-	attachStates(button)
-
-	if text then
-		button:SetText(text)
-	end
-	if onClick then
-		button:SetScript("OnClick",onClick)
-	end
-
-	A.registerControl(button)
+	attachAction(button,text,onClick)
 	A.fitControl(button,minWidth)
 	return button
 end
@@ -562,22 +567,13 @@ function A.tab(parent,text,onClick)
 	label:ClearAllPoints()
 	label:SetPoint("CENTER",button,"CENTER",0,A.metric("tabUnderline"))
 
-	attachStates(button)
-
-	if text then
-		button:SetText(text)
-	end
-	if onClick then
-		button:SetScript("OnClick",onClick)
-	end
-
-	A.registerControl(button)
+	attachAction(button,text,onClick)
 	A.fitControl(button,A.metric("tabMin"))
 	return button
 end
 
-function A.setTabSelected(button,selected)
-	if type(button)~="table"or button.controlKind~="tab"then
+local function setChosenTab(button,kind,selected)
+	if type(button)~="table"or button.controlKind~=kind then
 		return false
 	end
 
@@ -589,6 +585,10 @@ function A.setTabSelected(button,selected)
 	end
 	paint(button)
 	return true
+end
+
+function A.setTabSelected(button,selected)
+	return setChosenTab(button,"tab",selected)
 end
 
 local function panelTabFloor(button)
@@ -688,18 +688,7 @@ function A.panelTab(parent,text,onClick)
 end
 
 function A.setPanelTabSelected(button,selected)
-	if type(button)~="table"or button.controlKind~="panelTab"then
-		return false
-	end
-
-	button.tabSelected=selected and true or false
-	if button.tabSelected then
-		pcall(button.Disable,button)
-	else
-		pcall(button.Enable,button)
-	end
-	paint(button)
-	return true
+	return setChosenTab(button,"panelTab",selected)
 end
 
 function A.segment(parent,choices,onPick)
@@ -888,8 +877,17 @@ function A.dropdown(parent,choices,onPick)
 			want=width
 		end
 		local most=A.metric("dropdownWidthMax")
+		local need=nil
 		if most>0 and want>most then
+			need=want
 			want=most
+		end
+		if need~=button.cutNeed then
+			button.cutNeed=need
+			if need~=nil and type(A.trace)=="function"then
+				pcall(A.trace,"dropdown-cut",{need=A.unitFigure(need),width=A.unitFigure(most),
+					n=#button.choices},"ui")
+			end
 		end
 
 		button:SetWidth(want)
@@ -961,8 +959,9 @@ function A.dropdown(parent,choices,onPick)
 			end
 		end
 		for i=visible+1,#button.rows do
-			button.rows[i].dropdownFilled=false
-			button.rows[i]:Hide()
+			local row=button.rows[i]
+			row.dropdownFilled=false
+			row:Hide()
 		end
 		paint(button)
 	end
@@ -1006,9 +1005,10 @@ function A.setDropdownChoices(button,choices,chosen)
 
 	local found,label=false,nil
 	for i=1,#button.choices do
-		if button.choices[i].value==chosen then
+		local choice=button.choices[i]
+		if choice.value==chosen then
 			found=true
-			label=button.choices[i].label
+			label=choice.label
 		end
 	end
 	if not found and#button.choices>0 then
@@ -1077,10 +1077,8 @@ end
 
 function A.setSegmentChosen(track,value)
 	if type(track)~="table"
-		or(track.controlKind~="segmentTrack"and track.controlKind~="sectionList")then
-		return false
-	end
-	if type(track.children)~="table"then
+		or(track.controlKind~="segmentTrack"and track.controlKind~="sectionList")
+		or type(track.children)~="table"then
 		return false
 	end
 
@@ -1183,6 +1181,34 @@ function A.styleTooltip(tooltip)
 	return measured
 end
 
+local function paintFinished(where,ok,...)
+	if not ok and type(A.noteError)=="function"then
+		local err=...
+		A.noteError(("%s did not paint: %s"):format(where,
+			err~=nil and tostring(err)or"the client gave no message"),where)
+	end
+	return ok,...
+end
+
+function A.containedPaint(where,fn,...)
+	return paintFinished(where,pcall(fn,...))
+end
+
+function A.hoverLine(owner,text)
+	if not(GameTooltip and type(text)=="string")then
+		return
+	end
+	pcall(function()
+		GameTooltip:SetOwner(owner,"ANCHOR_TOP")
+		if type(A.styleTooltip)=="function"then
+			A.styleTooltip(GameTooltip)
+		end
+		local r,g,b=A.color("text")
+		GameTooltip:SetText(text,r,g,b,1,true)
+		GameTooltip:Show()
+	end)
+end
+
 function A.keyedTooltip(owner,lines,anchor,kind)
 	if not(GameTooltip and type(lines)=="table"and#lines>0)then
 		return false
@@ -1256,19 +1282,8 @@ function A.tooltipRoomBelow(tooltip,anchor)
 	if tooltip==nil or relative==nil then
 		return"unread"
 	end
-	local function figure(frame,getter)
-		local fn=frame[getter]
-		if type(fn)~="function"then
-			return nil
-		end
-		local ok,value=pcall(fn,frame)
-		if not ok or(issecretvalue and issecretvalue(value))or type(value)~="number"then
-			return nil
-		end
-		return value
-	end
-	local bottom,relScale=figure(relative,"GetBottom"),figure(relative,"GetEffectiveScale")
-	local height,tipScale=figure(tooltip,"GetHeight"),figure(tooltip,"GetEffectiveScale")
+	local bottom,relScale=A.frameFigure(relative,"GetBottom"),A.frameFigure(relative,"GetEffectiveScale")
+	local height,tipScale=A.frameFigure(tooltip,"GetHeight"),A.frameFigure(tooltip,"GetEffectiveScale")
 	if not(bottom and relScale and height and tipScale)or height<=0 then
 		return"unread"
 	end

@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.7
+-- WowPvpHistory 0.70.16
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -51,11 +51,8 @@ local function clamp(value,min,max)
 	return figure
 end
 
-local function whole(value)
-	if type(value)~="number"or value~=value or value==math.huge or value==-math.huge then
-		return nil
-	end
-	return math.floor(value+0.5)
+local function stepped(figure)
+	return math.floor(figure/OPACITY_STEP+0.5)*OPACITY_STEP
 end
 
 function A.overlayEnabled()
@@ -128,7 +125,7 @@ function A.overlayOpacity()
 	if figure==nil then
 		return OPACITY_DEFAULT
 	end
-	return math.floor(figure/OPACITY_STEP+0.5)*OPACITY_STEP
+	return stepped(figure)
 end
 
 function A.overlayOpacityRange()
@@ -144,7 +141,7 @@ function A.setOverlayOpacity(value)
 	if figure==nil then
 		return false
 	end
-	local want=math.floor(figure/OPACITY_STEP+0.5)*OPACITY_STEP
+	local want=stepped(figure)
 	db.ui=db.ui or{}
 	db.ui.overlayOpacity=want~=OPACITY_DEFAULT and want or nil
 	if type(A.notifyOverlayOpacitySetting)=="function"then
@@ -181,19 +178,7 @@ function A.setOverlayCombat(enabled)
 end
 
 function A.overlayPosition()
-	local db=A.db()
-	if not db or type(db.ui)~="table"then
-		return nil
-	end
-	local held=db.ui.overlayPosition
-	if type(held)~="table"or type(held.point)~="string"then
-		return nil
-	end
-	local x,y=whole(held.x),whole(held.y)
-	if x==nil or y==nil then
-		return nil
-	end
-	return{point=held.point,x=x,y=y}
+	return A.storedPosition("overlayPosition")
 end
 
 local function defaultPlace()
@@ -202,23 +187,7 @@ local function defaultPlace()
 end
 
 function A.setOverlayPosition(geometry)
-	local db=A.db()
-	if not db then
-		return false
-	end
-	db.ui=db.ui or{}
-	local point=type(geometry)=="table"and geometry.point or nil
-	local x=type(geometry)=="table"and whole(geometry.x)or nil
-	local y=type(geometry)=="table"and whole(geometry.y)or nil
-	local _,defaultX,defaultY=defaultPlace()
-	if type(point)~="string"or x==nil or y==nil
-		or(point==DEFAULT_POINT and x==whole(defaultX)and y==whole(defaultY))
-	then
-		db.ui.overlayPosition=nil
-		return true
-	end
-	db.ui.overlayPosition={point=point,x=x,y=y}
-	return true
+	return A.storePosition("overlayPosition",geometry,defaultPlace)
 end
 
 local function placeAt(made)
@@ -333,9 +302,10 @@ local function todaysMatches(format,character)
 	if today==nil or not(db and type(db.matches)=="table")then
 		return out
 	end
+	local recorder=A.barRecorder(character)
 	for i=1,#db.matches do
 		local record=db.matches[i]
-		if type(record)=="table"and record.format==format and A.recordedBy(record,A.barRecorder(character))
+		if type(record)=="table"and record.format==format and A.recordedBy(record,recorder)
 			and dayOf(record)==today then
 			out[#out+1]=record
 		end
@@ -405,10 +375,11 @@ computeTodayFigures=function(format,character)
 
 	local tally={wins=0,decided=0,draws=0}
 	for i=1,#list do
-		local outcome,_,derived=A.recordVerdict(list[i])
+		local record=list[i]
+		local outcome,_,derived=A.recordVerdict(record)
 		if outcome~=nil then
 			tally.decided=tally.decided+1
-			if A.recordLevel(list[i],outcome,derived)then
+			if A.recordLevel(record,outcome,derived)then
 				tally.draws=tally.draws+1
 			end
 			if outcome=="win"then
@@ -480,12 +451,26 @@ local function blockHeight(withLine)
 	return height
 end
 
-local function barHeight()
-	local tiles,block=tileHeight(),blockHeight(true)
-	if block>tiles then
-		return PAD*2+block
+local function middleLine()
+	local tallest=blockHeight(true)
+	if SQUARE>tallest then
+		tallest=SQUARE
 	end
-	return PAD*2+tiles
+	return PAD+math.ceil(tallest/2)
+end
+
+local function onLine(own)
+	return middleLine()-own/2
+end
+
+local function barHeight()
+	local full=blockHeight(true)
+	local bottom=onLine(full)+full
+	local tiles=onLine(SQUARE)+tileHeight()
+	if tiles>bottom then
+		bottom=tiles
+	end
+	return math.ceil(bottom+PAD)
 end
 
 local function centredTop(own)
@@ -675,8 +660,8 @@ local function build()
 		local stored=A.overlayPosition()
 		A.trace("overlay/move",{
 			point=read and read.point or nil,
-			x=read and whole(read.x)or nil,
-			y=read and whole(read.y)or nil,
+			x=read and A.wholeOffset(read.x)or nil,
+			y=read and A.wholeOffset(read.y)or nil,
 			state=stored~=nil and"stored"or"default",
 		},"ui")
 	end)
@@ -721,7 +706,8 @@ local function paintBlock(text,tone,format,line,floored)
 	local titleWidth=A.headerFloor(TITLE_TEXT)
 	frame.title:SetWidth(titleWidth)
 	frame.title:ClearAllPoints()
-	frame.title:SetPoint("TOPLEFT",frame,"TOPLEFT",PAD,-centredTop(blockHeight(line~=nil)))
+	local own=blockHeight(line~=nil)
+	frame.title:SetPoint("TOPLEFT",frame,"TOPLEFT",PAD,-(floored and onLine(own)or centredTop(own)))
 	frame.title:Show()
 
 	frame.rule:ClearAllPoints()
@@ -809,6 +795,21 @@ local function paintBlock(text,tone,format,line,floored)
 	return blockWidth,ruleWidth,tint
 end
 
+local function middles(withLine,drawn)
+	local _,_,_,_,titleY=frame.title:GetPoint(1)
+	local blockMid=type(titleY)=="number"and A.unitFigure(-titleY+blockHeight(withLine)/2)or nil
+	if not drawn then
+		return blockMid,nil
+	end
+	local cell=cells[1]
+	local _,_,_,_,cellY=cell:GetPoint(1)
+	local _,_,_,_,squareY=cell.square:GetPoint(1)
+	if type(cellY)~="number"or type(squareY)~="number"then
+		return blockMid,nil
+	end
+	return blockMid,A.unitFigure(-cellY-squareY+SQUARE/2)
+end
+
 local function paint(character,format,rows)
 	local text="No matches yet."
 	local tone="dim"
@@ -820,13 +821,13 @@ local function paint(character,format,rows)
 	local blockWidth,ruleWidth,tint=paintBlock(text,tone,format,line,#rows>0)
 
 	local height=barHeight()
-	local tileTop=centredTop(tileHeight())
+	local tileTop=onLine(SQUARE)
 	local column=columnWidth()
 	local x=PAD+blockWidth
 	if#rows>0 then
 		frame.divider:ClearAllPoints()
 		frame.divider:SetPoint("TOPLEFT",frame,"TOPLEFT",x+BLOCK_GAP,-tileTop)
-		frame.divider:SetSize(1,tileHeight())
+		frame.divider:SetSize(1,SQUARE)
 		frame.divider:SetColorTexture(A.color("hairline"))
 		frame.divider:Show()
 		x=x+BLOCK_GAP+1+BLOCK_GAP
@@ -861,10 +862,11 @@ local function paint(character,format,rows)
 		x=x+column+CELL_GAP
 	end
 	for i=#rows+1,#cells do
-		cells[i].matchId=nil
-		cells[i].record=nil
-		cells[i].letterText=nil
-		cells[i]:Hide()
+		local cell=cells[i]
+		cell.matchId=nil
+		cell.record=nil
+		cell.letterText=nil
+		cell:Hide()
 	end
 
 	local width
@@ -877,7 +879,8 @@ local function paint(character,format,rows)
 
 	local r,g,b=A.color("panel")
 	frame.ground:SetColorTexture(r,g,b,drawnOpacity()/100)
-	return ids,line,texts,tileX,ruleWidth,height,tint
+	local blockMid,squareMid=middles(line~=nil,#rows>0)
+	return ids,line,texts,tileX,ruleWidth,height,tint,blockMid,squareMid
 end
 
 local function secondsToMidnight()
@@ -927,7 +930,7 @@ function A.overlayRepaint(source,via)
 
 		local format,ids=nil,{}
 		local line,texts,tileX=nil,{},nil
-		local ruleWidth,height,tint
+		local ruleWidth,height,tint,blockMid,squareMid
 		local kept
 		if reason==nil then
 			local db=A.db()
@@ -942,6 +945,7 @@ function A.overlayRepaint(source,via)
 				ids,format=painted.ids,painted.format
 				line,texts,tileX=painted.line,painted.texts,painted.tileX
 				ruleWidth,height,tint=painted.ruleWidth,painted.height,painted.tint
+				blockMid,squareMid=painted.blockMid,painted.squareMid
 			else
 				if source=="combat"then
 					kept="drawn"
@@ -951,11 +955,11 @@ function A.overlayRepaint(source,via)
 				if build()==nil then
 					return
 				end
-				ids,line,texts,tileX,ruleWidth,height,tint=paint(character,held,rows)
+				ids,line,texts,tileX,ruleWidth,height,tint,blockMid,squareMid=paint(character,held,rows)
 				format=held
 				painted={character=character,db=db,matches=matches,count=count,day=day,
 					format=format,ids=ids,line=line,texts=texts,tileX=tileX,
-					ruleWidth=ruleWidth,height=height,tint=tint}
+					ruleWidth=ruleWidth,height=height,tint=tint,blockMid=blockMid,squareMid=squareMid}
 				armMidnight(line~=nil)
 			end
 			if#ids==0 then
@@ -979,7 +983,7 @@ function A.overlayRepaint(source,via)
 		local title=ruleWidth~=nil and TITLE_TEXT or nil
 		last={state=state,reason=reason,source=source,format=format,ids=ids,
 			line=line,texts=texts,tileX=tileX,title=title,ruleWidth=ruleWidth,height=height,
-			tint=tint}
+			tint=tint,blockMid=blockMid,squareMid=squareMid}
 		A.trace("overlay",{
 			source=source,
 			via=via or kept,
@@ -997,6 +1001,8 @@ function A.overlayRepaint(source,via)
 			title=title,
 			ruleWidth=ruleWidth,
 			height=height,
+			blockMid=blockMid,
+			squareMid=squareMid,
 		},"ui")
 	end)
 	if not ok then
@@ -1054,7 +1060,7 @@ function A.overlayPreviewOpacity(value)
 	if figure==nil or figure~=figure or figure<OPACITY_MIN or figure>OPACITY_MAX then
 		return false
 	end
-	previewOpacity=math.floor(figure/OPACITY_STEP+0.5)*OPACITY_STEP
+	previewOpacity=stepped(figure)
 	A.overlayRepaint("preview","opacity")
 	return previewOpacity
 end
@@ -1088,23 +1094,28 @@ function A.overlayReadout()
 			A.overlayCombat()and"on"or"off",previewUp and"shown"or"none"),
 	}
 	local character,format,rows=subject()
+	local who=(character==nil or character==SANDBOX_READER)and character or A.characterLabel(character)
 	if character==nil then
 		lines[#lines+1]="no readable character, so nothing to draw"
 	elseif format==nil then
-		lines[#lines+1]=("no stored match for %s, so the bar reads No matches yet."):format(character)
+		lines[#lines+1]=("no stored match for %s, so the bar reads No matches yet."):format(who)
 	else
 		local ids={}
 		for i=1,#rows do
 			ids[i]=tostring(rows[i].id)
 		end
-		lines[#lines+1]=("%s for %s, newest first: %s"):format(A.formatLabel(format),character,
+		lines[#lines+1]=("%s for %s, newest first: %s"):format(A.formatLabel(format),who,
 			table.concat(ids,", "))
 	end
 	lines[#lines+1]=("drawn: %s%s"):format(last.state,
 		last.reason and(", "..last.reason)or"")
 	if last.title~=nil then
-		lines[#lines+1]=("header: %s, rule %d wide, bar %d high"):format(last.title,last.ruleWidth,
-			last.height)
+		local header=("header: %s, rule %d wide, bar %d high, block middle %s"):format(last.title,
+			last.ruleWidth,last.height,tostring(last.blockMid))
+		if last.squareMid~=nil then
+			header=header..", squares middle "..tostring(last.squareMid)
+		end
+		lines[#lines+1]=header
 	end
 	if previewFormat~=nil or previewOpacity~=nil then
 		lines[#lines+1]=("held for this session: format %s, opacity %s"):format(

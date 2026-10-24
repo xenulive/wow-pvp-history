@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.7
+-- WowPvpHistory 0.70.16
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -107,6 +107,14 @@ local function notify(variable)
 	return(pcall(fn,variable))
 end
 
+local function notifyWindowOnly(name,getter)
+	traceSetting(name,getter)
+	if A.refreshOptionsWindow then
+		pcall(A.refreshOptionsWindow)
+	end
+	return false
+end
+
 function A.notifyAlertsSetting()
 	traceSetting("alerts",A.alertsEnabled)
 	return notify(ALERTS_VARIABLE)
@@ -168,35 +176,19 @@ function A.notifyAnnounceOpacitySetting()
 end
 
 function A.notifyAnnounceShapeSetting()
-	traceSetting("announce-shape",A.announceShape)
-	if A.refreshOptionsWindow then
-		pcall(A.refreshOptionsWindow)
-	end
-	return false
+	return notifyWindowOnly("announce-shape",A.announceShape)
 end
 
 function A.notifyOverlayCountSetting()
-	traceSetting("overlay-count",A.overlayCount)
-	if A.refreshOptionsWindow then
-		pcall(A.refreshOptionsWindow)
-	end
-	return false
+	return notifyWindowOnly("overlay-count",A.overlayCount)
 end
 
 function A.notifyOverlayOpacitySetting()
-	traceSetting("overlay-opacity",A.overlayOpacity)
-	if A.refreshOptionsWindow then
-		pcall(A.refreshOptionsWindow)
-	end
-	return false
+	return notifyWindowOnly("overlay-opacity",A.overlayOpacity)
 end
 
 function A.notifyOverlayCombatSetting()
-	traceSetting("overlay-combat",A.overlayCombat)
-	if A.refreshOptionsWindow then
-		pcall(A.refreshOptionsWindow)
-	end
-	return false
+	return notifyWindowOnly("overlay-combat",A.overlayCombat)
 end
 
 function A.notifyOverlaySetting()
@@ -205,11 +197,7 @@ function A.notifyOverlaySetting()
 end
 
 function A.notifyAnnounceLockSetting()
-	traceSetting("announce-lock",A.announceLocked)
-	if A.refreshOptionsWindow then
-		pcall(A.refreshOptionsWindow)
-	end
-	return false
+	return notifyWindowOnly("announce-lock",A.announceLocked)
 end
 
 function A.notifyContextMenuSetting()
@@ -356,46 +344,47 @@ local function register()
 		return false
 	end
 
-	local alerts=s.RegisterProxySetting(made,ALERTS_VARIABLE,s.VarType.Boolean,
+	local booleanType=s.VarType.Boolean
+	local alerts=s.RegisterProxySetting(made,ALERTS_VARIABLE,booleanType,
 		"Group and match alerts",ALERTS_DEFAULT,A.alertsEnabled,A.setAlerts)
 	s.CreateCheckbox(made,alerts,
 		"Print how many of a group's members, and of a finished match's participants, are "
 		.."already in the stored history.")
 
-	local postGame=s.RegisterProxySetting(made,POST_GAME_VARIABLE,s.VarType.Boolean,
+	local postGame=s.RegisterProxySetting(made,POST_GAME_VARIABLE,booleanType,
 		"Chat after a match",POST_GAME_DEFAULT,A.postGameEnabled,A.setPostGame)
 	s.CreateCheckbox(made,postGame,
 		"After a match or a duel, print what was recorded, the rating change, any new personal "
 		.."best and a link that opens it. A line reporting a fault prints either way.")
 
-	local openAfterMatch=s.RegisterProxySetting(made,OPEN_AFTER_MATCH_VARIABLE,s.VarType.Boolean,
+	local openAfterMatch=s.RegisterProxySetting(made,OPEN_AFTER_MATCH_VARIABLE,booleanType,
 		"Open the match after it ends",OPEN_AFTER_MATCH_DEFAULT,
 		A.openAfterMatchEnabled,A.setOpenAfterMatch)
 	s.CreateCheckbox(made,openAfterMatch,
 		"When you leave a match, open its window. It waits until you are out of combat.")
 
-	local groupNotes=s.RegisterProxySetting(made,GROUP_NOTES_VARIABLE,s.VarType.Boolean,
+	local groupNotes=s.RegisterProxySetting(made,GROUP_NOTES_VARIABLE,booleanType,
 		"Show what was written on who joined",GROUP_NOTES_DEFAULT,
 		A.groupNotesEnabled,A.setGroupNotes)
 	s.CreateCheckbox(made,groupNotes,
 		"With the group alert on, print the rating, the tags and the note for each group member "
 		.."who carries one.")
 
-	local sight=s.RegisterProxySetting(made,SIGHT_VARIABLE,s.VarType.Boolean,
+	local sight=s.RegisterProxySetting(made,SIGHT_VARIABLE,booleanType,
 		"Mark people you have written about when they appear",SIGHT_DEFAULT,
 		A.sightEnabled,A.setSight)
 	s.CreateCheckbox(made,sight,
 		"Outside a battleground or an arena, put a mark on the nameplate of a player you rated, "
 		.."tagged or wrote about, and name them once in chat when they appear.")
 
-	local chatMark=s.RegisterProxySetting(made,CHAT_MARK_VARIABLE,s.VarType.Boolean,
+	local chatMark=s.RegisterProxySetting(made,CHAT_MARK_VARIABLE,booleanType,
 		"Mark people you have written about in chat",CHAT_MARK_DEFAULT,
 		A.chatMarkEnabled,A.setChatMark)
 	s.CreateCheckbox(made,chatMark,
 		"Outside a match, a dungeon or a raid, put a bar before the name of a player you rated, "
 		.."tagged or wrote about when they talk in chat, colored by your rating.")
 
-	local announce=s.RegisterProxySetting(made,ANNOUNCE_VARIABLE,s.VarType.Boolean,
+	local announce=s.RegisterProxySetting(made,ANNOUNCE_VARIABLE,booleanType,
 		"Announce who you know at the gates",ANNOUNCE_DEFAULT,
 		A.announceEnabled,A.setAnnounce)
 	s.CreateCheckbox(made,announce,
@@ -433,67 +422,67 @@ local function register()
 		addAnnounceSliders(s,made)
 	end
 
-	local overlay=s.RegisterProxySetting(made,OVERLAY_VARIABLE,s.VarType.Boolean,
+	local overlay=s.RegisterProxySetting(made,OVERLAY_VARIABLE,booleanType,
 		"Show the newest results on screen",OVERLAY_DEFAULT,A.overlayEnabled,A.setOverlay)
 	s.CreateCheckbox(made,overlay,
 		"Draw a small bar of the newest results of the format last played, one cell per match. "
 		.."Drag it where it should sit, and click a cell to open its match.")
 
-	local tooltip=s.RegisterProxySetting(made,TOOLTIP_VARIABLE,s.VarType.Boolean,
+	local tooltip=s.RegisterProxySetting(made,TOOLTIP_VARIABLE,booleanType,
 		"Unit tooltip lines",TOOLTIP_DEFAULT,A.tooltipEnabled,A.setTooltip)
 	s.CreateCheckbox(made,tooltip,
 		"Add the record against a player, the rating they were last seen at and whatever is "
 		.."written on them to their unit tooltip.")
 
-	local contextMenu=s.RegisterProxySetting(made,CONTEXT_MENU_VARIABLE,s.VarType.Boolean,
+	local contextMenu=s.RegisterProxySetting(made,CONTEXT_MENU_VARIABLE,booleanType,
 		"Right-click menu entry",CONTEXT_MENU_DEFAULT,A.contextMenuEnabled,A.setContextMenu)
 	s.CreateCheckbox(made,contextMenu,
 		"Add an entry to the player right-click menu that writes a note and a rating without "
 		.."opening a window.")
 
-	local duels=s.RegisterProxySetting(made,DUELS_VARIABLE,s.VarType.Boolean,
+	local duels=s.RegisterProxySetting(made,DUELS_VARIABLE,booleanType,
 		"Record duels",DUELS_DEFAULT,A.duelsEnabled,A.setDuels)
 	s.CreateCheckbox(made,duels,
 		"Keep a completed duel as a record, with its opponent attached to the player index.")
 
-	local hold=s.RegisterProxySetting(made,HOLD_VARIABLE,s.VarType.Boolean,
+	local hold=s.RegisterProxySetting(made,HOLD_VARIABLE,booleanType,
 		"Hold the exit while the scoreboard is read",HOLD_DEFAULT,A.holdEnabled,A.setHold)
 	s.CreateCheckbox(made,hold,
 		"Cover the leave button on the match results frame for a few seconds after a match ends, so a "
 		.."match left at the first opportunity is still recorded with its full roster.")
 
-	local rememberTab=s.RegisterProxySetting(made,REMEMBER_TAB_VARIABLE,s.VarType.Boolean,
+	local rememberTab=s.RegisterProxySetting(made,REMEMBER_TAB_VARIABLE,booleanType,
 		"Remember the selected tab",REMEMBER_TAB_DEFAULT,A.rememberTab,A.setRememberTab)
 	s.CreateCheckbox(made,rememberTab,
 		"Open the match history on the format tab that was last selected, rather than on all "
 		.."formats.")
 
-	local closeWithMain=s.RegisterProxySetting(made,CLOSE_WITH_MAIN_VARIABLE,s.VarType.Boolean,
+	local closeWithMain=s.RegisterProxySetting(made,CLOSE_WITH_MAIN_VARIABLE,booleanType,
 		"Close match and player windows with the main window",CLOSE_WITH_MAIN_DEFAULT,
 		A.closeWithMainEnabled,A.setCloseWithMain)
 	s.CreateCheckbox(made,closeWithMain,
 		"When you close the main window, close every match window and player window too.")
 
-	local finder=s.RegisterProxySetting(made,FINDER_VARIABLE,s.VarType.Boolean,
+	local finder=s.RegisterProxySetting(made,FINDER_VARIABLE,booleanType,
 		"Season record beside the group finder",FINDER_DEFAULT,A.finderEnabled,A.setFinder)
 	s.CreateCheckbox(made,finder,
 		"Show this character's record for the current season beside the group finder while its "
 		.."Player vs. Player tab is open.")
 
-	local finderDock=s.RegisterProxySetting(made,FINDER_DOCK_VARIABLE,s.VarType.Boolean,
+	local finderDock=s.RegisterProxySetting(made,FINDER_DOCK_VARIABLE,booleanType,
 		"Dock the season record to the group finder",FINDER_DOCK_DEFAULT,A.finderDocked,
 		A.setFinderDocked)
 	s.CreateCheckbox(made,finderDock,
 		"When off, drag the season record anywhere on the screen. It shows there each time the Player "
 		.."vs. Player tab opens.")
 
-	local loginLine=s.RegisterProxySetting(made,LOGIN_LINE_VARIABLE,s.VarType.Boolean,
+	local loginLine=s.RegisterProxySetting(made,LOGIN_LINE_VARIABLE,booleanType,
 		"Name the version at login",LOGIN_LINE_DEFAULT,A.loginLineEnabled,A.setLoginLine)
 	s.CreateCheckbox(made,loginLine,
 		"Print the loaded version and the way in every time the addon loads, and say so when the "
 		.."stored history did not load or something threw.")
 
-	local minimap=s.RegisterProxySetting(made,MINIMAP_VARIABLE,s.VarType.Boolean,
+	local minimap=s.RegisterProxySetting(made,MINIMAP_VARIABLE,booleanType,
 		"Minimap button",MINIMAP_DEFAULT,A.minimapShown,A.setMinimapShown)
 	s.CreateCheckbox(made,minimap,"Show the button that opens the match history window.")
 
@@ -544,14 +533,6 @@ function A.optionsAvailable()
 	return registered
 end
 
-local function lockedDown()
-	if type(InCombatLockdown)~="function"then
-		return false
-	end
-	local ok,locked=pcall(InCombatLockdown)
-	return ok and locked==true
-end
-
 function A.openOptions()
 	if not registered or type(category)~="table"then
 		return false
@@ -562,7 +543,7 @@ function A.openOptions()
 		return false
 	end
 
-	if lockedDown()then
+	if A.inCombatLockdown()then
 		A.trace("open",{source="options",reason="combat"},"ui")
 		return false,"combat"
 	end
