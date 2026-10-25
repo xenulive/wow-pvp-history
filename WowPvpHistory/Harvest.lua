@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.16
+-- WowPvpHistory 0.70.27
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -830,12 +830,12 @@ local function store(record,participants,kept,rows,attempt,readSeconds,readAt,st
 	end
 	record.talents=talents
 
-	if announce then
-		A.say(announce)
-	end
 	record.id=db.nextMatchId
 	db.nextMatchId=db.nextMatchId+1
 	db.matches[#db.matches+1]=record
+	if announce then
+		A.say(announce)
+	end
 	release(record)
 
 	A.trace("talents",{id=record.id,state=talentsRead.state,pvpTalents=talentsRead.pvpTalents,
@@ -1119,6 +1119,13 @@ function A.harvestsPending()
 		n=n+1
 	end
 	return n
+end
+
+function A.matchInFlight(db)
+	if type(db)=="table"and db.active~=nil then
+		return true
+	end
+	return A.harvestsPending()>0
 end
 
 function A.scheduleHarvest(record,attempt)

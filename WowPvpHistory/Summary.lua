@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.16
+-- WowPvpHistory 0.70.27
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -2228,6 +2228,10 @@ function A.compPairAnswer(answer,format,season,character,bound)
 	out.allDrawn=0
 	out.pairsDrawn=ok and tonumber(allDrawn)or 0
 	if not ok or type(rows)~="table"then
+		out.unread=true
+		if not ok and type(A.noteError)=="function"then
+			A.noteError(("compPairTally did not answer: %s"):format(tostring(rows)),"compPairTally")
+		end
 		return out,0,0
 	end
 	for i=1,#rows do

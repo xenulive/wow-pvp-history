@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.16
+-- WowPvpHistory 0.70.27
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -43,12 +43,12 @@ local lastRows=0
 
 local tracedOrder="recent"
 
-local MET_ROWS=4
+local DETAIL_SUBJECT="the player detail pane"
 
 local ROSTER_SLOTS=8
 
 function A.notesWindowTitle()
-	return("%s: players and notes (%s)"):format(A.displayName(),tostring(A.version or"unknown"))
+	return("%s: players and notes"):format(A.displayName())
 end
 
 local function surface()
@@ -65,10 +65,34 @@ end
 
 local function figureColumns()
 	return{
-		{key="met",name="MET",width=A.metric("playerColMet")},
-		{key="with",name="WITH",width=A.metric("playerColSide")},
-		{key="against",name="AGAINST",width=A.metric("playerColSide")},
+		{key="met",name="MET",width=A.metric("playerColMet"),justify="RIGHT"},
+		{key="record",name="RECORD",width=A.metric("playerColSide")*2+A.metric("rowCellGap"),
+			justify="LEFT"},
 	}
+end
+
+local SIDE_WORDS={with="with",against="vs"}
+
+function A.recordCellText(withParts,againstParts)
+	local out,plain={},{}
+	for _,side in ipairs({{"with",withParts},{"against",againstParts}})do
+		local pieces=A.sideShort(side[2])
+		if pieces then
+			local figures,texts={},{}
+			for i=1,#pieces do
+				figures[i]=A.colorEscape(pieces[i].tone or"dim")..pieces[i].text.."|r"
+				texts[i]=pieces[i].text
+			end
+			local word=SIDE_WORDS[side[1]]
+			out[#out+1]=table.concat(figures,A.colorEscape("dim")..", |r").." "
+				..A.colorEscape("text")..word.."|r"
+			plain[#plain+1]=table.concat(texts,", ").." "..word
+		end
+	end
+	if#out==0 then
+		return A.colorEscape("dimmer").."-|r","-"
+	end
+	return table.concat(out,A.colorEscape("dim")..", |r"),table.concat(plain,", ")
 end
 
 local function figureEdges()
@@ -81,17 +105,6 @@ local function figureEdges()
 		at=at+columns[i].width+gap
 	end
 	return edges,at
-end
-
-local function sideCellText(pieces)
-	if type(pieces)~="table"or#pieces==0 then
-		return A.colorEscape("dimmer").."-|r"
-	end
-	local out={}
-	for i=1,#pieces do
-		out[i]=A.colorEscape(pieces[i].tone or"dim")..pieces[i].text.."|r"
-	end
-	return table.concat(out,A.colorEscape("dim")..", |r")
 end
 
 function A.fitNameHead(fontString,bare,realm,realmTone,after)
@@ -113,21 +126,38 @@ function A.refitNameHead(fontString,retry)
 		return nil
 	end
 	local ok,room=pcall(fontString.GetWidth,fontString)
-	local text,_,measured=nil,nil,false
+	local text,index,measured=nil,nil,false
 	if ok and type(room)=="number"and room>0 then
-		text,_,measured=A.fittedForm(fontString,room,forms)
+		text,index,measured=A.fittedForm(fontString,room,forms)
 	end
 	if text==nil then
 		text=measured and forms[#forms]or forms[1]
-		if not measured and retry and#forms>1 and type(C_Timer)=="table"
+		index=measured and#forms or nil
+		if retry and#forms>1 and type(C_Timer)=="table"
 			and type(C_Timer.After)=="function"then
 			C_Timer.After(0,function()
 				if fontString.headForms==forms then
 					A.refitNameHead(fontString,false)
+					if type(fontString.onRefit)=="function"then
+						pcall(fontString.onRefit,fontString.headFit)
+					end
 				end
 			end)
 		end
 	end
+	local form="unmeasured"
+	if#forms==1 then
+		form="alone"
+	elseif index==1 then
+		form="realm"
+	elseif index~=nil then
+		form="bare"
+	end
+	fontString.headFit={
+		room=(ok and type(room)=="number"and room>0)and A.unitFigure(room)or 0,
+		need=#forms>1 and A.unitFigure(A.textRoom(fontString,forms[1]))or nil,
+		form=form,
+	}
 	fontString:SetText(text)
 	return text
 end
@@ -164,7 +194,7 @@ local function initRow(row,data)
 			local cell=row:CreateFontString(nil,"ARTWORK","GameFontHighlightSmall")
 			cell:SetPoint("RIGHT",row,"RIGHT",-edges[i],0)
 			cell:SetWidth(column.width)
-			cell:SetJustifyH("RIGHT")
+			cell:SetJustifyH(column.justify)
 			cell:SetWordWrap(false)
 			row.figures[i]=cell
 		end
@@ -256,13 +286,11 @@ local function initRow(row,data)
 	row.spec:SetText(sub)
 	row.spec:Show()
 
-	local met,with,against=row.figures[1],row.figures[2],row.figures[3]
+	local met,record=row.figures[1],row.figures[2]
 	A.style(met,"numberSmall",item.met>1 and"text"or"dimmer")
 	met:SetText(("x%d"):format(item.met))
-	A.style(with,"numberSmall","text")
-	with:SetText(sideCellText(A.sideShort(item.with)))
-	A.style(against,"numberSmall","text")
-	against:SetText(sideCellText(A.sideShort(item.against)))
+	A.style(record,"numberSmall","text")
+	record:SetText((A.recordCellText(item.with,item.against)))
 	for i=1,#row.figures do
 		row.figures[i]:Show()
 	end
@@ -275,37 +303,6 @@ local function rowExtent(_,data)
 		return A.metric("playerSection")
 	end
 	return A.metric("playerRow")
-end
-
-local function initMet(line,data)
-	if not line.built then
-		line.built=true
-		A.buildEncounterLine(line)
-		line.tail=line:CreateFontString(nil,"ARTWORK","GameFontDisableSmall")
-		line.tail:SetPoint("LEFT",line,"LEFT",A.metric("rowLabelPad"),0)
-		line.tail:SetPoint("RIGHT",line,"RIGHT",-A.metric("rowLabelPad"),0)
-		line.tail:SetJustifyH("LEFT")
-		line.tail:SetWordWrap(false)
-		line:SetScript("OnMouseUp",function(self)
-			if self.matchId~=nil then
-				A.showMatchFromPlayers(self.matchId)
-			end
-		end)
-	end
-
-	if data.tail~=nil then
-		A.paintEncounterLine(line,nil)
-		A.style(line.tail,"note","dim")
-		line.tail:SetText(data.tail)
-		line.tail:Show()
-		line.hover:Hide()
-		line:EnableMouse(false)
-		return
-	end
-	line.tail:Hide()
-	A.paintEncounterLine(line,data.line,window and window.metWidths or nil,false)
-	line.hover:Show()
-	line:EnableMouse(data.line~=nil and data.line.matchId~=nil)
 end
 
 function A.commitNoteBox(box,guid)
@@ -446,8 +443,7 @@ end
 
 local function standTagRow(note,pane)
 	local tagRows=A.paintTagRow(window.tagRow,note,pane)
-	window.dossier:SetHeight(A.notesPaneStack(tagRows)-A.metric("encRow")
-		-A.fontSize("label")-A.metric("headingPad"))
+	window.dossier:SetHeight(A.notesPaneStack(tagRows))
 	return tagRows
 end
 
@@ -663,6 +659,21 @@ local function stripBlock(parent)
 	return block
 end
 
+function A.repSlices(strip)
+	local counts={}
+	for _,step in ipairs(type(strip)=="table"and strip.steps or{})do
+		counts[step.rating]=step.count
+	end
+	local out={}
+	for _,step in ipairs(A.ratingRamp())do
+		out[#out+1]={rating=step.rating,label=(A.repLabel(step.rating)),mark=step.mark,
+			swatch=step.mark,count=counts[step.rating]or 0}
+	end
+	out[#out+1]={rating="none",label=(A.repLabel(nil)),mark=A.ratingMark(nil),swatch="dimmer",
+		count=type(strip)=="table"and strip.notRated or 0}
+	return out
+end
+
 local function buildStrip(frame)
 	local pad=A.metric("standPad")
 	frame.strip=CreateFrame("Frame",nil,frame)
@@ -702,14 +713,10 @@ local function buildStrip(frame)
 	rep.label:SetPoint("TOPLEFT",rep,"TOPLEFT",0,0)
 	rep.label:SetJustifyH("LEFT")
 	rep.label:SetWordWrap(false)
-	rep.total=rep:CreateFontString(nil,"ARTWORK","GameFontDisableSmall")
-	rep.total:SetPoint("TOPRIGHT",rep,"TOPRIGHT",0,0)
-	rep.total:SetJustifyH("RIGHT")
-	rep.total:SetWordWrap(false)
 
 	rep.bars,rep.legend={},{}
 	local barHeight,keyHeight,swatch=A.metric("repBarHeight"),A.fontSize("note")+4,A.metric("repSwatch")
-	for i,step in ipairs(A.ratingRamp())do
+	for i,step in ipairs(A.repSlices())do
 		local bar=CreateFrame("Button",nil,rep)
 		bar:SetHeight(barHeight)
 		bar:RegisterForClicks("LeftButtonUp")
@@ -735,7 +742,7 @@ local function buildStrip(frame)
 		key.count:SetPoint("LEFT",key.word,"RIGHT",4,0)
 		key.count:SetWordWrap(false)
 		key.ratingValue=step.rating
-		key.ratingMark=step.mark
+		key.ratingMark=step.swatch
 		key:SetScript("OnClick",function(self)
 			A.toggleNotesRep(self.ratingValue)
 		end)
@@ -804,39 +811,37 @@ local function paintStrip(view)
 			-A.metric("standLead")-3*(A.metric("standTile")+A.metric("paneGap")*2)
 			-A.metric("paneGap")*3
 	end
-	A.style(rep.total,"numberMicro","dim")
-	fitted(rep.total,room-A.textRoom(rep.label,RATINGS_LABEL)-A.metric("paneGap"),{
-		("%s rated, %s not rated"):format(A.groupedCount(strip.rated),A.groupedCount(strip.notRated)),
-		("%s rated"):format(A.groupedCount(strip.rated)),
-	})
+	local slices=A.repSlices(strip)
 	local gap=A.metric("repBarGap")
 	local floor=6
 	local total,held=0,0
-	for _,step in ipairs(strip.steps)do
-		total=total+step.count
-		if step.count>0 then
+	for _,slice in ipairs(slices)do
+		total=total+slice.count
+		if slice.count>0 then
 			held=held+1
 		end
 	end
-	local drawn=total>0 and held or#strip.steps
-	local spare=room-gap*(drawn-1)-floor*drawn
+	local spare=room-gap*(held-1)-floor*held
 	local x=0
 	local barTop=-(A.fontSize("label")+6)
 	local widths={}
 	for i,bar in ipairs(rep.bars)do
-		local step=strip.steps[i]
-		local empty=total>0 and step.count==0
-		local width=empty and 0
-			or floor+((total>0 and spare>0)and math.floor(spare*step.count/total)or 0)
+		local slice=slices[i]
+		local width=0
+		if i==#slices and(total==0 or slice.count>0)then
+			width=math.max(math.floor(room-x),floor)
+		elseif slice.count>0 then
+			width=floor+(spare>0 and math.floor(spare*slice.count/total)or 0)
+		end
 		widths[i]=width
 		bar:ClearAllPoints()
 		bar:SetPoint("TOPLEFT",rep,"TOPLEFT",x,barTop)
 		bar:SetWidth(math.max(width,1))
-		bar:SetShown(not empty)
+		bar:SetShown(width>0)
 		bar.fill:SetColorTexture(A.color(bar.ratingMark))
 		local dim=repFilter~=nil and repFilter~=bar.ratingValue
-		bar.fill:SetAlpha(dim and 0.3 or(step.count>0 and 1 or 0.35))
-		if not empty then
+		bar.fill:SetAlpha(dim and 0.3 or 1)
+		if width>0 then
 			x=x+width+gap
 		end
 	end
@@ -855,12 +860,12 @@ local function paintStrip(view)
 	for i,key in ipairs(rep.legend)do
 		A.style(key.word,"note","text")
 		A.style(key.count,"numberMicro","dim")
-		whole=whole+keyWidth(key,strip.steps[i],true)+(i>1 and keyGap or 0)
+		whole=whole+keyWidth(key,slices[i],true)+(i>1 and keyGap or 0)
 	end
 	local words=whole<=room
 	x=0
 	for i,key in ipairs(rep.legend)do
-		local step=strip.steps[i]
+		local step=slices[i]
 		local chosen=repFilter==key.ratingValue
 		local dim=repFilter~=nil and not chosen
 		key.swatch:SetColorTexture(A.color(key.ratingMark))
@@ -924,15 +929,20 @@ local function paintStrip(view)
 	}
 end
 
+function A.notesToolbarHeight()
+	return A.metric("controlHeight")*2+A.metric("paneGap")
+end
+
 local function buildToolbar(frame)
 	frame.toolbar=CreateFrame("Frame",nil,frame)
 	frame.toolbar:SetPoint("TOPLEFT",frame.strip,"BOTTOMLEFT",0,-A.metric("paneGap"))
 	frame.toolbar:SetPoint("TOPRIGHT",frame.strip,"BOTTOMRIGHT",0,-A.metric("paneGap"))
-	frame.toolbar:SetHeight(A.metric("controlHeight"))
+	frame.toolbar:SetHeight(A.notesToolbarHeight())
+	local orderTop=-(A.metric("controlHeight")+A.metric("paneGap"))
 
 	frame.searchBox=A.entry(frame.toolbar)
 	frame.searchBox:SetHeight(A.metric("controlHeight"))
-	frame.searchBox:SetPoint("LEFT",frame.toolbar,"LEFT",0,0)
+	frame.searchBox:SetPoint("TOPLEFT",frame.toolbar,"TOPLEFT",0,0)
 	frame.searchBox:SetWidth(A.metric("playerSearch"))
 	frame.searchBox:SetScript("OnTextChanged",function(self,userInput)
 		if not userInput then
@@ -952,22 +962,22 @@ local function buildToolbar(frame)
 	frame.sortTrack=A.segment(frame.toolbar,A.playerSorts(),function(value)
 		A.setNotesSort(value)
 	end)
-	frame.sortTrack:SetPoint("LEFT",frame.searchBox,"RIGHT",A.metric("paneGap"),0)
+	frame.sortTrack:SetPoint("TOPLEFT",frame.toolbar,"TOPLEFT",0,orderTop)
 
-	frame.sideFilter=A.dropdown(frame.toolbar,A.playerSideChoices(),function(value)
-		A.setNotesSide(value)
-	end)
-	frame.sideFilter:SetPoint("RIGHT",frame.toolbar,"RIGHT",0,0)
 	frame.formatFilter=A.dropdown(frame.toolbar,A.playerFormatChoices(),function(value)
 		A.setNotesFormat(value)
 	end)
-	frame.formatFilter:SetPoint("RIGHT",frame.sideFilter,"LEFT",-A.metric("pillGap"),0)
+	frame.formatFilter:SetPoint("LEFT",frame.searchBox,"RIGHT",A.metric("pillGap"),0)
+	frame.sideFilter=A.dropdown(frame.toolbar,A.playerSideChoices(),function(value)
+		A.setNotesSide(value)
+	end)
+	frame.sideFilter:SetPoint("LEFT",frame.formatFilter,"RIGHT",A.metric("pillGap"),0)
 
 	frame.repChip=A.pill(frame.toolbar,"",function()
 		A.toggleNotesRep(repFilter)
 	end)
 	A.setControlTone(frame.repChip,"accent")
-	frame.repChip:SetPoint("RIGHT",frame.formatFilter,"LEFT",-A.metric("paneGap"),0)
+	frame.repChip:SetPoint("TOPRIGHT",frame.toolbar,"TOPRIGHT",0,orderTop)
 	frame.repChip:Hide()
 
 	frame.clearScope=A.pill(frame.toolbar,"Show all",function()
@@ -987,18 +997,18 @@ local function paintToolbar()
 	A.setDropdownChoices(window.formatFilter,held.choices,formatFilter)
 	A.setDropdownChoices(window.sideFilter,A.playerSideChoices(),sideFilter)
 
-	local anchor=window.formatFilter
+	window.clearScope:ClearAllPoints()
 	if repFilter~=nil then
 		local label=(A.repLabel(repFilter~="none"and repFilter or nil))
 		window.repChip:SetText(("%s  x"):format(label))
 		A.fitControl(window.repChip,A.metric("tagMin"),A.metric("tagPad"))
 		window.repChip:Show()
-		anchor=window.repChip
+		window.clearScope:SetPoint("RIGHT",window.repChip,"LEFT",-A.metric("paneGap"),0)
 	else
 		window.repChip:Hide()
+		window.clearScope:SetPoint("TOPRIGHT",window.toolbar,"TOPRIGHT",0,
+			-(A.metric("controlHeight")+A.metric("paneGap")))
 	end
-	window.clearScope:ClearAllPoints()
-	window.clearScope:SetPoint("RIGHT",anchor,"LEFT",-A.metric("paneGap"),0)
 	window.clearScope:SetShown(scopeMatchId~=nil)
 end
 
@@ -1084,7 +1094,7 @@ local function buildListHeader(frame)
 		local label=frame.listHeader:CreateFontString(nil,"ARTWORK","GameFontDisableSmall")
 		label:SetPoint("RIGHT",frame.listHeader,"RIGHT",-edges[i],0)
 		label:SetWidth(column.width)
-		label:SetJustifyH("RIGHT")
+		label:SetJustifyH(column.justify)
 		label:SetWordWrap(false)
 		labels[#labels+1]=label
 		names[#names+1]=column.name
@@ -1174,10 +1184,6 @@ local function buildDossier(frame)
 			pcall(paintTagSuggestions)
 		end
 	end)
-
-	frame.metHeader=A.buildEncounterHeader(frame.dossier)
-	frame.metHeader:SetPoint("TOPLEFT",frame.tagRow,"BOTTOMLEFT",0,-A.metric("paneGap"))
-	frame.metHeader:SetPoint("RIGHT",frame.dossier,"RIGHT",0,0)
 end
 
 function A.notesListSplit()
@@ -1207,7 +1213,7 @@ function A.notesPaneSplit(width)
 end
 
 function A.notesPaneFloor()
-	local widest=A.encounterFloor()
+	local widest=0
 	local function take(value)
 		if type(value)=="number"and value>widest then
 			widest=value
@@ -1232,33 +1238,32 @@ function A.notesPaneStack(tagRows)
 		+gap+A.sideCardHeight()
 		+gap+A.metric("controlHeight")
 		+gap+rows*A.metric("tagRow")
-		+gap+A.fontSize("label")+A.metric("headingPad")
-		+A.metric("encRow")
 end
 
 local function topFloor()
 	local strip=A.metric("standPad")*2+A.metric("standLead")+A.metric("paneGap")*3
 		+3*(A.metric("standTile")+A.metric("paneGap")*2)
 	local legend=0
-	local swatch,countFloor,paneGap=A.metric("repSwatch"),A.headerFloor("0,000"),A.metric("paneGap")
-	for _ in ipairs(A.ratingRamp())do
+	local swatch,paneGap=A.metric("repSwatch"),A.metric("paneGap")
+	for _,slice in ipairs(A.repSlices())do
+		local countFloor=A.headerFloor(slice.rating=="none"and"0,000"or"000")
 		legend=legend+swatch+4+countFloor+paneGap+6
 	end
 	strip=strip+legend
+	local search=A.metric("playerSearch")+2*(A.metric("pillGap")+A.metric("dropdownWidth"))
 	local sorts=0
 	local segmentMin,segmentGap=A.metric("segmentMin"),A.metric("segmentGap")
 	for _,sort in ipairs(A.playerSorts())do
 		sorts=sorts+math.max(segmentMin,A.headerFloor(sort.label))+segmentGap
 	end
-	local toolbar=A.metric("playerSearch")+A.metric("paneGap")+sorts
-		+A.metric("paneGap")+A.headerFloor("Negative  x")+A.metric("tagPad")
-		+2*(A.metric("dropdownWidth")+A.metric("pillGap"))
-	return math.max(strip,toolbar)+A.metric("margin")*2
+	local order=sorts+A.metric("paneGap")+A.metric("actionMin")+A.metric("paneGap")
+		+A.headerFloor("Not rated  x")+A.metric("tagPad")
+	return math.max(strip,search,order)+A.metric("margin")*2
 end
 
 function A.notesWindowFloor()
 	local above=A.metric("headerHeight")+A.playersStripHeight()+A.metric("paneGap")
-		+A.metric("controlHeight")+A.notesRosterBandHeight()+A.metric("paneGap")
+		+A.notesToolbarHeight()+A.notesRosterBandHeight()+A.metric("paneGap")
 
 	local rows=listHeaderHeight()+A.metric("playerSection")+A.metric("playerRow")*4
 	local stack=A.notesPaneStack(1)
@@ -1320,24 +1325,10 @@ local function buildWindow()
 		"the player list")
 	frame.list.box:SetPoint("TOPLEFT",frame.listHeader,"BOTTOMLEFT",0,0)
 	frame.list.box:SetPoint("BOTTOMRIGHT",frame.listHost,"BOTTOMRIGHT",0,0)
-	frame.list.bar:SetPoint("TOPLEFT",frame.listHost,"TOPRIGHT",4,0)
+	frame.list.bar:SetPoint("TOPLEFT",frame.listHeader,"BOTTOMRIGHT",4,0)
 	frame.list.bar:SetPoint("BOTTOMLEFT",frame.listHost,"BOTTOMRIGHT",4,0)
 
 	buildDossier(frame)
-
-	frame.met=A.buildScroller(FRAME_NAME.."Detail",frame.detailHost,"Button",initMet,
-		function(_,data)
-			if type(data)=="table"and data.tail==nil then
-				return A.metric("encRow")
-			end
-			return A.metric("rowHeight")
-		end,"the player detail pane")
-	frame.met.box:SetPoint("TOPLEFT",frame.metHeader,"BOTTOMLEFT",0,0)
-	frame.met.box:SetPoint("TOPRIGHT",frame.metHeader,"BOTTOMRIGHT",0,0)
-	frame.met.box:SetPoint("BOTTOMLEFT",frame.detailHost,"BOTTOMLEFT",0,0)
-	frame.met.box:SetPoint("BOTTOMRIGHT",frame.detailHost,"BOTTOMRIGHT",0,0)
-	frame.met.bar:SetPoint("TOPLEFT",frame.detailHost,"TOPRIGHT",4,0)
-	frame.met.bar:SetPoint("BOTTOMLEFT",frame.detailHost,"BOTTOMRIGHT",4,0)
 
 	buildFaultPanel(frame)
 
@@ -1424,7 +1415,7 @@ local function orderValue(sort,row)
 	if type(row)~="table"then
 		return nil
 	end
-	if sort=="with"or sort=="against"then
+	if sort=="record"or sort=="with"or sort=="against"then
 		local rank=row[sort.."Rank"]
 		return rank and rank.diff or"-"
 	end
@@ -1585,24 +1576,6 @@ local function emptyText()
 	return"No player selected.","unselected"
 end
 
-local function metRows(dossier)
-	local rows={}
-	if not dossier then
-		return rows
-	end
-	local encounters=dossier.encounters or{}
-	for i=1,math.min(#encounters,MET_ROWS)do
-		rows[#rows+1]={line=A.encounterLine(encounters[i])}
-	end
-	if#encounters>MET_ROWS then
-		local more=#encounters-MET_ROWS
-		rows[#rows+1]={tail=("%d more %s"):format(more,more==1 and"encounter"or"encounters")}
-	elseif#encounters==0 then
-		rows[1]={tail="no match with them"}
-	end
-	return rows
-end
-
 function A.paneFaultText(refused,shown,unreached,noRoom)
 	local named=A.joinAnd(refused)
 	local silent=A.joinAnd(unreached)
@@ -1656,7 +1629,7 @@ local function standFaultPanel(said)
 		return false
 	end
 
-	A.style(window.faultTitle,"label","fault")
+	A.style(window.faultTitle,"section","fault")
 	window.faultTitle:SetText(said.title)
 
 	A.style(window.faultLine,"bodyText")
@@ -1837,23 +1810,20 @@ function A.faultReport()
 	return table.concat(out,"\n")
 end
 
-local function paintFaultPanel(listTook,metTook,shown,noRoom)
+local function paintFaultPanel(listTook,detailDrew,shown,noRoom)
 	if not window or not window.fault then
 		return false
 	end
 
 	local refused,unreached={},{}
 	local listName=(window.list and window.list.subject)or"the player list"
-	local metName=(window.met and window.met.subject)or"the player detail pane"
 	if listTook==false then
 		refused[#refused+1]=listName
 	elseif listTook==nil then
 		unreached[#unreached+1]=listName
 	end
-	if metTook==false then
-		refused[#refused+1]=metName
-	elseif metTook==nil then
-		unreached[#unreached+1]=metName
+	if detailDrew==nil then
+		unreached[#unreached+1]=DETAIL_SUBJECT
 	end
 
 	local said=A.paneFaultText(refused,shown,unreached,noRoom)
@@ -1882,8 +1852,7 @@ function A.stageNotesFault()
 	end
 
 	local listName=(window.list and window.list.subject)or"the player list"
-	local metName=(window.met and window.met.subject)or"the player detail pane"
-	local said=A.paneFaultText({listName},nil,{metName},{metName})
+	local said=A.paneFaultText({listName},nil,{DETAIL_SUBJECT},{DETAIL_SUBJECT})
 	if not said then
 		return false,"the fault panel composed nothing, so it was not staged"
 	end
@@ -1941,13 +1910,11 @@ local function paintDossier(selected,index)
 		drawnEmpty=word
 		window.noteRow.box:SetEnabled(false)
 		window.tagRow.box:SetEnabled(false)
-		window.metHeader:Hide()
 		return nil
 	end
 
 	window.dossierEmpty:Hide()
 	window.dossier:Show()
-	window.metHeader:Show()
 	window.noteRow.box:SetEnabled(true)
 	window.tagRow.box:SetEnabled(true)
 
@@ -2000,8 +1967,6 @@ local function paintDossier(selected,index)
 
 	standTagRow(note,pane)
 
-	window.metWidths=A.encounterWidths(pane)
-	A.paintEncounterHeader(window.metHeader,window.metWidths)
 	dossier.typed=typed
 	return dossier
 end
@@ -2051,10 +2016,11 @@ function A.refreshNotes(searchOnly)
 	local stripDrew=(stripOk and type(stripErr)=="table")and stripErr or{}
 	A.containedPaint("notes/toolbar",paintToolbar)
 
+	local sortColumn=(view.sort=="with"or view.sort=="against")and"record"or view.sort
 	A.containedPaint("notes/list-header",function()
 		window.listHeader.rule:SetColorTexture(A.color("hairline"))
 		for i,label in ipairs(window.listHeader.labels)do
-			A.style(label,"label",window.listHeader.keys[i]==view.sort and"accent"or"dimmer")
+			A.style(label,"label",window.listHeader.keys[i]==sortColumn and"accent"or"dimmer")
 			label:SetText(window.listHeader.names[i]or"")
 		end
 		local hoverR,hoverG,hoverB,hoverA=A.color("hover")
@@ -2094,18 +2060,10 @@ function A.refreshNotes(searchOnly)
 	end
 
 	local dossierOk,dossier=pcall(paintDossier,selected,index)
+	local detailDrew=dossierOk or nil
 	if not dossierOk then
 		A.noteError(("the player dossier did not paint: %s"):format(tostring(dossier)),"notes/dossier")
 		dossier=nil
-	end
-
-	local metTook=nil
-	local metOk,metErr=pcall(function()
-		metTook=A.setRows(window.met,metRows(dossier))
-	end)
-	if not metOk then
-		A.noteError(("the player detail pane was never handed its rows: %s"):format(tostring(metErr)),
-			"notes/detail")
 	end
 
 	local noRoom={}
@@ -2122,10 +2080,9 @@ function A.refreshNotes(searchOnly)
 	end
 	cramped(window.listHost,listTook,(window.list and window.list.subject)or"the player list",
 		"notes/list")
-	cramped(window.detailHost,metTook,
-		(window.met and window.met.subject)or"the player detail pane","notes/detail")
+	cramped(window.detailHost,detailDrew,DETAIL_SUBJECT,"notes/detail")
 
-	local panelOk,panel=pcall(paintFaultPanel,listTook,metTook,view.shown,noRoom)
+	local panelOk,panel=pcall(paintFaultPanel,listTook,detailDrew,view.shown,noRoom)
 	if not panelOk then
 		A.noteError(("the fault panel did not stand: %s"):format(tostring(panel)),"notes/panel")
 		panel=false
@@ -2144,7 +2101,7 @@ function A.refreshNotes(searchOnly)
 		n=view.shown,
 		rows=#rows,
 		listTook=listTook,
-		met=metTook,
+		met=detailDrew,
 		dossier=dossierOk,
 		panel=panel,
 		sort=sortWord,
@@ -2199,13 +2156,8 @@ function A.showNotes()
 	local shown=pcall(frame.Show,frame)
 	pcall(frame.Raise,frame)
 
-	local box=frame.met and frame.met.box or nil
-	local okBox,metRoom=false,nil
-	if box then
-		okBox,metRoom=pcall(box.GetWidth,box)
-	end
 	A.trace("open",{source="notes",n=lastRows,id=scopeMatchId,
-		metW=okBox and A.unitFigure(metRoom)or nil,width=A.unitFigure(A.notesPaneSplit())},"ui")
+		width=A.unitFigure(A.notesPaneSplit())},"ui")
 
 	return shown
 end

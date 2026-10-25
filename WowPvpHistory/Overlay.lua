@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.16
+-- WowPvpHistory 0.70.27
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -496,7 +496,7 @@ end
 
 local function whenLine(record)
 	local parts={}
-	local day=A.dayText(record.openedAt)or A.dayText(record.completedAt)
+	local day=A.stampWords(record.openedAt)or A.stampWords(record.completedAt)
 	if day~=nil then
 		parts[#parts+1]=day
 	end

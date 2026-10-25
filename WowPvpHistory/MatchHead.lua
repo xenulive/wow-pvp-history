@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.16
+-- WowPvpHistory 0.70.27
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -83,8 +83,13 @@ function A.matchRoundCards(record)
 		if row.byHand==true then
 			word=word.."*"
 		end
+		local state=row.result==nil and"open"or(row.byHand==true and"typed"or"captured")
+		local meter=nil
+		if type(A.roundMeterLines)=="function"and type(record.character)=="string"then
+			meter=A.roundMeterLines(record,record.character,i)
+		end
 		cards[i]={
-			n=i,word=word,tone=row.tone or"dim",
+			n=i,word=word,tone=row.tone or"dim",state=state,meter=meter,
 			classToken=type(own)=="table"and own.classToken or nil,
 			spec=type(own)=="table"and own.spec or nil,
 			mates=mates,foes=foes,
@@ -99,17 +104,23 @@ function A.matchTitleStamp(record)
 	if stamp==nil then
 		return nil
 	end
-	local day,minute=tostring(stamp):match("^(%d%d%d%d%-%d%d%-%d%d)[ T](%d%d:%d%d)")
-	if day then
-		return day.." "..minute
-	end
-	return tostring(stamp)
+	local text=tostring(stamp):gsub("^(%d%d%d%d%-%d%d%-%d%d)T","%1 ")
+	return A.stampWords(text)or tostring(stamp)
+end
+
+local VERDICT_ROLE="dossierName"
+
+function A.matchBannerLead()
+	local chip=A.fontSize("label")+A.metric("headChipPad")
+	return math.max(A.fontSize(VERDICT_ROLE),A.fontSize("number"),chip)
 end
 
 function A.matchBannerHeight()
-	local left=A.fontSize("heading")+A.fontSize("note")+A.metric("headPad")
-	local right=A.fontSize("headingLarge")
-	return math.max(left,right)+A.metric("bannerPad")*2
+	return A.metric("bannerPad")*2+A.matchBannerLead()+A.metric("headPad")+A.fontSize("heading")
+end
+
+function A.roundCardVsBand()
+	return A.fontSize("note")+A.metric("roundCardLine")*2
 end
 
 function A.ladderHeight()
@@ -127,7 +138,7 @@ function A.roundCardsHeight(cards)
 	end
 	local line=A.fontSize("note")+A.metric("roundCardLine")
 	return A.metric("roundCardPad")*2+A.metric("roundCardEdge")+A.fontSize("label")
-		+A.metric("roundCardLine")+names*line+A.metric("roundCardLine")*2
+		+A.metric("roundCardLine")+names*line+A.roundCardVsBand()
 end
 
 local LADDER_SLOTS=10
@@ -142,21 +153,6 @@ local function outline(line,layer)
 		box[i]=line:CreateTexture(nil,layer or"ARTWORK")
 	end
 	return box
-end
-
-local function placeOutline(box,parent,x,y,w,h,r,g,b,a)
-	local edges={
-		{x,y,w,1},{x,y-h+1,w,1},
-		{x,y,1,h},{x+w-1,y,1,h},
-	}
-	for i=1,4 do
-		local edge,at=box[i],edges[i]
-		edge:ClearAllPoints()
-		edge:SetPoint("TOPLEFT",parent,"TOPLEFT",at[1],at[2])
-		edge:SetSize(at[3],at[4])
-		edge:SetColorTexture(r,g,b,a or 1)
-		edge:Show()
-	end
 end
 
 function A.buildMatchHeadParts(line)
@@ -204,8 +200,12 @@ function A.buildMatchHeadParts(line)
 		card.title=text("GameFontDisableSmall")
 		card.word=text("GameFontDisableSmall","RIGHT")
 		card.rule=keep(line:CreateTexture(nil,"ARTWORK"))
+		card.ruleRight=keep(line:CreateTexture(nil,"ARTWORK"))
+		card.vs=text("GameFontDisableSmall","CENTER")
 		card.mmrMates=text("GameFontDisableSmall","RIGHT")
 		card.mmrFoes=text("GameFontDisableSmall","RIGHT")
+		card.mmrMatesLabel=text("GameFontDisableSmall","RIGHT")
+		card.mmrFoesLabel=text("GameFontDisableSmall","RIGHT")
 		card.names,card.icons={},{}
 		for n=1,CARD_NAMES+1 do
 			card.icons[n]=keep(line:CreateTexture(nil,"ARTWORK"))
@@ -262,27 +262,13 @@ function A.buildMatchHeadParts(line)
 				A.copyTalents(self.recordId)
 			end
 		end))
-		line.buildCopy:SetHeight(A.metric("segmentHeight"))
-		line.buildCopy.controlRole="label"
-		A.setControlTone(line.buildCopy,"dim")
 	end
 
 	line.lobbyIcon=keep(line:CreateTexture(nil,"ARTWORK"))
 	line.legendMarks={
 		keep(line:CreateTexture(nil,"ARTWORK")),keep(line:CreateTexture(nil,"ARTWORK")),
 	}
-	line.legendBox=outline(line)
-	for i=1,4 do
-		keep(line.legendBox[i])
-	end
-	line.legendWords={text("GameFontDisableSmall"),text("GameFontDisableSmall"),text("GameFontDisableSmall")}
-
-	for _,parts in pairs(line.lobbyRounds or{})do
-		parts.box=outline(line)
-		for i=1,4 do
-			keep(parts.box[i])
-		end
-	end
+	line.legendWords={text("GameFontDisableSmall"),text("GameFontDisableSmall")}
 end
 
 function A.matchHeadGame()
@@ -318,17 +304,17 @@ local function ratingsText(h)
 		A.HEAD_ARROW,rating(h.ratingTo,"bright"))
 end
 
-local function paintChip(line,h,width,game)
+local function paintChip(line,h,right,game,dy)
 	if h.chipWhy=="unheard"then
 		A.ratingAsk()
 	end
-	local right=width-A.metric("rowCellGap")
+	dy=dy or 0
 	if h.mmr then
 		local text="mmr "..h.mmr
 		A.style(line.headMmr,"numberSmall","dim")
 		line.headMmr:SetText(text)
 		line.headMmr:ClearAllPoints()
-		line.headMmr:SetPoint("RIGHT",line,"LEFT",right,0)
+		line.headMmr:SetPoint("RIGHT",line,"LEFT",right,dy)
 		line.headMmr:Show()
 		right=right-A.textRoom(line.headMmr,text)-A.metric("headGap")
 	end
@@ -346,10 +332,11 @@ local function paintChip(line,h,width,game)
 		local w,ht=room+pad*2,A.fontSize("label")+pad
 		local x=right-w
 		line.headChipText:ClearAllPoints()
-		line.headChipText:SetPoint("LEFT",line,"LEFT",x+pad,0)
+		line.headChipText:SetPoint("LEFT",line,"LEFT",x+pad,dy)
 		line.headChipText:SetWidth(room)
 		line.headChipText:Show()
-		local edges={{x,ht/2,w,1},{x,-ht/2,w,1},{x,0,1,ht},{x+w-1,0,1,ht}}
+		local edges={{x,dy+ht/2,w,1},{x,dy-ht/2,w,1},{x,dy,1,ht},
+			{x+w-1,dy,1,ht}}
 		for i=1,4 do
 			local edge,at=line.headChip[i],edges[i]
 			edge:ClearAllPoints()
@@ -381,30 +368,86 @@ local function paintPips(line,h,after)
 	end
 end
 
+function A.matchBannerFit(verdict,ratings,delta,limit)
+	local pad,gap=A.metric("bannerPad"),A.metric("headGap")
+	local room=limit-pad
+	local function after(width)
+		return width>0 and gap+width or 0
+	end
+	if verdict+after(ratings)+after(delta)<=room then
+		return{verdict=verdict,ratings=ratings>0,fits=true}
+	end
+	local cut=math.max(1,math.min(verdict,room-after(delta)))
+	return{verdict=cut,ratings=false,fits=cut==verdict}
+end
+
+local function paintBanner(line,h)
+	line.headCrest:Hide()
+	line.bannerBg:SetAllPoints(line)
+	line.bannerBg:SetColorTexture(A.color("panelDeep"))
+	line.bannerBg:Show()
+	local width=type(h.available)=="number"and h.available or A.detailWindowBody()
+	local pad,gap=A.metric("bannerPad"),A.metric("headGap")
+	local lead=A.matchBannerLead()
+	local dy=A.matchBannerHeight()/2-pad-lead/2
+	local limit=paintChip(line,h,width-pad,true,dy)
+
+	local verdict,tone,place=h.result,h.resultTone or"text",h.place or""
+	if verdict==nil then
+		verdict,tone,place=place,"bright",""
+	end
+	A.style(line.bannerVerdict,VERDICT_ROLE,tone)
+	line.bannerVerdict:SetJustifyH("LEFT")
+	line.bannerVerdict:SetText(verdict)
+	local ratings=ratingsText(h)
+	A.style(line.headRatings,"numberSmall","dim")
+	A.style(line.headDelta,"number",h.deltaTone or"dim")
+	local fit=A.matchBannerFit(math.ceil(A.textRoom(line.bannerVerdict,verdict)),
+		math.ceil(A.textRoom(line.headRatings,ratings)),math.ceil(A.textRoom(line.headDelta,h.delta or"")),
+		limit)
+	A.trace("match-banner",{verdict=h.result or"none",room=limit-pad,
+		fit=fit.fits and(fit.ratings==(ratings~="")and"whole"or"no-ratings")or"cut"},"ui")
+	line.bannerVerdict:ClearAllPoints()
+	line.bannerVerdict:SetPoint("LEFT",line,"TOPLEFT",pad,-(pad+lead/2))
+	line.bannerVerdict:SetWidth(fit.verdict)
+	line.bannerVerdict:Show()
+	local after=line.bannerVerdict
+	if fit.ratings then
+		line.headRatings:SetText(ratings)
+		line.headRatings:ClearAllPoints()
+		line.headRatings:SetPoint("LEFT",after,"RIGHT",gap,0)
+		line.headRatings:Show()
+		after=line.headRatings
+	end
+	if h.delta~=nil then
+		line.headDelta:SetText(h.delta)
+		line.headDelta:ClearAllPoints()
+		line.headDelta:SetPoint("LEFT",after,"RIGHT",gap,0)
+		line.headDelta:Show()
+	end
+
+	A.style(line.bannerNote,"note","dim")
+	line.bannerNote:SetText(detailText(h,true))
+	line.bannerNote:ClearAllPoints()
+	if place~=""then
+		A.style(line.bannerPlace,"heading","bright")
+		line.bannerPlace:SetText(place)
+		line.bannerPlace:ClearAllPoints()
+		line.bannerPlace:SetPoint("BOTTOMLEFT",line,"BOTTOMLEFT",pad,pad)
+		line.bannerPlace:SetWidth(math.max(1,math.min(math.ceil(A.textRoom(line.bannerPlace,place)),
+			width-pad*2)))
+		line.bannerPlace:Show()
+		line.bannerNote:SetPoint("BOTTOMLEFT",line.bannerPlace,"BOTTOMRIGHT",gap,0)
+	else
+		line.bannerNote:SetPoint("BOTTOMLEFT",line,"BOTTOMLEFT",pad,pad)
+	end
+	line.bannerNote:SetPoint("RIGHT",line,"RIGHT",-pad,0)
+	line.bannerNote:Show()
+end
+
 local function paintHeading(line,h,paintCrest,game)
 	if game then
-		line.headCrest:Hide()
-		line.bannerBg:SetAllPoints(line)
-		line.bannerBg:SetColorTexture(A.color("panelDeep"))
-		line.bannerBg:Show()
-		local pad=A.metric("bannerPad")
-		A.style(line.bannerVerdict,"headingLarge",h.resultTone or"text")
-		line.bannerVerdict:SetText(h.result or"")
-		line.bannerVerdict:ClearAllPoints()
-		line.bannerVerdict:SetPoint("BOTTOMRIGHT",line,"BOTTOMRIGHT",-pad,pad)
-		line.bannerVerdict:Show()
-		A.style(line.bannerPlace,"heading","bright")
-		line.bannerPlace:SetText(h.place or"")
-		line.bannerPlace:ClearAllPoints()
-		line.bannerPlace:SetPoint("TOPLEFT",line,"TOPLEFT",pad,-pad)
-		line.bannerPlace:SetPoint("RIGHT",line.bannerVerdict,"LEFT",-A.metric("headGap"),0)
-		line.bannerPlace:Show()
-		A.style(line.bannerNote,"note","dim")
-		line.bannerNote:SetText(detailText(h,true))
-		line.bannerNote:ClearAllPoints()
-		line.bannerNote:SetPoint("BOTTOMLEFT",line,"BOTTOMLEFT",pad,pad)
-		line.bannerNote:SetPoint("RIGHT",line.bannerVerdict,"LEFT",-A.metric("headGap"),0)
-		line.bannerNote:Show()
+		paintBanner(line,h)
 		return
 	end
 
@@ -426,22 +469,9 @@ local function paintHeading(line,h,paintCrest,game)
 	line.headRatings:Show()
 end
 
-local function paintHeadline(line,h,game)
+local function paintHeadline(line,h)
 	local width=type(h.available)=="number"and h.available or A.detailWindowBody()
-	local left=paintChip(line,h,width,game)
-	if game then
-		line.headRatings:ClearAllPoints()
-		line.headRatings:SetPoint("LEFT",line,"LEFT",A.metric("rowCellGap"),0)
-		A.style(line.headRatings,"numberSmall","dim")
-		line.headRatings:SetText(ratingsText(h))
-		line.headRatings:Show()
-		line.headDelta:ClearAllPoints()
-		line.headDelta:SetPoint("LEFT",line.headRatings,"RIGHT",A.metric("headGap"),0)
-		A.style(line.headDelta,"number",h.deltaTone or"dim")
-		line.headDelta:SetText(h.delta or"")
-		line.headDelta:Show()
-		return
-	end
+	local left=paintChip(line,h,width-A.metric("rowCellGap"),false)
 	A.style(line.headDetails,"bodyText","dim")
 	line.headDetails:SetText(detailText(h,false))
 	line.headDetails:ClearAllPoints()
@@ -536,6 +566,29 @@ local function shortName(cell)
 	return name:match("^([^%-]+)")or name
 end
 
+local function placeCardTarget(line,h,held,x,width,height)
+	local function place(target)
+		target:ClearAllPoints()
+		target:SetPoint("TOPLEFT",line,"TOPLEFT",x,0)
+		target:SetSize(width,height)
+		target:Show()
+	end
+	local button=type(line.lobbyRoundButtons)=="table"and line.lobbyRoundButtons[held.n]or nil
+	if button and(held.state=="open"or held.state=="typed")then
+		button.recordId=h.id
+		button.round=held.n
+		button.state=held.state
+		button.meterWords=held.meter
+		place(button)
+		return
+	end
+	local hover=type(line.lobbyRoundHovers)=="table"and line.lobbyRoundHovers[held.n]or nil
+	if hover and type(held.meter)=="table"then
+		hover.words=held.meter
+		place(hover)
+	end
+end
+
 local function paintCards(line,h)
 	local cards=h.cards or{}
 	local width=type(h.available)=="number"and h.available or A.detailWindowBody()
@@ -570,44 +623,62 @@ local function paintCards(line,h)
 		card.word:Show()
 		y=y-A.fontSize("label")-A.metric("roundCardLine")
 		local inner=cardWidth-pad*2
-		local function figure(fs,value,at)
-			if not fs then
-				return 0
-			end
+		local function figure(fs,label,value,at)
 			if type(value)~="number"then
 				fs:SetText("")
 				fs:Hide()
+				label:SetText("")
+				label:Hide()
 				return 0
 			end
 			local text=("%d"):format(value)
-			A.style(fs,"note","dim")
+			A.style(fs,"rowClock","text")
 			fs:SetText(text)
 			fs:ClearAllPoints()
 			fs:SetPoint("TOPRIGHT",card.bg,"TOPRIGHT",-pad,at)
 			fs:Show()
-			return math.ceil(A.textRoom(fs,text))+A.metric("rowMarkGap")
+			A.style(label,"note","dim")
+			label:SetText("avg MMR")
+			label:ClearAllPoints()
+			label:SetPoint("BOTTOMRIGHT",fs,"BOTTOMLEFT",-A.metric("rowMarkGap"),0)
+			label:Show()
+			return math.ceil(A.textRoom(fs,text))+math.ceil(A.textRoom(label,"avg MMR"))
+				+A.metric("rowMarkGap")*2
 		end
 		local n=1
-		local ownRoom=figure(card.mmrMates,held.mmrYours,y)
+		local ownRoom=figure(card.mmrMates,card.mmrMatesLabel,held.mmrYours,y)
 		paintCardName(card,n,pad,y,inner-ownRoom,"You",held.classToken,held.spec,false)
 		for _,cell in ipairs(held.mates)do
 			n,y=n+1,y-step
 			paintCardName(card,n,pad,y,inner,shortName(cell),cell.classToken,cell.spec,false)
 		end
-		y=y-step+A.metric("roundCardLine")
-		card.rule:ClearAllPoints()
-		card.rule:SetPoint("TOPLEFT",card.bg,"TOPLEFT",pad,y)
-		card.rule:SetSize(inner,1)
-		card.rule:SetColorTexture(A.color("hairline"))
-		card.rule:SetShown(#held.mates+#held.foes>0)
-		y=y-A.metric("roundCardLine")
-		local foeRoom=figure(card.mmrFoes,#held.foes>0 and held.mmrTheirs or nil,y)
+		y=y-step
+		local band=A.roundCardVsBand()
+		local sides=#held.mates+#held.foes>0
+		A.style(card.vs,"note","dim")
+		card.vs:SetText("VS")
+		local word=math.ceil(A.textRoom(card.vs,"VS"))
+		local half=math.max(1,math.floor((inner-word)/2)-A.metric("rowMarkGap"))
+		local middle=y-band/2
+		card.vs:ClearAllPoints()
+		card.vs:SetPoint("CENTER",card.bg,"TOPLEFT",pad+inner/2,middle)
+		card.vs:SetShown(sides)
+		for r,rule in ipairs({card.rule,card.ruleRight})do
+			rule:ClearAllPoints()
+			rule:SetPoint("TOPLEFT",card.bg,"TOPLEFT",r==1 and pad or(pad+inner-half),middle)
+			rule:SetSize(half,1)
+			rule:SetColorTexture(A.color("hairline"))
+			rule:SetShown(sides)
+		end
+		y=y-band
+		local foeRoom=figure(card.mmrFoes,card.mmrFoesLabel,#held.foes>0 and held.mmrTheirs or nil,y)
 		for f,cell in ipairs(held.foes)do
 			n=n+1
 			paintCardName(card,n,pad,y,f==1 and inner-foeRoom or inner,shortName(cell),
 				cell.classToken,cell.spec,true)
 			y=y-step
 		end
+		placeCardTarget(line,h,held,x,cardWidth,height)
 	end
 end
 
@@ -700,7 +771,7 @@ function A.paintMatchHead(line,h,paintCrest)
 	if h.kind=="heading"then
 		paintHeading(line,h,paintCrest,game)
 	elseif h.kind=="headline"then
-		paintHeadline(line,h,game)
+		paintHeadline(line,h)
 	elseif h.kind=="ladder"and type(h.ladder)=="table"then
 		paintLadder(line,h)
 	elseif h.kind=="cards"then
@@ -710,47 +781,6 @@ function A.paintMatchHead(line,h,paintCrest)
 	elseif h.kind=="build"then
 		paintBuild(line,h)
 	end
-end
-
-function A.paintRoundCellMark(line,parts,cell,x,width,word,result)
-	local typed=type(word)=="string"and word:sub(-1)=="*"
-	local bare=typed and word:sub(1,-2)or word
-	local size=A.metric("roundCellMark")
-	local left=x+math.floor((width-size)/2)
-	local top=-math.floor((A.metric("rowHeight")-size)/2)
-	parts.ground:Hide()
-	for i=1,4 do
-		parts.box[i]:Hide()
-	end
-	local tone=nil
-	if bare=="WITH"then
-		tone=result==true and"win"or(result==false and"loss"or"dimmer")
-	elseif bare=="WON"then
-		tone="win"
-	elseif bare=="LOST"then
-		tone="loss"
-	end
-	cell:SetText("")
-	if tone then
-		parts.ground:ClearAllPoints()
-		parts.ground:SetPoint("TOPLEFT",line,"TOPLEFT",left,top)
-		parts.ground:SetSize(size,size)
-		parts.ground:SetColorTexture(A.color(tone))
-		parts.ground:Show()
-		if typed then
-			A.style(cell,"bodyText","dim")
-			cell:SetText("*")
-			cell:SetJustifyH("RIGHT")
-		end
-	elseif bare=="VS"then
-		local r,g,b=A.color("dimmer")
-		placeOutline(parts.box,line,left,top,size,size,r,g,b,1)
-	else
-		A.style(cell,"bodyText","dimmer")
-		cell:SetText(word or"-")
-	end
-	cell:Show()
-	return tone or(bare=="VS"and"outline")or"dash"
 end
 
 function A.paintNameIcon(line,cell,x,width,classToken,spec)
@@ -771,36 +801,6 @@ function A.paintNameIcon(line,cell,x,width,classToken,spec)
 	cell:SetPoint("LEFT",line,"LEFT",x+shift,0)
 	cell:SetWidth(math.max(1,width-shift))
 	return icon~=nil
-end
-
-local LEGEND={"on your side, won","on your side, lost","against you"}
-
-function A.paintRoundLegend(line)
-	local size=A.metric("roundCellMark")
-	local air=A.metric("footAir")
-	local top=-(air+math.floor((A.metric("rowHeight")-size)/2))
-	local x=0
-	for i=1,3 do
-		if i<3 then
-			local mark=line.legendMarks[i]
-			mark:ClearAllPoints()
-			mark:SetPoint("TOPLEFT",line,"TOPLEFT",x,top)
-			mark:SetSize(size,size)
-			mark:SetColorTexture(A.color(i==1 and"win"or"loss"))
-			mark:Show()
-		else
-			local r,g,b=A.color("dimmer")
-			placeOutline(line.legendBox,line,x,top,size,size,r,g,b,1)
-		end
-		local word=line.legendWords[i]
-		A.style(word,"note","dim")
-		word:SetText(LEGEND[i])
-		word:ClearAllPoints()
-		word:SetPoint("LEFT",line,"LEFT",x+size+A.metric("headCrestGap"),-air/2)
-		word:Show()
-		x=x+size+A.metric("headCrestGap")+A.textRoom(word,LEGEND[i])+A.metric("headGap")*2
-	end
-	return x
 end
 
 function A.paintTeamCards(line,h)

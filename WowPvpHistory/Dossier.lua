@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.16
+-- WowPvpHistory 0.70.27
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -332,13 +332,38 @@ function A.encounterColumns()
 	return ENCOUNTER_COLUMNS
 end
 
-function A.encounterWidths(span)
+local SIDE_WORDS={rounds="ROUNDS",mixed="SIDE / ROUNDS",side="SIDE"}
+
+function A.encounterSideWord(lines)
+	local marks,words=0,0
+	for _,line in ipairs(type(lines)=="table"and lines or{})do
+		if type(line)=="table"and type(line.pips)=="table"then
+			marks=marks+1
+		elseif type(line)=="table"then
+			words=words+1
+		end
+	end
+	local kind="side"
+	if marks>0 then
+		kind=words>0 and"mixed"or"rounds"
+	end
+	return SIDE_WORDS[kind],kind
+end
+
+local function columnName(column,sideWord)
+	if column.key=="side"and type(sideWord)=="string"then
+		return sideWord
+	end
+	return column.name
+end
+
+function A.encounterWidths(span,sideWord)
 	local widths={}
 	local used=A.metric("rowLabelPad")*2-A.metric("rowCellGap")
 	local where=nil
 	for i,column in ipairs(ENCOUNTER_COLUMNS)do
 		local width=A.metric(column.metric)
-		local header=A.headerFloor(column.name)
+		local header=A.headerFloor(columnName(column,sideWord))
 		if header>width then
 			width=header
 		end
@@ -380,7 +405,7 @@ function A.buildEncounterHeader(parent)
 	return header
 end
 
-function A.paintEncounterHeader(header,widths)
+function A.paintEncounterHeader(header,widths,sideWord)
 	local starts=columnStarts(widths)
 	for i,column in ipairs(ENCOUNTER_COLUMNS)do
 		local label=header.labels[i]
@@ -389,7 +414,7 @@ function A.paintEncounterHeader(header,widths)
 		label:SetPoint("LEFT",header,"LEFT",starts[i],0)
 		label:SetWidth(widths[i])
 		label:SetJustifyH(column.align or"LEFT")
-		label:SetText(column.name)
+		label:SetText(columnName(column,sideWord))
 	end
 	header.rule:SetColorTexture(A.color("hairline"))
 end
@@ -533,9 +558,4 @@ function A.paintEncounterLine(row,line,widths,highlighted)
 	row.rule:Show()
 	row.matchId=line.matchId
 	return true
-end
-
-function A.encounterFloor()
-	local _,used=A.encounterWidths(nil)
-	return used
 end

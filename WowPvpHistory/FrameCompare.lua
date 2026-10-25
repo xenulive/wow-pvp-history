@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.16
+-- WowPvpHistory 0.70.27
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -9,7 +9,19 @@ local FRAME_NAME="WowPvpHistoryCompareFrame"
 
 local BASE_LINE="+N is set against the base, the leftmost match"
 
+local SWING_LINE="Swing is your win rate with that spec less your win rate against it"
+
+local HEADING_ROLE="section"
+
+local BASE_WASH=0.05
+local BEST_WASH=0.10
+local CHIP_WASH=0.22
+local OUTLINE_WASH=0.45
+
 local window
+
+local lobbyScrolls=0
+local LOBBY_SCROLL_TRACES=20
 
 if type(A.registerWindowKind)=="function"then
 	A.registerWindowKind("compare",{
@@ -38,6 +50,27 @@ local function text(parent,layer)
 	return fs
 end
 
+local function wash(texture,tone,alpha)
+	local r,g,b=A.color(tone)
+	texture:SetColorTexture(r,g,b,alpha)
+end
+
+local function hoverSurface(parent)
+	local hover=CreateFrame("Frame",nil,parent)
+	hover:EnableMouse(true)
+	hover:SetScript("OnEnter",function(self)
+		if self.line~=nil then
+			self.shownLine=self.line
+			A.hoverLine(self,self.line)
+		end
+	end)
+	hover:SetScript("OnLeave",function(self)
+		A.hideOwnedTooltip(self)
+	end)
+	hover:Hide()
+	return hover
+end
+
 local function cursorX(frame)
 	if type(GetCursorPosition)~="function"then
 		return nil
@@ -48,6 +81,26 @@ local function cursorX(frame)
 		return nil
 	end
 	return x/scale
+end
+
+local function edgesAround(owner,region,layer,out)
+	local edges={}
+	for side=1,4 do
+		edges[side]=owner:CreateTexture(nil,layer)
+	end
+	edges[1]:SetPoint("TOPLEFT",region,"TOPLEFT",-out,out)
+	edges[1]:SetPoint("TOPRIGHT",region,"TOPRIGHT",out,out)
+	edges[1]:SetHeight(1)
+	edges[2]:SetPoint("BOTTOMLEFT",region,"BOTTOMLEFT",-out,-out)
+	edges[2]:SetPoint("BOTTOMRIGHT",region,"BOTTOMRIGHT",out,-out)
+	edges[2]:SetHeight(1)
+	edges[3]:SetPoint("TOPLEFT",region,"TOPLEFT",-out,out)
+	edges[3]:SetPoint("BOTTOMLEFT",region,"BOTTOMLEFT",-out,-out)
+	edges[3]:SetWidth(1)
+	edges[4]:SetPoint("TOPRIGHT",region,"TOPRIGHT",out,out)
+	edges[4]:SetPoint("BOTTOMRIGHT",region,"BOTTOMRIGHT",out,-out)
+	edges[4]:SetWidth(1)
+	return edges
 end
 
 local function buildHead(frame,index)
@@ -71,18 +124,26 @@ local function buildHead(frame,index)
 	card.edges[4]:SetPoint("TOPRIGHT",card,"TOPRIGHT",0,0)
 	card.edges[4]:SetPoint("BOTTOMRIGHT",card,"BOTTOMRIGHT",0,0)
 	card.edges[4]:SetWidth(1)
+	card.outline=edgesAround(card,card,"BACKGROUND",2)
 
 	local pad=A.metric("paneGap")
 	card.id=text(card)
 	card.id:SetPoint("TOPLEFT",card,"TOPLEFT",pad+3,-pad)
 	card.map=text(card)
 	card.map:SetPoint("TOPLEFT",card.id,"BOTTOMLEFT",0,-2)
-	card.map:SetPoint("RIGHT",card,"RIGHT",-pad,0)
 	card.day=text(card)
 	card.day:SetPoint("TOPLEFT",card.map,"BOTTOMLEFT",0,-2)
 	card.tag=text(card,"OVERLAY")
 	card.tag:SetPoint("TOPRIGHT",card,"TOPRIGHT",-pad,-pad)
 	card.tag:SetJustifyH("RIGHT")
+	card.result=text(card,"OVERLAY")
+	card.result:SetPoint("RIGHT",card,"RIGHT",-pad,0)
+	card.result:SetJustifyH("RIGHT")
+	card.rating=text(card,"OVERLAY")
+	card.rating:SetPoint("BOTTOMRIGHT",card,"BOTTOMRIGHT",-pad,pad-2)
+	card.rating:SetJustifyH("RIGHT")
+	card.score=text(card,"OVERLAY")
+	card.score:SetJustifyH("RIGHT")
 	card.tagHover=CreateFrame("Frame",nil,card)
 	card.tagHover:SetPoint("TOPRIGHT",card.tag,"TOPRIGHT",0,0)
 	card.tagHover:SetPoint("BOTTOMRIGHT",card.tag,"BOTTOMRIGHT",0,0)
@@ -134,24 +195,70 @@ local function buildHead(frame,index)
 	return card
 end
 
+local function buildTab(frame,key)
+	local tab=CreateFrame("Button",nil,frame.body)
+	tab:SetHeight(A.metric("compareTab"))
+	tab.key=key
+	tab.label=text(tab,"OVERLAY")
+	tab.label:SetPoint("LEFT",tab,"LEFT",A.metric("compareTabPad"),0)
+	tab.rule=tab:CreateTexture(nil,"OVERLAY")
+	tab.rule:SetPoint("BOTTOMLEFT",tab,"BOTTOMLEFT",0,0)
+	tab.rule:SetPoint("BOTTOMRIGHT",tab,"BOTTOMRIGHT",0,0)
+	tab.rule:SetHeight(2)
+	tab:SetScript("OnClick",function(self)
+		A.compareSetTab(self.key,"click")
+	end)
+	tab:Hide()
+	return tab
+end
+
 local function buildRow(frame,index)
 	local row={cells={}}
 	row.label=text(frame.body)
 	row.group=text(frame.body)
 	for c=1,4 do
 		local cell={}
+		cell.bestFill=frame.body:CreateTexture(nil,"BACKGROUND",nil,2)
+		cell.bestEdge=frame.body:CreateTexture(nil,"BORDER")
+		cell.chip=frame.body:CreateTexture(nil,"BORDER")
 		cell.value=text(frame.body)
-		cell.diff=text(frame.body)
+		cell.diff=text(frame.body,"OVERLAY")
 		cell.squares={}
 		for s=1,6 do
 			cell.squares[s]=frame.body:CreateTexture(nil,"ARTWORK")
 			cell.squares[s]:Hide()
 		end
-		cell.icons={}
-		cell.more=text(frame.body)
 		row.cells[c]=cell
 	end
 	frame.rows[index]=row
+	return row
+end
+
+local function buildRoundLine(frame,index)
+	local line={cards={}}
+	line.id=text(frame.body)
+	line.word=text(frame.body)
+	for r=1,6 do
+		local card={}
+		card.ground=frame.body:CreateTexture(nil,"BACKGROUND",nil,2)
+		card.top=frame.body:CreateTexture(nil,"BORDER")
+		card.n=text(frame.body)
+		card.letter=text(frame.body)
+		card.icons={frame.body:CreateTexture(nil,"ARTWORK"),frame.body:CreateTexture(nil,"ARTWORK")}
+		line.cards[r]=card
+	end
+	frame.roundLines[index]=line
+	return line
+end
+
+local function buildLobbyRow(frame,index)
+	local row={cells={}}
+	row.icon=frame.body:CreateTexture(nil,"ARTWORK")
+	row.name=text(frame.body)
+	for c=1,4 do
+		row.cells[c]={text=text(frame.body),hover=hoverSurface(frame.body)}
+	end
+	frame.lobbyRows[index]=row
 	return row
 end
 
@@ -179,10 +286,33 @@ local function buildWindow()
 		A.metric("margin")+A.metric("compareFoot"))
 	frame.body:Show()
 
-	frame.heads,frame.rows={},{}
+	frame.heads,frame.rows,frame.roundLines,frame.lobbyRows={},{},{},{}
 	for i=1,4 do
 		buildHead(frame,i)
 	end
+	frame.tabs={figures=buildTab(frame,"figures"),rounds=buildTab(frame,"rounds")}
+	frame.tabRule=frame.body:CreateTexture(nil,"BORDER")
+	frame.tabRule:SetHeight(1)
+
+	frame.baseFill=frame.body:CreateTexture(nil,"BACKGROUND",nil,1)
+	frame.foldLabel=text(frame.body)
+	frame.foldText=text(frame.body)
+
+	frame.lobbyHeading=text(frame.body)
+	frame.lobbyHeadingHover=hoverSurface(frame.body)
+	frame.specHead=text(frame.body)
+	frame.lobbyHeads,frame.shared={},{}
+	for c=1,4 do
+		frame.lobbyHeads[c]=text(frame.body)
+		frame.shared[c]=text(frame.body)
+	end
+	frame.sharedLabel=text(frame.body)
+	frame.lobbyOffset=0
+	frame.lobbyBox=CreateFrame("Frame",nil,frame.body)
+	frame.lobbyBox:SetScript("OnMouseWheel",function(_,delta)
+		A.compareScrollLobby(-(delta or 0))
+	end)
+	frame.lobbyBox:Hide()
 
 	frame.addMatch=A.pill(frame,"Add a match",function()
 		if type(A.showWindowBody)=="function"then
@@ -232,6 +362,16 @@ local function widthOf(frame)
 	return A.metric("compareWidth")
 end
 
+local function specArt(texture,classToken,spec)
+	local art=type(A.specIcon)=="function"and A.specIcon(classToken,spec)or nil
+	if art~=nil then
+		texture:SetTexture(art)
+		texture:SetVertexColor(1,1,1)
+	else
+		texture:SetColorTexture(A.classColor(classToken))
+	end
+end
+
 local function paintHead(card,record,column,x,width)
 	card.matchId=record.id
 	card.column=column
@@ -242,14 +382,39 @@ local function paintHead(card,record,column,x,width)
 	local tone=A.resultTone(record)or"hairline"
 	for side=1,4 do
 		card.edges[side]:SetColorTexture(A.color(tone))
+		wash(card.outline[side],"accent",OUTLINE_WASH)
+		card.outline[side]:SetShown(column==1)
 	end
 	local id,map,day=A.compareHeadLines(record)
 	card.id:SetText(id)
 	A.style(card.id,"bodyMedium","bright")
-	card.map:SetText(map)
-	A.style(card.map,"bodyText","text")
 	card.day:SetText(day)
 	A.style(card.day,"rowNote","dim")
+
+	local pad=A.metric("paneGap")
+	local word,wordTone=A.compareResultWord(record)
+	card.result:SetText(word or"")
+	A.style(card.result,"headingLarge",wordTone or"dim")
+	card.result:SetShown(word~=nil)
+	local wordRoom=word~=nil and A.textRoom(card.result,word)+pad or 0
+	local rating,ratingTone=A.compareRatingText(record)
+	card.rating:SetText(rating or"")
+	A.style(card.rating,"cardValue",ratingTone or"dim")
+	card.rating:SetShown(rating~=nil)
+	local score=A.compareScoreText(record)
+	card.score:SetText(score or"")
+	A.style(card.score,"cardValue","text")
+	card.score:ClearAllPoints()
+	if rating~=nil then
+		card.score:SetPoint("BOTTOMRIGHT",card.rating,"BOTTOMLEFT",-pad,0)
+	else
+		card.score:SetPoint("BOTTOMRIGHT",card,"BOTTOMRIGHT",-pad,pad-2)
+	end
+	card.score:SetShown(score~=nil)
+	card.map:SetText(map)
+	A.style(card.map,"bodyText","text")
+	card.map:SetWidth(math.max(1,width-pad*2-3-wordRoom))
+
 	if column==1 then
 		card.tag:SetText("BASE")
 		A.style(card.tag,"label","accent")
@@ -272,80 +437,96 @@ local function hideRow(row)
 	for _,cell in ipairs(row.cells)do
 		cell.value:Hide()
 		cell.diff:Hide()
-		cell.more:Hide()
+		cell.chip:Hide()
+		cell.bestFill:Hide()
+		cell.bestEdge:Hide()
 		for _,square in ipairs(cell.squares)do
 			square:Hide()
 		end
-		for _,icon in ipairs(cell.icons)do
-			icon:Hide()
-		end
 	end
+end
+
+local function hideRoundLine(line)
+	line.id:Hide()
+	line.word:Hide()
+	for _,card in ipairs(line.cards)do
+		card.ground:Hide()
+		card.top:Hide()
+		card.n:Hide()
+		card.letter:Hide()
+		card.icons[1]:Hide()
+		card.icons[2]:Hide()
+	end
+end
+
+local function hideLobbyRow(row)
+	row.icon:Hide()
+	row.name:Hide()
+	for _,cell in ipairs(row.cells)do
+		cell.text:Hide()
+		cell.hover.line=nil
+		cell.hover:Hide()
+	end
+end
+
+local function hideSecond()
+	for _,line in ipairs(window.roundLines)do
+		hideRoundLine(line)
+	end
+	for _,row in ipairs(window.lobbyRows)do
+		hideLobbyRow(row)
+	end
+	window.lobbyHeading:Hide()
+	window.lobbyHeadingHover:Hide()
+	window.specHead:Hide()
+	window.sharedLabel:Hide()
+	for c=1,4 do
+		window.lobbyHeads[c]:Hide()
+		window.shared[c]:Hide()
+	end
+	window.lobbyBox:Hide()
+end
+
+local function hideFigures()
+	for _,row in ipairs(window.rows)do
+		hideRow(row)
+	end
+	window.baseFill:Hide()
+	window.foldLabel:Hide()
+	window.foldText:Hide()
 end
 
 local function valueTone(cell)
 	if cell.best then
 		return"accent"
 	end
-	if cell.base or cell.text=="-"then
+	if cell.text=="-"then
 		return"dim"
 	end
 	return"text"
 end
 
-local function paintIcons(cell,data,x,y,width)
-	local side=A.metric("compareIcon")
-	local step=side+2
-	local icons=data.icons or{}
-	local total=#icons
-	A.style(cell.more,"rowNote","dim")
-	local moreRoom=A.textRoom(cell.more,("+%d"):format(total))+A.metric("chipGap")
-	local room=total
-	if total*step>width then
-		room=math.max(1,math.floor((width-moreRoom)/step))
-	end
-	local drawn=0
-	for i,entry in ipairs(icons)do
-		if i>room then
-			break
-		end
-		local icon=cell.icons[i]
-		if icon==nil then
-			icon=window.body:CreateTexture(nil,"ARTWORK")
-			cell.icons[i]=icon
-		end
-		icon:ClearAllPoints()
-		icon:SetPoint("TOPLEFT",window.body,"TOPLEFT",x+(i-1)*step,y)
-		icon:SetSize(side,side)
-		local art=type(A.specIcon)=="function"and A.specIcon(entry.classToken,entry.spec)or nil
-		if art~=nil then
-			icon:SetTexture(art)
-			icon:SetVertexColor(1,1,1)
-		else
-			icon:SetColorTexture(A.classColor(entry.classToken))
-		end
-		icon:Show()
-		drawn=drawn+1
-	end
-	local rest=total-drawn
-	if rest>0 then
-		local more=("+%d"):format(rest)
-		cell.more:ClearAllPoints()
-		cell.more:SetPoint("TOPLEFT",window.body,"TOPLEFT",x+drawn*step,y)
-		cell.more:SetText(more)
-		cell.more:Show()
-		return drawn,A.textRoom(cell.more,more)+A.metric("chipGap")
-	end
-	return drawn,0
-end
-
 local function paintCell(row,cell,data,x,y,width)
-	local offset=0
+	local height=A.metric("compareRow")
+	if data.best then
+		cell.bestFill:ClearAllPoints()
+		cell.bestFill:SetPoint("TOPLEFT",window.body,"TOPLEFT",x,y)
+		cell.bestFill:SetSize(width,height)
+		wash(cell.bestFill,"accent",BEST_WASH)
+		cell.bestFill:Show()
+		cell.bestEdge:ClearAllPoints()
+		cell.bestEdge:SetPoint("TOPLEFT",window.body,"TOPLEFT",x,y)
+		cell.bestEdge:SetSize(2,height)
+		cell.bestEdge:SetColorTexture(A.color("accent"))
+		cell.bestEdge:Show()
+	end
+	local offset=data.best and 6 or 4
 	if data.squares~=nil then
 		local side,gap=A.metric("compareSquare"),A.metric("compareSquareGap")
 		for s=1,6 do
 			local square=cell.squares[s]
 			square:ClearAllPoints()
-			square:SetPoint("TOPLEFT",window.body,"TOPLEFT",x+(s-1)*(side+gap),y-6)
+			square:SetPoint("TOPLEFT",window.body,"TOPLEFT",x+offset+(s-1)*(side+gap),y-6)
 			square:SetSize(side,side)
 			local tone="faint"
 			if s<=data.squares.won then
@@ -356,14 +537,7 @@ local function paintCell(row,cell,data,x,y,width)
 			square:SetColorTexture(A.color(tone))
 			square:Show()
 		end
-		offset=6*(side+gap)+4
-	elseif data.icons~=nil and#data.icons>0 and not data.base then
-		local drew,moreWidth=paintIcons(cell,data,x,y-3,width)
-		offset=drew*(A.metric("compareIcon")+2)+moreWidth
-		if row.key~="swing"then
-			cell.value:Hide()
-			return
-		end
+		offset=offset+6*(side+gap)+4
 	end
 	local room=math.max(1,width-offset)
 	cell.value:ClearAllPoints()
@@ -382,27 +556,325 @@ local function paintCell(row,cell,data,x,y,width)
 	cell.diff:SetText(data.diffText)
 	A.style(cell.diff,"rowNote",data.diffTone or"dim")
 	local gap=A.metric("compareDiffGap")
+	local pad=data.chip and A.metric("compareChipPad")or 0
 	local diffWidth=A.textRoom(cell.diff,data.diffText)
-	local valueWidth=math.max(1,math.min(A.textRoom(cell.value,data.text),room-gap-diffWidth))
+	local valueWidth=math.max(1,math.min(A.textRoom(cell.value,data.text),room-gap-diffWidth-pad*2))
 	cell.value:SetWidth(valueWidth)
-	cell.diffAt=x+offset+valueWidth+gap
+	cell.diffAt=x+offset+valueWidth+gap+pad
 	cell.diff:ClearAllPoints()
-	cell.diff:SetPoint("TOPLEFT",window.body,"TOPLEFT",cell.diffAt,y-4)
+	cell.diff:SetPoint("TOPLEFT",window.body,"TOPLEFT",cell.diffAt,y-5)
 	cell.diff:SetJustifyH("LEFT")
 	cell.diff:SetWidth(math.max(1,diffWidth))
 	cell.diff:Show()
+	if data.chip then
+		cell.chip:ClearAllPoints()
+		cell.chip:SetPoint("TOPLEFT",window.body,"TOPLEFT",cell.diffAt-pad,y-3)
+		cell.chip:SetSize(diffWidth+pad*2,height-6)
+		wash(cell.chip,data.diffTone or"dim",CHIP_WASH)
+		cell.chip:Show()
+	end
 end
 
-local function fittedHeight(y)
-	return A.metric("headerHeight")-y+A.metric("compareFoot")+A.metric("margin")
+local function figuresNeed(rows,folded)
+	local need,group=0,nil
+	for _,data in ipairs(rows)do
+		if data.group~=group then
+			group=data.group
+			need=need+A.metric("compareGroupRow")
+		end
+		need=need+A.metric("compareRow")
+	end
+	if#folded>0 then
+		need=need+A.metric("compareRow")
+	end
+	return need
 end
 
-local function fitHeight(y)
+local function secondNeed(reading)
+	if reading==nil then
+		return 0
+	end
+	local need=0
+	if#reading.lines>0 then
+		need=#reading.lines*A.metric("compareRoundLine")+A.metric("paneGap")
+	end
+	need=need+A.metric("compareGroupRow")+A.metric("compareLobbyRow")
+		+math.min(reading.lobbyRows,A.compareLobbyMost())*A.metric("compareLobbyRow")
+	if reading.lobby.shared~=nil then
+		need=need+A.metric("compareLobbyRow")
+	end
+	return need
+end
+
+local function paintFigures(rows,folded,count,y,columnX,columnWidth,labelWidth)
+	local top=y
+	local used,group=0,nil
+	for _,data in ipairs(rows)do
+		used=used+1
+		local row=window.rows[used]or buildRow(window,used)
+		hideRow(row)
+		if data.group~=group then
+			group=data.group
+			row.group:ClearAllPoints()
+			row.group:SetPoint("TOPLEFT",window.body,"TOPLEFT",0,y-4)
+			row.group:SetText(group)
+			A.style(row.group,HEADING_ROLE,"dim")
+			row.group:Show()
+			y=y-A.metric("compareGroupRow")
+		end
+		row.key=data.key
+		row.tier=data.tier
+		row.label:ClearAllPoints()
+		row.label:SetPoint("TOPLEFT",window.body,"TOPLEFT",0,y-4)
+		row.label:SetWidth(labelWidth)
+		row.label:SetText(data.label)
+		A.style(row.label,"bodyText","dim")
+		row.label:Show()
+		for c,cellData in ipairs(data.cells)do
+			pcall(paintCell,row,row.cells[c],cellData,columnX(c),y,columnWidth)
+		end
+		y=y-A.metric("compareRow")
+	end
+	for i=used+1,#window.rows do
+		hideRow(window.rows[i])
+	end
+	if used>0 then
+		window.baseFill:ClearAllPoints()
+		window.baseFill:SetPoint("TOPLEFT",window.body,"TOPLEFT",columnX(1),top)
+		window.baseFill:SetSize(columnWidth,top-y)
+		wash(window.baseFill,"accent",BASE_WASH)
+		window.baseFill:Show()
+	end
+	local same=A.compareFoldText(folded)
+	if same~=nil then
+		local label=A.compareFoldLabel(count)
+		window.foldLabel:ClearAllPoints()
+		window.foldLabel:SetPoint("TOPLEFT",window.body,"TOPLEFT",0,y-5)
+		window.foldLabel:SetText(label)
+		A.style(window.foldLabel,"label","dim")
+		window.foldLabel:Show()
+		window.foldText:ClearAllPoints()
+		window.foldText:SetPoint("TOPLEFT",window.body,"TOPLEFT",columnX(1),y-4)
+		window.foldText:SetText(same)
+		A.style(window.foldText,"bodyText","text")
+		window.foldText:SetWidth(math.max(1,widthOf(window.body)-columnX(1)))
+		window.foldText:Show()
+		y=y-A.metric("compareRow")
+	end
+	return y
+end
+
+local function paintSecond(reading,records,y,columnX,columnWidth,labelWidth,body)
+	local gap=A.metric("compareColumnGap")
+	for index,line in ipairs(reading.lines)do
+		local drawn=window.roundLines[index]or buildRoundLine(window,index)
+		hideRoundLine(drawn)
+		local height=A.metric("compareRoundLine")-4
+		drawn.id:ClearAllPoints()
+		drawn.id:SetPoint("TOPLEFT",window.body,"TOPLEFT",0,y-4)
+		drawn.id:SetText(line.id)
+		A.style(drawn.id,"bodyMedium","bright")
+		drawn.id:Show()
+		drawn.word:ClearAllPoints()
+		drawn.word:SetPoint("TOPLEFT",drawn.id,"BOTTOMLEFT",0,-2)
+		drawn.word:SetText(line.word or"-")
+		A.style(drawn.word,"bodyMedium",line.word and line.tone or"dim")
+		drawn.word:Show()
+		local cards=math.max(6,#line.rounds)
+		local left=labelWidth+gap
+		local cardWidth=math.floor((body-left-gap*(cards-1))/cards)
+		local side=A.metric("compareRoundIcon")
+		for r,round in ipairs(line.rounds)do
+			local card=drawn.cards[r]
+			if card~=nil then
+				local x=left+(r-1)*(cardWidth+gap)
+				card.ground:ClearAllPoints()
+				card.ground:SetPoint("TOPLEFT",window.body,"TOPLEFT",x,y)
+				card.ground:SetSize(cardWidth,height)
+				card.ground:SetColorTexture(A.color("panelDeep"))
+				card.ground:Show()
+				card.top:ClearAllPoints()
+				card.top:SetPoint("TOPLEFT",window.body,"TOPLEFT",x,y)
+				card.top:SetSize(cardWidth,2)
+				card.top:SetColorTexture(A.color(round.tone))
+				card.top:Show()
+				card.n:ClearAllPoints()
+				card.n:SetPoint("TOPLEFT",window.body,"TOPLEFT",x+4,y-5)
+				card.n:SetText("R"..round.n)
+				A.style(card.n,"rowNote","dim")
+				card.n:Show()
+				card.letter:ClearAllPoints()
+				card.letter:SetPoint("TOPRIGHT",window.body,"TOPLEFT",x+cardWidth-4,y-4)
+				card.letter:SetJustifyH("RIGHT")
+				card.letter:SetText(round.letter)
+				A.style(card.letter,"bodyMedium",round.tone)
+				card.letter:Show()
+				for m=1,2 do
+					local mate=round.mates[m]
+					local icon=card.icons[m]
+					if mate~=nil then
+						icon:ClearAllPoints()
+						icon:SetPoint("BOTTOMLEFT",window.body,"TOPLEFT",x+4+(m-1)*(side+2),y-height+3)
+						icon:SetSize(side,side)
+						specArt(icon,mate.classToken,mate.spec)
+						icon:Show()
+					end
+				end
+			end
+		end
+		y=y-A.metric("compareRoundLine")
+	end
+	for i=#reading.lines+1,#window.roundLines do
+		hideRoundLine(window.roundLines[i])
+	end
+	if#reading.lines>0 then
+		y=y-A.metric("paneGap")
+	end
+
+	local lobby=reading.lobby
+	local heading=lobby.swing and"SWING"or"SPECS MET"
+	window.lobbyHeading:ClearAllPoints()
+	window.lobbyHeading:SetPoint("TOPLEFT",window.body,"TOPLEFT",0,y-4)
+	window.lobbyHeading:SetText(heading)
+	A.style(window.lobbyHeading,HEADING_ROLE,"dim")
+	window.lobbyHeading:Show()
+	if lobby.swing then
+		window.lobbyHeadingHover:ClearAllPoints()
+		window.lobbyHeadingHover:SetPoint("TOPLEFT",window.lobbyHeading,"TOPLEFT",0,0)
+		window.lobbyHeadingHover:SetPoint("BOTTOMLEFT",window.lobbyHeading,"BOTTOMLEFT",0,0)
+		window.lobbyHeadingHover:SetWidth(math.max(1,A.textRoom(window.lobbyHeading,heading)))
+		window.lobbyHeadingHover.line=SWING_LINE
+		window.lobbyHeadingHover:Show()
+	end
+	y=y-A.metric("compareGroupRow")
+	window.specHead:ClearAllPoints()
+	window.specHead:SetPoint("TOPLEFT",window.body,"TOPLEFT",0,y-4)
+	window.specHead:SetText("SPEC")
+	A.style(window.specHead,"label","dim")
+	window.specHead:Show()
+	for c,record in ipairs(records)do
+		local head=window.lobbyHeads[c]
+		head:ClearAllPoints()
+		head:SetPoint("TOPLEFT",window.body,"TOPLEFT",columnX(c)+4,y-4)
+		head:SetText("#"..A.matchIdText(record.id))
+		A.style(head,"label",c==1 and"accent"or"dim")
+		head:Show()
+	end
+	y=y-A.metric("compareLobbyRow")
+
+	local most=A.compareLobbyMost()
+	local total=#lobby.rows
+	local offset=math.max(0,math.min(window.lobbyOffset or 0,total-most))
+	window.lobbyOffset=offset
+	local rowTop=y
+	local side=A.metric("compareIcon")
+	local drawn=0
+	for i=offset+1,math.min(total,offset+most)do
+		local data=lobby.rows[i]
+		drawn=drawn+1
+		local row=window.lobbyRows[drawn]or buildLobbyRow(window,drawn)
+		hideLobbyRow(row)
+		row.icon:ClearAllPoints()
+		row.icon:SetPoint("TOPLEFT",window.body,"TOPLEFT",0,y-3)
+		row.icon:SetSize(side,side)
+		specArt(row.icon,data.classToken,data.spec)
+		row.icon:Show()
+		row.name:ClearAllPoints()
+		row.name:SetPoint("TOPLEFT",window.body,"TOPLEFT",side+4,y-4)
+		row.name:SetWidth(math.max(1,labelWidth-side-4))
+		row.name:SetText(data.spec)
+		A.style(row.name,"bodyText","text")
+		row.name:SetTextColor(A.classColor(data.classToken))
+		row.name:Show()
+		for c=1,#records do
+			local cell=data.cells[c]
+			local drawnCell=row.cells[c]
+			if cell~=nil then
+				drawnCell.text:ClearAllPoints()
+				drawnCell.text:SetPoint("TOPLEFT",window.body,"TOPLEFT",columnX(c)+4,y-4)
+				drawnCell.text:SetWidth(math.max(1,columnWidth-4))
+				drawnCell.text:SetText(cell.text)
+				A.style(drawnCell.text,"bodyText",cell.tone or"text")
+				drawnCell.text:Show()
+				local line=A.compareLobbyTooltip(data,cell)
+				if line~=nil then
+					drawnCell.hover:ClearAllPoints()
+					drawnCell.hover:SetPoint("TOPLEFT",window.body,"TOPLEFT",columnX(c),y)
+					drawnCell.hover:SetSize(columnWidth,A.metric("compareLobbyRow"))
+					drawnCell.hover.line=line
+					drawnCell.hover:Show()
+				end
+			end
+		end
+		y=y-A.metric("compareLobbyRow")
+	end
+	for i=drawn+1,#window.lobbyRows do
+		hideLobbyRow(window.lobbyRows[i])
+	end
+	if total>most then
+		window.lobbyBox:ClearAllPoints()
+		window.lobbyBox:SetPoint("TOPLEFT",window.body,"TOPLEFT",0,rowTop)
+		window.lobbyBox:SetSize(body,rowTop-y)
+		pcall(window.lobbyBox.EnableMouseWheel,window.lobbyBox,true)
+		window.lobbyBox:Show()
+	end
+
+	if lobby.shared~=nil then
+		window.sharedLabel:ClearAllPoints()
+		window.sharedLabel:SetPoint("TOPLEFT",window.body,"TOPLEFT",0,y-5)
+		window.sharedLabel:SetWidth(labelWidth)
+		window.sharedLabel:SetText("shared with base")
+		A.style(window.sharedLabel,"rowNote","dim")
+		window.sharedLabel:Show()
+		for c=1,#records do
+			local shared=window.shared[c]
+			shared:ClearAllPoints()
+			shared:SetPoint("TOPLEFT",window.body,"TOPLEFT",columnX(c)+4,y-5)
+			shared:SetText(lobby.shared[c]or"-")
+			A.style(shared,"rowNote","dim")
+			shared:Show()
+		end
+		y=y-A.metric("compareLobbyRow")
+	end
+	return y,drawn
+end
+
+local function paintTabs(second,tab,y,body)
+	local figures,rounds=window.tabs.figures,window.tabs.rounds
+	if second==nil then
+		figures:Hide()
+		rounds:Hide()
+		window.tabRule:Hide()
+		return 0
+	end
+	local x=0
+	for _,entry in ipairs({{figures,"Figures"},{rounds,second}})do
+		local button,name=entry[1],entry[2]
+		local open=button.key==tab
+		button.label:SetText(name)
+		A.style(button.label,"bodyMedium",open and"accent"or"dim")
+		local width=A.textRoom(button.label,name)+A.metric("compareTabPad")*2
+		button:ClearAllPoints()
+		button:SetPoint("TOPLEFT",window.body,"TOPLEFT",x,y)
+		button:SetWidth(width)
+		button.rule:SetColorTexture(A.color("accent"))
+		button.rule:SetShown(open)
+		button:Show()
+		x=x+width+A.metric("paneGap")
+	end
+	window.tabRule:ClearAllPoints()
+	window.tabRule:SetPoint("TOPLEFT",window.body,"TOPLEFT",0,y-A.metric("compareTab"))
+	window.tabRule:SetWidth(body)
+	window.tabRule:SetColorTexture(A.color("hairline"))
+	window.tabRule:Show()
+	return A.metric("compareTab")+A.metric("paneGap")
+end
+
+local function fitHeight(height)
 	local held=A.storedGeometry("compare")
 	if held~=nil and held.sized then
 		return"stored"
 	end
-	local height=fittedHeight(y)
 	local _,screenH=A.screenSizeFor(window)
 	if type(screenH)=="number"and screenH>0 and height>screenH then
 		height=screenH
@@ -422,7 +894,10 @@ function A.refreshCompareWindow()
 	if#records<2 then
 		return nil
 	end
-	local rows,hidden=A.compareRows(records)
+	local rows,hidden,folded=A.compareRows(records)
+	local second=A.compareSecondTab(records[1].format)
+	local tab=A.compareTab()
+	local reading=second~=nil and A.compareSecondReading(records)or nil
 	pcall(function()
 		window.heading:SetText(A.compareTitle(#records,records[1].format))
 		A.style(window.heading,"heading","bright")
@@ -448,40 +923,39 @@ function A.refreshCompareWindow()
 	end
 
 	local y=-(A.metric("compareHead")+A.metric("paneGap"))
-	local used,group=0,nil
-	for _,data in ipairs(rows)do
-		used=used+1
-		local row=window.rows[used]or buildRow(window,used)
-		hideRow(row)
-		if data.group~=group then
-			group=data.group
-			row.group:ClearAllPoints()
-			row.group:SetPoint("TOPLEFT",window.body,"TOPLEFT",0,y-4)
-			row.group:SetText(group)
-			A.style(row.group,"label","dim")
-			row.group:Show()
-			y=y-A.metric("compareGroupRow")
-		end
-		row.key=data.key
-		row.tier=data.tier
-		row.label:ClearAllPoints()
-		row.label:SetPoint("TOPLEFT",window.body,"TOPLEFT",0,y-4)
-		row.label:SetWidth(labelWidth)
-		row.label:SetText(data.label)
-		A.style(row.label,"bodyText","dim")
-		row.label:Show()
-		for c,cellData in ipairs(data.cells)do
-			pcall(paintCell,row,row.cells[c],cellData,columnX(c),y,columnWidth)
-		end
-		y=y-A.metric("compareRow")
+	local okTabs,strip=pcall(paintTabs,second,tab,y,body)
+	y=y-(okTabs and strip or 0)
+	hideFigures()
+	hideSecond()
+	window.lobbyDrawn=0
+	if tab=="rounds"and reading~=nil then
+		local ok,_,drawn=pcall(paintSecond,reading,records,y,columnX,columnWidth,labelWidth,body)
+		window.lobbyDrawn=ok and drawn or 0
+	else
+		pcall(paintFigures,rows,folded,#records,y,columnX,columnWidth,labelWidth)
 	end
-	for i=used+1,#window.rows do
-		hideRow(window.rows[i])
-	end
-	window.fit=fitHeight(y)
+	local need=math.max(figuresNeed(rows,folded),secondNeed(reading))
+	window.fit=fitHeight(A.metric("headerHeight")-y+need+A.metric("compareFoot")+A.metric("margin"))
 	window.drawnRows=rows
+	window.drawnFolded=folded
 	window.drawnRecords=records
-	return rows,hidden
+	window.drawnReading=reading
+	window.drawnTab=tab
+	return rows,hidden,folded
+end
+
+function A.compareScrollLobby(step)
+	if not window then
+		return 0
+	end
+	window.lobbyOffset=math.max(0,(window.lobbyOffset or 0)+(step or 0))
+	A.refreshCompareWindow()
+	lobbyScrolls=lobbyScrolls+1
+	if lobbyScrolls<=LOBBY_SCROLL_TRACES then
+		A.trace("compare/scroll",{offset=window.lobbyOffset,rows=window.lobbyDrawn,n=lobbyScrolls},
+			"ui")
+	end
+	return window.lobbyOffset
 end
 
 function A.showCompareWindow()
@@ -492,7 +966,8 @@ function A.showCompareWindow()
 	if not frame then
 		return false
 	end
-	local rows,hidden=A.refreshCompareWindow()
+	frame.lobbyOffset=0
+	local rows,hidden,folded=A.refreshCompareWindow()
 	if rows==nil then
 		return false
 	end
@@ -507,7 +982,10 @@ function A.showCompareWindow()
 		count=A.compareCount(),format=A.compareFormat(),
 		rowKeys=A.compareKeysText(keys),hiddenRows=A.compareKeysText(hidden),
 		sameRows=A.compareKeysText(A.compareSameKeys(rows)),
+		foldedRows=A.compareKeysText(A.compareFoldedKeys(folded)),
+		tab=frame.drawnTab,tabs=A.compareSecondTab(A.compareFormat())~=nil and 2 or 1,
 		fit=frame.fit,height=okHeight and A.unitFigure(height)or nil,
+		headRole=HEADING_ROLE,
 	},"ui")
 	return shown
 end

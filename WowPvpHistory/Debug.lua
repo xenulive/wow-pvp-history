@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.16
+-- WowPvpHistory 0.70.27
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -85,6 +85,7 @@ local FIELDS={
 	"handed",
 	"seat",
 	"selfName",
+	"selfClass","healerSeats",
 	"gridOpen",
 	"roundsLeft","roundsPartial",
 	"mmrRead","mmrDash","mmrMulti","mmrFlat",
@@ -123,6 +124,8 @@ local FIELDS={
 	"viewport","panes","checks",
 	"kind",
 	"side",
+	"placedFrom",
+	"pointStored",
 	"faction",
 	"bytes","letters","bound",
 	"theme",
@@ -156,7 +159,7 @@ local FIELDS={
 	"body",
 	"moved",
 	"roundsDropped",
-	"resultDropped",
+	"resultDropped","resultSetAside",
 	"cellsDropped",
 	"fixtureDropped",
 	"ladder",
@@ -171,6 +174,8 @@ local FIELDS={
 	"last","lastFit",
 	"rounded","breaks",
 	"result","stripRoom",
+	"metSide",
+	"headRoom","headNeed","headForm",
 	"heads",
 	"listHead","namesRows",
 	"headColor","namesColor",
@@ -186,6 +191,7 @@ local FIELDS={
 	"weeks","cells","blank","draws",
 	"weekBar","weekStep",
 	"weekWidth","rangeWord",
+	"viewHeight","contentHeight","contentWidth","scrollable",
 	"countHidden",
 	"bandSpan","graphFolded",
 	"cellTexts",
@@ -268,9 +274,11 @@ local FIELDS={
 	"rowsYours","rowsTheirs",
 	"action","count","rowKeys","hiddenRows","fromColumn","toColumn","closed",
 	"fit","sameRows",
+	"tab","tabs","foldedRows","lobbyRows","roundLines","scrolled",
 	"picked","open","dimmed",
-	"formFrom","written","healerless",
+	"formFrom","written","healerless","pairsRead",
 	"pairTally",
+	"headRole",
 }
 
 function A.debugFields()
@@ -311,12 +319,12 @@ typed("number",{
 	"frame3","windowsSkipped","stylesSkipped","stylesApplied","filters","region","view","foot",
 	"size","unbracketed","hero","losses","duels","resolved","nameOnly","leftEarly","unset",
 	"others","bars","lost","bottom","top","pairs","terms","excluding","scoped","tiers",
-	"moved","roundsDropped","resultDropped","cellsDropped","fixtureDropped","unplaced","sections","ratedPlayers",
-	"unratedPlayers","rounded","breaks","stripRoom","namesRows","delta","offset","landed",
+	"moved","roundsDropped","resultDropped","resultSetAside","cellsDropped","fixtureDropped","unplaced",
+	"sections","ratedPlayers","unratedPlayers","rounded","breaks","stripRoom","headRoom","headNeed","namesRows","delta","offset","landed",
 	"firstAfter","content","extent","snapTo","wheelN","d","tries","measured","drawnWidth",
 	"reserved","roundsRoom","roundsNeed","height","srcBottom","floor","ranked","under",
 	"weeks","cells","blank","draws","weekBar","weekStep","rules","rate","centre","trend","inset","barWidth",
-	"weekWidth",
+	"weekWidth","viewHeight","contentHeight","contentWidth",
 	"trendSlot","stripCut","labelsCut","earlierLabels","labelsShort","sessionNeed","sessionWidth",
 	"windowScale","scaled","scaleRefused","anchorsMoved",
 	"overGap","need","needShort","chart","cell","ratedRows","seasonBreaks","icons","squares",
@@ -336,6 +344,7 @@ typed("number",{
 	"selfFaction","mmr0","rating0","ratingNew0","mmr1","rating1","ratingNew1","rowsYours","rowsTheirs",
 	"count","fromColumn","toColumn","healerless","pairTally",
 	"picked","open","dimmed","blockMid","squareMid",
+	"tabs","lobbyRows","roundLines","healerSeats",
 })
 typed("string",{
 	"state","keptIn","format","source","reason","build","version","ids","tint","noteAt",
@@ -359,10 +368,12 @@ typed("string",{
 	"rateSign","bestsSet","tabLabel","rangeWord","countHidden",
 	"cardSet","soleView","lineScope","boxScope","scaleFrom","placesStored","stripBody","headIcon",
 	"outcome","mark","chatEvent","art","gripSeat",
-	"action","rowKeys","hiddenRows","fit","sameRows",
-	"reason0","reason1","formFrom","rowKind","chipFill","chipEdge",
+	"action","rowKeys","hiddenRows","fit","sameRows","tab","foldedRows",
+	"reason0","reason1","formFrom","rowKind","chipFill","chipEdge","placedFrom",
+	"metSide","headForm","selfClass","headRole",
 })
 typed("boolean",{
+	"pairsRead",
 	"rated","capped","head","named","pinned","evicted","listTook","met","dossier","panel",
 	"listUp","metUp","bandUp","bare","typed","shared","held","unlocked","lockdown",
 	"storeLockdown","saved","groundShown","noteLine","tagLine","lastSeen","marked","search",
@@ -371,7 +382,7 @@ typed("boolean",{
 	"rating","carriesNote","columnDrawn","rateClause",
 	"loadoutRead","heroRead","copyShown",
 	"carriesRating","levelAbove","cursorSet","tinted",
-	"closed","written","mapRead","ended",
+	"closed","written","mapRead","ended","scrolled","scrollable","pointStored",
 })
 typed("number string",{
 	"id","fromId","repStep","topValue","bottomValue","yoursTop","theirsTop","sortFirst",

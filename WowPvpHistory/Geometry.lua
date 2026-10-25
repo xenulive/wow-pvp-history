@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.16
+-- WowPvpHistory 0.70.27
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -960,6 +960,7 @@ function A.replaceOtherWindows()
 	if type(A.overlayReplaced)=="function"then
 		pcall(A.overlayReplaced)
 	end
+	pcall(A.clearPooledPoints)
 	local records={}
 	if type(A.recascadeMatchWindows)=="function"then
 		local ok,moved=pcall(A.recascadeMatchWindows)
@@ -1287,6 +1288,7 @@ function A.attachResize(frame,kind,onResize)
 		if ratio~=1 and geometry.point then
 			geometry.x,geometry.y=geometry.x*ratio,geometry.y*ratio
 		end
+		local keptFrom="stored"
 		if keepSize then
 			local held=A.storedGeometry(kind)
 			local width,height
@@ -1294,6 +1296,7 @@ function A.attachResize(frame,kind,onResize)
 				width,height=held.width,held.height
 			else
 				width,height=A.authoredGeometry(kind)
+				keptFrom="authored"
 			end
 			if type(width)=="number"and type(height)=="number"then
 				geometry.width,geometry.height=width,height
@@ -1304,7 +1307,7 @@ function A.attachResize(frame,kind,onResize)
 			kind=kind,
 			windowScale=A.windowScaleApplied(),
 			placesStored=ratio~=1 and"converted"or"as-read",
-			sizeFrom=resized and"drag"or keepSize and(typedSize[owner]and"typed-kept"or"stored")
+			sizeFrom=resized and"drag"or keepSize and(typedSize[owner]and"typed-kept"or keptFrom)
 				or"frame",
 		},"ui")
 	end
@@ -1431,6 +1434,61 @@ function A.pooledOpenSize(kind)
 		return nil
 	end
 	return A.clampGeometry(kind,{width=stored.width,height=stored.height})
+end
+
+function A.pooledOpenPoint(kind)
+	local stored=A.storedGeometry(kind)
+	if not(stored and stored.point)then
+		return nil
+	end
+	local ratio=A.sessionToStoredRatio()
+	return stored.point,stored.x/ratio,stored.y/ratio
+end
+
+function A.storePooledSize(kind,width,height)
+	local held=A.storedGeometry(kind)
+	return A.setStoredGeometry(kind,{width=width,height=height,
+		point=held and held.point or nil,x=held and held.x or nil,y=held and held.y or nil})
+end
+
+function A.rememberPooledPoint(frame,kind)
+	local spec=specs[kind]
+	local live=spec and spec.pooled and A.frameGeometry(frame)or nil
+	local point,x,y,stored=nil,nil,nil,false
+	if live and live.point then
+		local step=type(frame.cascadeStep)=="number"and frame.cascadeStep or 0
+		local cascade=A.metric("detailCascade")*step
+		local ratio=A.sessionToStoredRatio()
+		point,x,y=live.point,(live.x-cascade)*ratio,(live.y+cascade)*ratio
+		local held=A.storedGeometry(kind)
+		local width,height
+		if held then
+			width,height=held.width,held.height
+		else
+			width,height=A.authoredGeometry(kind)
+		end
+		if type(width)=="number"and A.setStoredGeometry(kind,{width=width,height=height,
+			sized=held and held.sized or nil,point=point,x=x,y=y})then
+			local after=A.storedGeometry(kind)
+			stored=after~=nil and after.point==point
+		end
+	end
+	A.trace("window-moved",{kind=kind,point=point,
+		x=x and A.unitFigure(x)or nil,y=y and A.unitFigure(y)or nil,pointStored=stored},"ui")
+	return stored
+end
+
+function A.clearPooledPoints()
+	local cleared=0
+	for i=1,#order do
+		local kind=order[i]
+		local held=specs[kind].pooled and ownerOf(kind)==kind and A.storedGeometry(kind)or nil
+		if held and held.point then
+			A.setStoredGeometry(kind,{width=held.width,height=held.height,sized=held.sized})
+			cleared=cleared+1
+		end
+	end
+	return cleared
 end
 
 local function sizeFigure(kind,word,axis,current,frame)

@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.16
+-- WowPvpHistory 0.70.27
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -8,6 +8,8 @@ local _,A=...
 local about
 
 local FACT_ROWS,BEST_ROWS,TILE_COUNT,WEEK_BARS,CHARACTER_ROWS=3,6,4,26,6
+
+local HEADING_ROLE="section"
 
 local FORMAT_TONES={"regard","caution","dim","ok","cardLength","loss","cardMatches","alliance"}
 
@@ -218,12 +220,8 @@ local function longestMatch()
 	return held
 end
 
-local function shortDay(stamp)
-	return type(stamp)=="string"and A.shortDayText(stamp)or nil
-end
-
 local function formatDay(format,stamp,word)
-	local day=shortDay(stamp)
+	local day=A.shortDay(stamp)
 	local label=A.formatLabel(format)
 	if day==nil then
 		return label
@@ -304,7 +302,7 @@ function A.aboutBests()
 			return nil,reason
 		end
 		local map=type(record.map)=="table"and record.map.name or nil
-		local day=shortDay(record.openedAt or record.completedAt)
+		local day=A.shortDay(record.openedAt or record.completedAt)
 		local sub=(map and day)and("%s, %s"):format(map,day)or map or day
 		return{value=A.lengthText(record.duration),sub=sub,tone="bright"}
 	end)
@@ -323,8 +321,7 @@ function A.aboutSinceLine(stamp,now)
 		local today=date("*t",now)
 		local todayNoon=time({year=today.year,month=today.month,day=today.day,hour=12})
 		local days=math.floor((todayNoon-noon)/86400+0.5)
-		return("since %s %d %s, %s"):format(date("%A",noon),tonumber(date("%d",noon)),date("%B",noon),
-			counted(days,"day","days"))
+		return("since %s, %s"):format(A.shortDay(stamp)or stamp:sub(1,10),counted(days,"day","days"))
 	end)
 	return okDate and text or nil
 end
@@ -694,9 +691,9 @@ local function paintLeft(half,width)
 	end
 
 	y=y+A.metric("aboutGap")
-	A.style(half.bestsHeading,"label","dim")
+	A.style(half.bestsHeading,HEADING_ROLE,"dim")
 	at(half.bestsHeading,half,pad,y)
-	y=y+A.fontSize("label")+8
+	y=y+A.fontSize(HEADING_ROLE)+8
 
 	local bests=A.aboutBests()
 	local shown={}
@@ -763,7 +760,7 @@ local function paintRight(half,x,width)
 	drew.figures=figures
 
 	local y=pad
-	A.style(half.heading,"label","dim")
+	A.style(half.heading,HEADING_ROLE,"dim")
 	at(half.heading,half,pad,y)
 	local first=by["FIRST MATCH"]
 	local since=first and first.stamp and A.aboutSinceLine(first.stamp)or nil
@@ -771,7 +768,7 @@ local function paintRight(half,x,width)
 	half.since:SetText(since or"")
 	half.since:ClearAllPoints()
 	half.since:SetPoint("TOPRIGHT",half,"TOPRIGHT",-pad,-y)
-	y=y+A.fontSize("label")+gap
+	y=y+math.max(A.fontSize(HEADING_ROLE),A.fontSize("cardLabel"))+gap
 
 	local tileGap=A.metric("aboutTileGap")
 	local tileW=math.floor((inner-tileGap*(TILE_COUNT-1))/TILE_COUNT)
@@ -809,12 +806,12 @@ local function paintRight(half,x,width)
 	drew.tiles=table.concat(tiles," ")
 	y=y+tileH+gap
 
-	A.style(half.weekHeading,"label","dim")
+	A.style(half.weekHeading,HEADING_ROLE,"dim")
 	at(half.weekHeading,half,pad,y)
 	A.style(half.weekNote,"rowNote","dim")
 	half.weekNote:ClearAllPoints()
 	half.weekNote:SetPoint("TOPRIGHT",half,"TOPRIGHT",-pad,-y)
-	y=y+A.fontSize("label")+8
+	y=y+A.fontSize(HEADING_ROLE)+8
 	local barGap=A.metric("aboutWeekGap")
 	local room=math.max(math.floor((inner+barGap)/(A.metric("aboutWeekMin")+barGap)),1)
 	room=math.min(room,WEEK_BARS)
@@ -908,9 +905,9 @@ local function paintRight(half,x,width)
 	local charH=A.metric("aboutCharRow")
 	half.characterHeading:SetShown(#characters>0)
 	if#characters>0 then
-		A.style(half.characterHeading,"label","dim")
+		A.style(half.characterHeading,HEADING_ROLE,"dim")
 		at(half.characterHeading,half,pad,y)
-		y=y+A.fontSize("label")+6
+		y=y+A.fontSize(HEADING_ROLE)+6
 	end
 	local charDrawn=0
 	for i,row in ipairs(half.characters)do
@@ -971,9 +968,9 @@ local function paintRight(half,x,width)
 	half.formatHeading:SetShown(total>0)
 	local segDrawn=0
 	if total>0 then
-		A.style(half.formatHeading,"label","dim")
+		A.style(half.formatHeading,HEADING_ROLE,"dim")
 		at(half.formatHeading,half,pad,y)
-		y=y+A.fontSize("label")+8
+		y=y+A.fontSize(HEADING_ROLE)+8
 	end
 	local before=0
 	local legendX,legendY=pad,y+A.metric("aboutFormatBar")+8
@@ -1100,6 +1097,7 @@ function A.paintAboutBody(width)
 		handed=drew.handed,
 		withdrawn=table.concat(withdrawn," "),
 		descForm=leftOk and how or nil,
+		headRole=(leftOk or rightOk)and HEADING_ROLE or nil,
 	},"ui")
 	return leftOk or rightOk
 end

@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.16
+-- WowPvpHistory 0.70.27
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -7,7 +7,7 @@ local _,A=...
 
 local SIGNATURE="WPHCSV"
 
-local FORMAT_VERSION=7
+local FORMAT_VERSION=8
 
 local SOURCE="csv"
 
@@ -490,6 +490,7 @@ local MATCH_COLUMNS={
 	free(under("harvest","harvestVersion","text","version")),
 	free(under("harvest","harvestBuild","text","build")),
 	closed(under("manual","manualResult","text","result"),inSet(A.RESULT_SET)),
+	closed(under("manual","manualResultSuperseded","text","resultSuperseded"),inSet(A.RESULT_SET)),
 	closed(under("manual","manualReason","text","reason"),inSet(A.REASON_SET)),
 	(function(column)
 		column.longest=function()return A.MANUAL_NOTE_MAX end
@@ -886,13 +887,13 @@ local function buildParts(db,filter)
 		local rows={}
 		matchRows(record,rows)
 
-		local lines,cost={},0
+		local lines,size={},0
 		for j=1,#rows do
 			lines[j]=renderRow(rows[j])
-			cost=cost+#lines[j]+1
+			size=size+#lines[j]+1
 		end
 
-		if not current or(current.bytes+cost>PART_LIMIT and#current.rows>0)then
+		if not current or(current.bytes+size>PART_LIMIT and#current.rows>0)then
 			open()
 		end
 		for j=1,#rows do
@@ -900,7 +901,7 @@ local function buildParts(db,filter)
 			current.lines[#current.lines+1]=lines[j]
 		end
 		current.matches=current.matches+1
-		current.bytes=current.bytes+cost
+		current.bytes=current.bytes+size
 	end
 
 	if#parts==0 then
@@ -1189,7 +1190,7 @@ function A.csvImport(text,forced)
 		return nil,A.csvRefusalText("no-database"),"no-database"
 	end
 
-	if db.active~=nil then
+	if A.matchInFlight(db)then
 		A.trace("csv-import",{state="refused",reason="in-flight"},"data")
 		return nil,A.refusalText("in-flight"),"in-flight"
 	end
@@ -1206,6 +1207,7 @@ function A.csvImport(text,forced)
 	local refiledIds={}
 	local roundsDropped=0
 	local resultDropped=0
+	local resultSetAside=0
 	local cellsDropped=0
 	local droppedBy={}
 	local fixtureHeld=A.fixtureCount(db)
@@ -1246,8 +1248,15 @@ function A.csvImport(text,forced)
 			end
 		end
 		if type(manual)=="table"and manual.result~=nil and not A.resultOfferable(record)then
+			if A.resultCaptured(record)then
+				if manual.resultSuperseded==nil then
+					manual.resultSuperseded=manual.result
+				end
+				resultSetAside=resultSetAside+1
+			else
+				resultDropped=resultDropped+1
+			end
 			manual.result=nil
-			resultDropped=resultDropped+1
 		end
 
 		if record[A.FIXTURE_KEY]then
@@ -1373,12 +1382,14 @@ function A.csvImport(text,forced)
 		ids=#refiledIds>0 and table.concat(refiledIds,",")or nil,
 		roundsDropped=roundsDropped,
 		resultDropped=resultDropped,
+		resultSetAside=resultSetAside,
 		cellsDropped=cellsDropped,
 		fixtureDropped=fixtureDropped,
 	},"data")
 
 	return{added=added,skipped=skipped,refused=refused,roundsDropped=roundsDropped,
-		resultDropped=resultDropped,cellsDropped=cellsDropped,fixtureDropped=fixtureDropped,
+		resultDropped=resultDropped,resultSetAside=resultSetAside,cellsDropped=cellsDropped,
+		fixtureDropped=fixtureDropped,
 		stopped=not committed and tostring(commitError)or nil,indexRebuilt=indexRebuilt}
 end
 

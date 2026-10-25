@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.16
+-- WowPvpHistory 0.70.27
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -61,7 +61,7 @@ function A.resetPreview()
 		drops=drops(db),
 		nextMatchId=db.nextMatchId,
 		nextIncompleteId=db.nextIncompleteId,
-		inFlight=db.active~=nil,
+		inFlight=A.matchInFlight(db),
 		sandboxed=A.sandboxed(),
 		pin=pinPlan(db),
 	}
@@ -134,7 +134,7 @@ function A.applyReset()
 		return nil,"no database","no-database"
 	end
 
-	if db.active~=nil then
+	if A.matchInFlight(db)then
 		A.trace("reset",{state="refused",reason="in-flight"},"data")
 		return nil,A.refusalText("in-flight"),"in-flight"
 	end

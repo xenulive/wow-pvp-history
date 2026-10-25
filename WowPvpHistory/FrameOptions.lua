@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.16
+-- WowPvpHistory 0.70.27
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -6,6 +6,8 @@
 local _,A=...
 
 local FRAME_NAME="WowPvpHistoryOptionsFrame"
+
+local HEADING_ROLE="section"
 
 local window
 
@@ -517,7 +519,7 @@ local function buildCard(frame,pane,title,opts)
 	card.heading:SetJustifyH("LEFT")
 	card.heading:SetWordWrap(false)
 	card.heading:SetText(title)
-	A.style(card.heading,"label","cardTitle")
+	A.style(card.heading,HEADING_ROLE,"cardTitle")
 
 	card.headRule=card:CreateTexture(nil,"BORDER")
 	card.headRule:SetPoint("TOPLEFT",card,"TOPLEFT",0,-A.metric("cardHead"))
@@ -1415,7 +1417,7 @@ local function buildStorageSection(frame,pane)
 end
 
 local function eraseHeight()
-	return A.metric("setCardPad")*2+A.fontSize("label")+2+A.fontSize("cardLabel")
+	return A.metric("setCardPad")*2+A.fontSize(HEADING_ROLE)+2+A.fontSize("cardLabel")
 end
 
 local function layoutStorage(frame)
@@ -1874,7 +1876,7 @@ local function paintCard(card)
 		card.edges[i]:SetColorTexture(A.color("insetEdge"))
 	end
 	card.headRule:SetColorTexture(A.color("insetEdge"))
-	A.style(card.heading,"label","cardTitle")
+	A.style(card.heading,HEADING_ROLE,"cardTitle")
 	if card.link then
 		A.style(card.link.label,"cardLabel",card.link.over and"text"or"dim")
 	end
@@ -1983,7 +1985,7 @@ local function paintErase(frame,reuse)
 		frame.eraseLine:SetText("Asks twice.")
 	end
 	frame.eraseCounts=preview
-	A.style(frame.eraseHeading,"label","loss")
+	A.style(frame.eraseHeading,HEADING_ROLE,"loss")
 	A.style(frame.eraseLine,"cardLabel","dim")
 	local r,g,b=A.color("loss")
 	frame.eraseBox.ground:SetColorTexture(r,g,b,0.06)
@@ -2193,6 +2195,7 @@ function A.refreshOptionsWindow(walk,finding)
 		band=onStorage and window.meterBand or nil,
 		meterRoom=onStorage and window.meterRoomPlace or nil,
 		slot=onStorage and restoreSlot or nil,
+		headRole=HEADING_ROLE,
 	},"ui")
 
 	return true

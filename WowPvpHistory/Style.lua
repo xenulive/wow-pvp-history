@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.16
+-- WowPvpHistory 0.70.27
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -606,6 +606,7 @@ local SIZES={
 	large={size=19,flags=""},
 	medium={size=15,flags=""},
 	body={size=12,flags=""},
+	section={size=13,flags=""},
 	label={size=11,flags=""},
 	tiny={size=10,flags="OUTLINE"},
 	micro={size=9,flags="OUTLINE"},
@@ -626,6 +627,7 @@ local ROLES={
 	stripTier={file="IBMPlexMono-Regular.ttf",scale="stripTier",fallback="GameFontHighlightSmall"},
 	label={file="IBMPlexMono-SemiBold.ttf",scale="label",fallback="GameFontDisableSmall"},
 	heading={file="BarlowSemiCondensed-SemiBold.ttf",scale="medium",fallback="GameFontNormal"},
+	section={file="BarlowSemiCondensed-SemiBold.ttf",scale="section",fallback="GameFontNormal"},
 	headingLarge={file="BarlowSemiCondensed-SemiBold.ttf",scale="large",fallback="GameFontNormalLarge"},
 	announceName={file="BarlowSemiCondensed-SemiBold.ttf",scale="bannerName",fallback="GameFontNormalLargeOutline",
 		names=true},
@@ -1033,8 +1035,9 @@ function A.metGridWidths(room,byRound,foes)
 	if foes then
 		local shared=math.max(0,widths.side-gap)
 		widths.side=math.floor(shared/2)
-		widths.foes=shared-widths.side
+		widths.foes=math.max(shared-widths.side,A.headerFloor("ENEMY COMP"))
 	end
+	widths.side=math.max(widths.side,A.headerFloor("YOUR SIDE"))
 	return widths
 end
 
@@ -1206,6 +1209,7 @@ local METRICS={
 	roundCellMark=10,
 	roundCardPad=6,
 	roundCardGap=6,
+	roundCardMin=120,
 	roundCardLine=2,
 	roundCardEdge=2,
 
@@ -1327,6 +1331,7 @@ local METRICS={
 	rosterHeadRow=16,
 	rosterHeadGap=3,
 	footAir=6,
+	lobbySortAir=24,
 
 	detailTextInset=8,
 	detailBarInset=12,
@@ -1527,9 +1532,15 @@ local METRICS={
 	compareOffsetX=-160,
 	compareOffsetY=60,
 	compareLabel=120,
-	compareHead=58,
+	compareHead=66,
 	compareRow=24,
 	compareGroupRow=22,
+	compareTab=24,
+	compareTabPad=8,
+	compareRoundLine=40,
+	compareRoundIcon=14,
+	compareLobbyRow=22,
+	compareChipPad=3,
 	compareColumnGap=6,
 	compareSquare=9,
 	compareSquareGap=2,
@@ -1922,7 +1933,7 @@ function A.compPaneStack(opts)
 	local drawsTable=opts.table~=false
 
 	local out={}
-	out.heading=2+A.fontSize("label")
+	out.heading=2+A.fontSize("section")
 	out.compHead=4+A.fontSize("label")+6
 	out.note=6+(opts.note==false and 0 or COMP_NOTE_LINES*A.fontSize("note"))
 	out.group=(drawsTable and opts.group==true)and(4+A.fontSize("label")+4)or 0
@@ -2302,7 +2313,7 @@ end
 
 function A.objectivesHeight()
 	return A.metric("objectivesPad")*2
-		+A.fontSize("label")+A.metric("objectivesGap")
+		+A.fontSize("section")+A.metric("objectivesGap")
 		+(A.fontSize("numberSmall")+A.metric("objectivesGap"))*2
 end
 
@@ -2316,7 +2327,7 @@ function A.paceHeight(rounds)
 		return 0
 	end
 	return A.metric("objectivesPad")*2
-		+A.fontSize("label")+A.metric("objectivesGap")
+		+A.fontSize("section")+A.metric("objectivesGap")
 		+rounds*A.metric("paceRow")+(rounds-1)*A.metric("paceGap")
 end
 

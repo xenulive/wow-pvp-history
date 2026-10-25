@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.16
+-- WowPvpHistory 0.70.27
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -335,7 +335,7 @@ function A.storedSize()
 	return size
 end
 
-local function bytesText(bytes)
+function A.bytesText(bytes,exact)
 	if bytes<1024 then
 		return("%d bytes"):format(bytes)
 	end
@@ -344,7 +344,14 @@ local function bytesText(bytes)
 	if tonumber(("%.1f"):format(bytes/1024))>=1024 then
 		scaled=("%.1f MB"):format(bytes/(1024*1024))
 	end
-	return("%s (%d bytes)"):format(scaled,bytes)
+	if exact then
+		return("%s (%d bytes)"):format(scaled,bytes)
+	end
+	return scaled
+end
+
+local function bytesText(bytes)
+	return A.bytesText(bytes,true)
 end
 
 local function headroomText(size)
@@ -1173,6 +1180,10 @@ local function clause(parts,value,form)
 	parts[#parts+1]=form and form:format(tostring(value))or tostring(value)
 end
 
+local function dateClause(parts,value,form)
+	clause(parts,value~=nil and(A.stampWords(value)or value)or nil,form)
+end
+
 local function ratedFormat(entry)
 	local ratings=type(entry)=="table"and entry.ratings or nil
 	if type(ratings)~="table"then
@@ -1931,9 +1942,9 @@ local function editedLine(subject,noteShown)
 	local parts={}
 	local edits=manual.edits or 0
 	put(parts,("edited by hand, %d %s"):format(edits,edits==1 and"time"or"times"))
-	clause(parts,manual.firstAt,"first %s")
+	dateClause(parts,manual.firstAt,"first %s")
 	if manual.lastAt~=nil and manual.lastAt~=manual.firstAt then
-		put(parts,("last %s"):format(tostring(manual.lastAt)))
+		dateClause(parts,manual.lastAt,"last %s")
 	end
 	if CELL_WORD[manual.resultSuperseded]~=nil then
 		put(parts,("typed %s set aside"):format(CELL_WORD[manual.resultSuperseded]))
@@ -2105,22 +2116,8 @@ local ROW_COLUMN_SETS={
 	lobbyPane={
 		{key="name",name="ROSTER",metric="rowName",lane="name"},
 		{key="spec",name="SPEC",metric="rowSpec",lane="spec"},
-		{key="round1",name="R1",metric="lobbyRound",lane="round",round=1,group="ROUNDS",
-			align="CENTER"},
-		{key="round2",name="R2",metric="lobbyRound",lane="round",round=2,group="ROUNDS",
-			align="CENTER"},
-		{key="round3",name="R3",metric="lobbyRound",lane="round",round=3,group="ROUNDS",
-			align="CENTER"},
-		{key="round4",name="R4",metric="lobbyRound",lane="round",round=4,group="ROUNDS",
-			align="CENTER"},
-		{key="round5",name="R5",metric="lobbyRound",lane="round",round=5,group="ROUNDS",
-			align="CENTER"},
-		{key="round6",name="R6",metric="lobbyRound",lane="round",round=6,group="ROUNDS",
-			align="CENTER"},
-		{key="withRecord",name="W-L",metric="lobbyFigure",lane="figure",
-			align="RIGHT",group="WITH"},
-		{key="againstRecord",name="W-L",metric="lobbyFigure",lane="figure",
-			align="RIGHT",group="VS"},
+		{key="withRecord",name="WITH",metric="lobbyFigure",lane="figure",align="RIGHT"},
+		{key="againstRecord",name="VS",metric="lobbyFigure",lane="figure",align="RIGHT"},
 		{key="swing",name="SWING",metric="lobbySwing",lane="figure",
 			align="RIGHT",sort="swing",first="descending"},
 		{key="damage",name="DAMAGE",metric="rowDamageValue",lane="figure",align="RIGHT",
@@ -3366,7 +3363,6 @@ function A.lastMatchCard(format,season,character,bound)
 
 	local stamp=(type(record.openedAt)=="string"and record.openedAt)
 		or(type(record.completedAt)=="string"and record.completedAt)or nil
-	local label=stamp and A.dayLabel(stamp)or nil
 	local place=by.map
 	if record.format=="duel"then
 		place=type(record.map)=="table"and record.map.name or nil
@@ -3375,10 +3371,10 @@ function A.lastMatchCard(format,season,character,bound)
 		place=nil
 	end
 	local clock=stamp and A.clockKey(stamp)or nil
-	local weekday=type(label)=="string"and label:match("^(%a+)")or nil
+	local day=stamp and A.shortDay(stamp)or nil
 	local moment,abbr,shorter=nil,nil,nil
-	if weekday and clock then
-		moment,abbr,shorter=("%s %s"):format(weekday,clock),("%s %s"):format(weekday:sub(1,3),clock),clock
+	if day and clock then
+		moment,abbr,shorter=("%s %s"):format(day,clock),("%s %s"):format((day:gsub("^%a+ ","")),clock),clock
 	elseif clock then
 		moment=clock
 	end
@@ -5127,11 +5123,11 @@ function A.windowHeadLines(record,head,provenance)
 	end
 	local topWords,subWords={},{}
 	if game then
+		put(topWords,parts.result)
+		ratingWords(topWords)
 		put(topWords,parts.place)
 		detailWords(topWords,true)
-		put(topWords,parts.result)
-		ratingWords(subWords)
-		chipWords(subWords)
+		chipWords(topWords)
 	else
 		put(topWords,parts.result)
 		ratingWords(topWords)
@@ -5151,15 +5147,13 @@ function A.windowHeadLines(record,head,provenance)
 	end
 
 	local cardsHead=nil
-	if game then
-		local cards=A.matchRoundCards(record)
-		if cards then
-			local words={}
-			for i=1,#cards do
-				put(words,("R%d %s"):format(cards[i].n,cards[i].word))
-			end
-			cardsHead={kind="cards",cards=cards,text=table.concat(words,"  ")}
+	local cards=A.matchRoundCards(record)
+	if cards then
+		local words={}
+		for i=1,#cards do
+			put(words,("R%d %s"):format(cards[i].n,cards[i].word))
 		end
+		cardsHead={kind="cards",cards=cards,id=record.id,text=table.concat(words,"  ")}
 	end
 
 	return top.text and top or nil,sub.text and sub or nil,ladderHead,cardsHead
@@ -5673,8 +5667,14 @@ function A.detailLines(record,pane)
 		local shared={columns=lobbyColumns,sort=lobbySort,ascending=lobbyAscending,
 			labels=labels,record=record.id,merged=merged~=nil}
 
-		lines[#lines+1]=""
-		heads[#lines]={kind="lobbyGroup",columns=lobbyColumns,table=shared}
+		local grouped=false
+		for c=1,#lobbyColumns do
+			grouped=grouped or lobbyColumns[c].group~=nil
+		end
+		if grouped then
+			lines[#lines+1]=""
+			heads[#lines]={kind="lobbyGroup",columns=lobbyColumns,table=shared}
+		end
 		local names={}
 		for c=1,#lobbyColumns do
 			names[c]=lobbyColumns[c].name
@@ -5692,13 +5692,6 @@ function A.detailLines(record,pane)
 		end
 
 		local you=A.lobbyYou(record,lobbyColumns)
-		shared.results={}
-		for c=1,#lobbyColumns do
-			local entry=type(you.rounds)=="table"and you.rounds[c]or nil
-			if type(entry)=="table"and type(entry.won)=="boolean"then
-				shared.results[entry.round]=entry.won
-			end
-		end
 		if merged then
 			local own=merged.own
 			you.joined=own
@@ -6040,7 +6033,7 @@ local function summaryCells(guid,entry)
 	for _,text in ipairs(splitParts(entry,guid))do
 		put(parts,text)
 	end
-	clause(parts,entry.lastSeen,"last %s")
+	dateClause(parts,entry.lastSeen,"last %s")
 
 	return parts
 end
@@ -6088,10 +6081,10 @@ function A.playerDetailLines(guid,entry,withKey,dossier)
 	put(when,countClause(entry,guid,counted))
 	put(when,botText(guid))
 	if entry.firstSeen~=nil and entry.firstSeen==entry.lastSeen then
-		clause(when,entry.lastSeen,"seen %s")
+		dateClause(when,entry.lastSeen,"seen %s")
 	else
-		clause(when,entry.firstSeen,"first %s")
-		clause(when,entry.lastSeen,"last %s")
+		dateClause(when,entry.firstSeen,"first %s")
+		dateClause(when,entry.lastSeen,"last %s")
 	end
 	if#when>0 then
 		lines[#lines+1]="  "..table.concat(when,"  ")
@@ -6122,10 +6115,10 @@ function A.playerDossierLines(dossier)
 
 	local when={("met %d %s"):format(dossier.met,dossier.met==1 and"match"or"matches")}
 	if dossier.first~=nil and dossier.first==dossier.last then
-		clause(when,dossier.last,"seen %s")
+		dateClause(when,dossier.last,"seen %s")
 	else
-		clause(when,dossier.first,"first %s")
-		clause(when,dossier.last,"last %s")
+		dateClause(when,dossier.first,"first %s")
+		dateClause(when,dossier.last,"last %s")
 	end
 	lines[#lines+1]="  "..table.concat(when,"  ")
 
@@ -6701,6 +6694,15 @@ function A.shortDay(stamp)
 	return(text:gsub(" 0(%d)"," %1"))
 end
 
+function A.stampWords(stamp)
+	local day=A.shortDay(stamp)
+	if day==nil then
+		return nil
+	end
+	local minute=A.clockKey(stamp)
+	return minute and(day.." "..minute)or day
+end
+
 local function rowIdentity(_,entry,encounters)
 	local names=(type(entry)=="table"and entry.names)or{}
 	local bare,realm=A.nameParts(names[1],A.UNKNOWN_PLAYER)
@@ -6805,6 +6807,7 @@ local SORTS={
 	met={segment=true,header=true,first="down"},
 	rep={segment=true},
 	player={header=true,first="up"},
+	record={header=true,first="down"},
 	with={header=true,first="down"},
 	against={header=true,first="down"},
 }
@@ -6812,9 +6815,12 @@ local SORTS={
 local SORT_LABELS={
 	met={down="Met most often",up="Fewest met"},
 	player={up="By name",down="By name, Z to A"},
+	record={down="Best record",up="Worst record"},
 	with={down="Best with you",up="Worst with you"},
 	against={down="Best against you",up="Worst against you"},
 }
+
+local RANK_FIELDS={record="recordRank",with="withRank",against="againstRank"}
 
 function A.playerSortKnown(word)
 	return type(word)=="string"and SORTS[word]~=nil
@@ -6950,6 +6956,13 @@ local function sideRank(side)
 	}
 end
 
+local function bothRank(with,against)
+	if with==nil or against==nil then
+		return with or against
+	end
+	return{diff=with.diff+against.diff,games=with.games+against.games}
+end
+
 function A.playersView(state)
 	state=type(state)=="table"and state or{}
 	local now=type(state.now)=="number"and state.now or time()
@@ -7008,6 +7021,8 @@ function A.playersView(state)
 		end
 		local entry=item.entry
 		local last=record.last or(type(entry)=="table"and entry.lastSeen)or nil
+		local withRank=with~=nil and sideRank(record.with)or nil
+		local againstRank=against~=nil and sideRank(record.against)or nil
 		return{
 			guid=guid,
 			entry=entry,
@@ -7019,8 +7034,9 @@ function A.playersView(state)
 			met=record.met,
 			with=with,
 			against=against,
-			withRank=with~=nil and sideRank(record.with)or nil,
-			againstRank=against~=nil and sideRank(record.against)or nil,
+			withRank=withRank,
+			againstRank=againstRank,
+			recordRank=bothRank(withRank,againstRank),
 			last=last,
 			lastEpoch=record.lastEpoch or A.stampEpoch(last),
 			tonight=tonight,
@@ -7150,8 +7166,8 @@ function A.playersView(state)
 			return false
 		end)
 		sections[1]={key="player",label=SORT_LABELS.player[dir],rows=shown}
-	elseif sort=="with"or sort=="against"then
-		local field=sort=="with"and"withRank"or"againstRank"
+	elseif RANK_FIELDS[sort]then
+		local field=RANK_FIELDS[sort]
 		table.sort(shown,function(a,b)
 			local ar,br=a[field],b[field]
 			if(ar==nil)~=(br==nil)then

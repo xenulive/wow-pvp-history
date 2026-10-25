@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.16
+-- WowPvpHistory 0.70.27
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -212,12 +212,11 @@ end
 
 local SELF={
 	name=STAND_IN_NAME.."-"..STAND_IN_REALM,
-	class="Paladin",token="PALADIN",spec="Retribution",role=8,
+	class="Warlock",token="WARLOCK",spec="Demonology",role=8,
 }
 
-local SELF_HEALER={
-	class="Paladin",token="PALADIN",spec="Holy",role=4,
-}
+local ALT={class="Paladin",token="PALADIN",spec="Retribution",role=8}
+local ALT_HEALER={class="Paladin",token="PALADIN",spec="Holy",role=4}
 
 local DAMAGE_SHARES={
 	1.00,0.72,0.55,0.86,0.31,0.64,0.18,0.47,0.93,0.26,
@@ -375,22 +374,41 @@ local function recorderName(index)
 	return altName
 end
 
+local function recorderSpec(index)
+	if index%RECORDERS==0 then
+		return SELF
+	end
+	return ALT
+end
+
 function A.fixtureCharacterName()
 	return(SELF.name:match("^([^-]+)"))or SELF.name
 end
 
+local DIABOLIST="CoQAMrNP5kak+EBqLfUa3dMm+uMmxMz0sZGLzMjZZAAAAAAAGLLzYmZYzwwMbzWL0MWMzMjlZZmZGzAAzMmZMzMYmxMzMGAAAmxMGzwywAGA"
+local SOUL_HARVESTER="CoQAMrNP5kak+EBqLfUa3dMm+aMmZmpZZmxCzMzyAAAAAAAMWWmxMzwmhhZ2mtWoZsZMGbz2MzMjBAmZmZmZmZwMzMzYMAAAjZMjxMsNzMAA"
 local FIXTURE_BUILDS={
+	{string=DIABOLIST,loadout="12.1.7: PvP (Diabolist)",hero=59,heroName="Diabolist",
+		pvp={3506,3624,162}},
+	{string=DIABOLIST,loadout="PvP BG TEST",hero=59,heroName="Diabolist",pvp={3506,3624,162}},
+	{string=SOUL_HARVESTER,loadout="12.1.7: PvP (Soul Harvester)",hero=57,heroName="Soul Harvester",
+		pvp={3506,3624,162}},
+	{string=SOUL_HARVESTER,loadout="PvP (SH)",hero=57,heroName="Soul Harvester",
+		pvp={3506,3624,162}},
+	{string=DIABOLIST,hero=59,heroName="Diabolist",pvp={3506,3624,162}},
+}
+
+local ALT_BUILDS={
 	{string="CQQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYMzMjZMjZmZGjxMDzMjZAAAAAAgBAzwMA",
 		loadout="Arena",hero=31,heroName="Herald of the Sun",pvp={5573,5584,752}},
-	{string="CQQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAYMzMjZMjZmZGjxMDzMjxAAAAAAgBAzwMA",
-		loadout="Arena",hero=31,heroName="Herald of the Sun",pvp={5535,5666,753}},
 	{string="CQQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMzMjZMDzMzYGjxMDjZmZAAAAAAgBAzwMA",
 		hero=32,heroName="Templar",pvp={5572,5573,753}},
 }
 
 local function fixtureTalents(own)
 	local damage=type(own)=="table"and type(own.damage)=="number"and own.damage or 0
-	local pick=FIXTURE_BUILDS[(math.floor(damage/1000)%#FIXTURE_BUILDS)+1]
+	local builds=type(own)=="table"and own.classToken==SELF.token and FIXTURE_BUILDS or ALT_BUILDS
+	local pick=builds[(math.floor(damage/1000)%#builds)+1]
 	local pvp={}
 	for i=1,#pick.pvp do
 		pvp[i]=pick.pvp[i]
@@ -616,9 +634,10 @@ function A.fixtureRecords(n,now,options)
 				ladder.rating=ladder.rating+change
 
 				local rows={}
+				local own=recorderSpec(#out)
 				rows[1]={guid=recorderGuid(#out),p=participant({
-					name=recorderName(#out),faction=0,class=SELF.class,token=SELF.token,
-					spec=SELF.spec,role=SELF.role,seat=1,
+					name=recorderName(#out),faction=0,class=own.class,token=own.token,
+					spec=own.spec,role=own.role,seat=1,
 					damage=200000+rand(80000),healing=20000+rand(9000),
 					kb=rand(4)-1,deaths=rand(2)-1,
 					rating=rating,ratingChange=change,
@@ -673,9 +692,10 @@ function A.fixtureRecords(n,now,options)
 	local BOT_NAMES={"Brakka","Ulgren","Kordan"}
 
 	do
+		local own=recorderSpec(#out)
 		local rows={{guid=recorderGuid(#out),p=participant({
-			name=recorderName(#out),faction=0,class=SELF.class,token=SELF.token,
-			spec=SELF.spec,role=SELF.role,damage=210000,healing=21000,
+			name=recorderName(#out),faction=0,class=own.class,token=own.token,
+			spec=own.spec,role=own.role,damage=210000,healing=21000,
 		})}}
 		local mate=mint({spec="Frost",class="Mage",token="MAGE"})
 		rows[#rows+1]={guid=mate.guid,p=participant({
@@ -697,9 +717,10 @@ function A.fixtureRecords(n,now,options)
 	end
 
 	do
+		local own=recorderSpec(#out)
 		local rows={{guid=recorderGuid(#out),p=participant({
-			name=recorderName(#out),faction=0,class=SELF.class,token=SELF.token,
-			spec=SELF.spec,role=SELF.role,damage=205000,healing=19000,
+			name=recorderName(#out),faction=0,class=own.class,token=own.token,
+			spec=own.spec,role=own.role,damage=205000,healing=19000,
 		})}}
 		rows[#rows+1]={guid=botGuid(2,1),p=participant({
 			name=BOT_NAMES[3],faction=0,class="Warrior",token="WARRIOR",
@@ -726,10 +747,11 @@ function A.fixtureRecords(n,now,options)
 	local blitz=0
 	startBlock(5)
 	for i=1,5 do
+		local own=recorderSpec(#out)
 		local rows={
 			{guid=recorderGuid(#out),p=participant({
-				name=recorderName(#out),faction=0,class=SELF.class,token=SELF.token,
-				spec=SELF.spec,role=SELF.role,damage=spread(760000,1),healing=30000,
+				name=recorderName(#out),faction=0,class=own.class,token=own.token,
+				spec=own.spec,role=own.role,damage=spread(760000,1),healing=30000,
 				kb=2,hk=12,honor=200,
 				stats={[371]=3,[372]=2},
 				rating=1800,ratingChange=0,mmrPre=1800,mmrPost=1800,
@@ -762,7 +784,7 @@ function A.fixtureRecords(n,now,options)
 		blitz=blitz+1
 	end
 
-	local shuffle=0
+	local shuffle,healerSeats=0,0
 	local shuffleLadder,shuffleSeason=nil,nil
 	startBlock(SHUFFLE_COUNT)
 	for i=1,SHUFFLE_COUNT do
@@ -802,9 +824,13 @@ function A.fixtureRecords(n,now,options)
 				end
 			end
 		end
-		local own=healerSeat and SELF_HEALER or SELF
-		local rows={{guid=recorderGuid(#out),p=participant({
-			name=recorderName(#out),faction=0,class=SELF.class,token=SELF.token,
+		local who=healerSeat and 1 or#out
+		local own=healerSeat and ALT_HEALER or recorderSpec(who)
+		if healerSeat then
+			healerSeats=healerSeats+1
+		end
+		local rows={{guid=recorderGuid(who),p=participant({
+			name=recorderName(who),faction=0,class=own.class,token=own.token,
 			spec=own.spec,role=own.role,seat=1,
 			damage=healerSeat and spread(170000,1)or spread(620000,1),
 			healing=healerSeat and spread(520000,1)or 40000,
@@ -846,9 +872,10 @@ function A.fixtureRecords(n,now,options)
 	local skirmish=0
 	startBlock(4)
 	for i=1,4 do
+		local own=recorderSpec(#out)
 		local rows={{guid=recorderGuid(#out),p=participant({
-			name=recorderName(#out),faction=0,class=SELF.class,token=SELF.token,
-			spec=SELF.spec,role=SELF.role,damage=spread(260000,1),healing=12000,
+			name=recorderName(#out),faction=0,class=own.class,token=own.token,
+			spec=own.spec,role=own.role,damage=spread(260000,1),healing=12000,
 		})}}
 		local pair=DUOS[((i-1)%#DUOS)+1]
 		local ally=DUOS[(i%#DUOS)+1][1]
@@ -880,9 +907,10 @@ function A.fixtureRecords(n,now,options)
 	local bg=0
 	startBlock(1)
 	do
+		local own=recorderSpec(#out)
 		local rows={{guid=recorderGuid(#out),p=participant({
-			name=recorderName(#out),faction=0,class=SELF.class,token=SELF.token,
-			spec=SELF.spec,role=SELF.role,
+			name=recorderName(#out),faction=0,class=own.class,token=own.token,
+			spec=own.spec,role=own.role,
 			damage=spread(680000,1),healing=28000,kb=3,hk=14,deaths=2,honor=240,
 			stats={[371]=2,[372]=1},
 		})}}
@@ -933,7 +961,7 @@ function A.fixtureRecords(n,now,options)
 			end
 		end
 		out=kept
-		arena2,arena3,blitz,shuffle,cleared2,cleared3=0,0,0,0,0,0
+		arena2,arena3,blitz,shuffle,cleared2,cleared3,healerSeats=0,0,0,0,0,0,0
 	end
 
 	return out,{
@@ -946,6 +974,7 @@ function A.fixtureRecords(n,now,options)
 		seat=healerSeat and"healer"or"damage",
 		sameSpec=sameSpec,
 		winning=winning,
+		healerSeats=healerSeats,
 	}
 end
 
@@ -955,7 +984,7 @@ function A.fixtureRefusal(adding)
 		return"no-database"
 	end
 
-	if db.active~=nil then
+	if A.matchInFlight(db)then
 		return"in-flight"
 	end
 
@@ -1156,6 +1185,8 @@ function A.generateFixture(n,options)
 		rounded=rounded,
 		breaks=breaks,
 		selfName=selfFrom,
+		selfClass=SELF.token,
+		healerSeats=report.healerSeats,
 	},"data")
 
 	local extraCounts={}
@@ -1204,7 +1235,7 @@ function A.clearFixture()
 	if not db then
 		return nil,"no-database"
 	end
-	if db.active~=nil then
+	if A.matchInFlight(db)then
 		A.trace("fixture",{state="refused",reason="in-flight"},"data")
 		return nil,A.fixtureRefusalText("in-flight")
 	end
