@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.16
+-- WowPvpHistory 0.70.27
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -621,6 +621,9 @@ function A.askLines(format,season,character,bound)
 		local card=A.askCard(answer)
 		if card==nil then
 			lines[#lines+1]="  no card"
+		elseif card.empty and card.dashFor=="unreadable"then
+			lines[#lines+1]=("  card %s: %s, could not be read (%s)"):format(card.title,card.emptyText,
+				tostring(card.dashFor))
 		elseif card.empty then
 			lines[#lines+1]=("  card %s: %s, nothing qualifies (%s)"):format(card.title,card.emptyText,
 				tostring(card.dashFor))

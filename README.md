@@ -51,6 +51,7 @@ companion app.
 1. Download the zip from the newest [release](https://github.com/xenulive/wow-pvp-history/releases).
 2. Close the game.
 3. Unzip it into `World of Warcraft\_retail_\Interface\AddOns`, so a `WowPvpHistory` folder sits there.
+   On the Forever client, unzip the same zip into `World of Warcraft\_forever_\Interface\AddOns`.
 4. Log in. Recording starts on its own; there's nothing to set up.
 
 To check it worked, click **AddOns** on the character select screen: **PvPHistory** should be in
@@ -66,7 +67,8 @@ to keep it up to date. A release candidate shows on CurseForge and Wago as a bet
 release is also on the [WoWInterface page](https://www.wowinterface.com/downloads/info27266-PVPHistory.html), and a release
 candidate is not, since WoWInterface has no beta channel.
 
-Built for Retail WoW. Releases marked **Pre-release** are release candidates.
+Built for Retail WoW and the Forever client, from one zip. CurseForge and Wago list a release for both;
+WoWInterface lists it for Retail. Releases marked **Pre-release** are release candidates.
 
 **Updating:** exit the game, delete the old `WowPvpHistory` folder, and unzip the new one in its place.
 Your history isn't stored in that folder, so it's kept.

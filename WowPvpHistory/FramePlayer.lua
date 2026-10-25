@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.16
+-- WowPvpHistory 0.70.27
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -13,8 +13,8 @@ local AUTHORED_COMMENT_ROWS=4
 
 local open,order,pool={},{},{}
 
-function A.playerWindowColumns(surplus)
-	local widths,used=A.encounterWidths(nil)
+function A.playerWindowColumns(surplus,sideWord)
+	local widths,used=A.encounterWidths(nil,sideWord)
 	for i,column in ipairs(A.encounterColumns())do
 		if column.key=="where"then
 			local wide=A.metric("encColWhereWide")
@@ -31,8 +31,8 @@ function A.playerWindowColumns(surplus)
 	return widths,used
 end
 
-function A.playerWindowBody(stripFloor)
-	local _,used=A.playerWindowColumns()
+function A.playerWindowBody(stripFloor,sideWord)
+	local _,used=A.playerWindowColumns(nil,sideWord)
 	local rep=A.repControlFloor()
 	local body=used>rep and used or rep
 	if type(stripFloor)=="number"and stripFloor>body then
@@ -41,12 +41,12 @@ function A.playerWindowBody(stripFloor)
 	return body
 end
 
-function A.playerWindowWidth(stripFloor)
-	return A.metric("margin")*2+A.metric("paneRightPad")+A.playerWindowBody(stripFloor)
+function A.playerWindowWidth(stripFloor,sideWord)
+	return A.metric("margin")*2+A.metric("paneRightPad")+A.playerWindowBody(stripFloor,sideWord)
 end
 
-function A.playerWindowBodyAt(width,stripFloor)
-	local floor=A.playerWindowBody(stripFloor)
+function A.playerWindowBodyAt(width,stripFloor,sideWord)
+	local floor=A.playerWindowBody(stripFloor,sideWord)
 	local body=floor
 	if type(width)=="number"then
 		body=width-A.metric("margin")*2-A.metric("paneRightPad")
@@ -61,21 +61,36 @@ local function headIndent()
 	return A.fontSize("dossierName")+A.metric("chipGap")
 end
 
-function A.playerStripLeftEnd(rounds)
-	local lead=A.metric("standPad")+A.metric("standLead")
-	if type(rounds)~="number"or rounds<1 then
-		return lead
+function A.playerStripLeftEnd(rounds,lead)
+	local block=A.metric("standLead")
+	if type(lead)=="number"and lead>block then
+		block=lead
 	end
-	return lead+A.metric("paneGap")*2+rounds*A.metric("roundBox")+(rounds-1)*A.metric("roundBoxGap")
+	local left=A.metric("standPad")+block
+	if type(rounds)~="number"or rounds<1 then
+		return left
+	end
+	return left+A.metric("paneGap")*2+rounds*A.metric("roundBox")+(rounds-1)*A.metric("roundBoxGap")
 end
 
-function A.playerStripFloor(rounds,withText,againstText,fontString)
-	local wide=math.max(A.textRoom(fontString,withText),A.textRoom(fontString,againstText))
-	return A.playerStripLeftEnd(rounds)+A.metric("paneGap")+wide+A.metric("standPad")
+function A.playerStripFloor(rounds,lead)
+	return A.playerStripLeftEnd(rounds,lead)+A.metric("standPad")
+end
+
+function A.playerStripLead(strip)
+	local lead=A.metric("standLead")
+	for _,line in ipairs({strip.title,strip.map,strip.result})do
+		local ok,text=pcall(line.GetText,line)
+		local room=ok and type(text)=="string"and A.textRoom(line,text)or 0
+		if room>lead then
+			lead=room
+		end
+	end
+	return math.ceil(lead)
 end
 
 function A.playerStampWidth(fontString)
-	return A.textRoom(fontString,"0000-00-00 00:00")
+	return A.textRoom(fontString,"Wed 30 Sep 00:00")
 end
 
 function A.playerCommentRow()
@@ -91,6 +106,7 @@ function A.playerWindowStack(metRows,tagRows)
 	local tags=type(tagRows)=="number"and tagRows or 1
 	local gap=A.metric("paneGap")
 	local header=A.fontSize("label")+A.metric("headingPad")
+	local commentHeader=A.fontSize("section")+A.metric("headingPad")
 	return A.playerMatchStripHeight()
 		+gap+A.fontSize("dossierName")+2+A.fontSize("note")
 		+gap+A.metric("controlHeight")
@@ -98,11 +114,16 @@ function A.playerWindowStack(metRows,tagRows)
 		+gap+A.metric("controlHeight")
 		+gap+tags*A.metric("tagRow")
 		+gap+header+rows*A.metric("encRow")+A.metric("rowHeight")
-		+gap+header
+		+gap+commentHeader
+		+A.playerCommentEntryDrop()
+end
+
+function A.playerCommentEntryDrop()
+	return A.metric("paneGap")+A.metric("controlHeight")+A.metric("paneGap")
 end
 
 local function belowComments()
-	return A.metric("paneGap")+A.metric("controlHeight")+A.bodyFloor()
+	return A.bodyFloor()
 end
 
 function A.playerWindowHeight()
@@ -137,7 +158,7 @@ local function paintTagSuggestions(frame)
 		return false
 	end
 	local tagRows=A.paintTagRow(frame.tagRow,A.noteFor(frame.guid),
-		frame.paintBody or A.playerWindowBody(frame.stripFloor))
+		frame.paintBody or A.playerWindowBody(frame.stripFloor,frame.sideWord))
 	if type(frame.drawn)=="table"then
 		frame.drawn.tagRows=tagRows
 	end
@@ -384,15 +405,6 @@ local function buildMatchStrip(frame,body)
 		strip.rounds[i]=round
 		x=x+A.metric("roundBox")+A.metric("roundBoxGap")
 	end
-
-	strip.with=strip:CreateFontString(nil,"ARTWORK","GameFontHighlightSmall")
-	strip.with:SetPoint("TOPRIGHT",strip,"TOPRIGHT",-pad,-pad-A.fontSize("label"))
-	strip.with:SetJustifyH("RIGHT")
-	strip.with:SetWordWrap(false)
-	strip.against=strip:CreateFontString(nil,"ARTWORK","GameFontHighlightSmall")
-	strip.against:SetPoint("TOPRIGHT",strip.with,"BOTTOMRIGHT",0,-2)
-	strip.against:SetJustifyH("RIGHT")
-	strip.against:SetWordWrap(false)
 	frame.matchStrip=strip
 end
 
@@ -497,7 +509,7 @@ local function buildDetail(frame,body)
 end
 
 local function buildComments(frame,body)
-	local headingHeight=A.fontSize("label")+A.metric("headingPad")
+	local headingHeight=A.fontSize("section")+A.metric("headingPad")
 	frame.commentHead=CreateFrame("Frame",nil,body)
 	frame.commentHead:SetPoint("TOPLEFT",frame.metTail,"BOTTOMLEFT",-A.metric("rowLabelPad"),
 		-A.metric("paneGap"))
@@ -519,10 +531,10 @@ local function buildComments(frame,body)
 	frame.addComment=A.pill(body,"Add",function()
 		commitComment(frame)
 	end,A.metric("tagMin"))
-	frame.addComment:SetPoint("BOTTOMRIGHT",body,"BOTTOMRIGHT",0,0)
+	frame.addComment:SetPoint("TOPRIGHT",frame.commentHead,"BOTTOMRIGHT",0,-A.metric("paneGap"))
 	frame.commentBox=A.entry(body)
 	frame.commentBox:SetHeight(A.metric("controlHeight"))
-	frame.commentBox:SetPoint("BOTTOMLEFT",body,"BOTTOMLEFT",0,0)
+	frame.commentBox:SetPoint("TOPLEFT",frame.commentHead,"BOTTOMLEFT",0,-A.metric("paneGap"))
 	frame.commentBox:SetPoint("RIGHT",frame.addComment,"LEFT",-A.metric("pillGap"),0)
 	frame.commentBox:SetMaxLetters(A.PLAYER_COMMENT_MAX)
 	A.entryPlaceholder(frame.commentBox,"add a comment, Enter saves it")
@@ -536,9 +548,8 @@ local function buildComments(frame,body)
 
 	frame.commentScroll=CreateFrame("ScrollFrame",frame.windowName.."Comments",body,
 		"ScrollFrameTemplate")
-	frame.commentScroll:SetPoint("TOPLEFT",frame.commentHead,"BOTTOMLEFT",0,0)
-	frame.commentScroll:SetPoint("BOTTOMRIGHT",frame.commentBox,"TOPRIGHT",0,A.metric("paneGap"))
-	frame.commentScroll:SetPoint("RIGHT",body,"RIGHT",0,0)
+	frame.commentScroll:SetPoint("TOPLEFT",frame.commentBox,"BOTTOMLEFT",0,-A.metric("paneGap"))
+	frame.commentScroll:SetPoint("BOTTOMRIGHT",body,"BOTTOMRIGHT",0,0)
 	if type(frame.commentScroll.ScrollBar)=="table"then
 		pcall(frame.commentScroll.ScrollBar.SetHideIfUnscrollable,frame.commentScroll.ScrollBar,true)
 	end
@@ -602,7 +613,7 @@ local function buildWindow(index)
 	frame.windowName=name
 	frame:SetSize(A.playerWindowWidth(frame.stripFloor),A.playerWindowHeight())
 	frame.widthFrom="build"
-	A.standDetailWindow(frame)
+	A.standDetailWindow(frame,"player")
 
 	frame.body=CreateFrame("Frame",nil,frame)
 	frame.body:SetPoint("TOPLEFT",frame,"TOPLEFT",A.metric("margin"),-A.metric("headerHeight"))
@@ -645,14 +656,14 @@ local function buildWindow(index)
 					local width=A.playerWindowWidth()
 					if self.wantFrom=="typed"then
 						width=held and held.width or width
-					elseif after.width>A.playerWindowWidth(self.stripFloor)+1 then
+					elseif after.width>A.playerWindowWidth(self.stripFloor,self.sideWord)+1 then
 						width=after.width
 					end
 					local height=after.height
 					if self.sizeFrom=="typed"then
 						height=held and held.height or A.playerWindowHeight()
 					end
-					A.setStoredGeometry("player",{width=width,height=height})
+					A.storePooledSize("player",width,height)
 				end
 				return A.storedGeometry("player")~=nil
 			end,
@@ -663,7 +674,7 @@ local function buildWindow(index)
 			end,
 		})
 	end
-	bound(frame,A.playerWindowWidth(frame.stripFloor))
+	bound(frame,A.playerWindowWidth(frame.stripFloor,frame.sideWord))
 
 	A.closeOnEscape(name)
 
@@ -673,14 +684,19 @@ local function buildWindow(index)
 	return frame
 end
 
-local function matchResultWords(info)
+local VERDICT_SAID={WON="you won %s",LOST="you lost, won %s",DRAW="a draw, %s"}
+
+local function matchResultWords(info,record)
 	local result=info.result
 	local said
 	if type(info.pips)=="table"then
 		if result=="-"then
 			return info.format or""
 		end
-		said=("you won %s"):format(result)
+		local verdict=A.matchVerdict(record)
+		local word=type(verdict)=="table"and type(verdict.words)=="string"
+			and verdict.words:match("^(%u+)")or nil
+		said=(VERDICT_SAID[word]or"%s"):format(result)
 	elseif result=="won"then
 		said="you won"
 	elseif result=="lost"then
@@ -694,19 +710,6 @@ local function matchResultWords(info)
 		return("%s, %s"):format(info.format,said)
 	end
 	return said
-end
-
-local function stripSide(label,parts)
-	local pieces=A.sideShort(parts)
-	local text=A.colorEscape("dim")..label.."|r "
-	if not pieces then
-		return text..A.colorEscape("dimmer").."-|r"
-	end
-	local out={}
-	for i=1,#pieces do
-		out[i]=A.colorEscape(pieces[i].tone or"dim")..pieces[i].text.."|r"
-	end
-	return text..table.concat(out,", ")
 end
 
 local function paintMatchStrip(frame,index)
@@ -728,11 +731,19 @@ local function paintMatchStrip(frame,index)
 	A.style(strip.map,"bodyText","text")
 	strip.map:SetText(info.map or"-")
 	A.style(strip.result,"note","dim")
-	local resultWords=matchResultWords(info)
+	local resultWords=matchResultWords(info,record)
 	strip.result:SetText(resultWords)
+	local lead=A.playerStripLead(strip)
+	for _,line in ipairs({strip.title,strip.map,strip.result})do
+		line:SetWidth(lead)
+	end
 
 	local pips=type(info.pips)=="table"and info.pips or{}
+	local x=A.playerStripLeftEnd(nil,lead)+A.metric("paneGap")*2
 	for i,round in ipairs(strip.rounds)do
+		round:ClearAllPoints()
+		round:SetPoint("LEFT",strip,"LEFT",x,0)
+		x=x+A.metric("roundBox")+A.metric("roundBoxGap")
 		local pip=pips[i]
 		if pip then
 			A.style(round.label,"rowClock","dimmer")
@@ -747,37 +758,10 @@ local function paintMatchStrip(frame,index)
 		end
 	end
 
-	A.style(strip.with,"bodyText","text")
-	local withText=stripSide("With you",info.with)
-	strip.with:SetText(withText)
-	A.style(strip.against,"bodyText","text")
-	local againstText=stripSide("Against you",info.against)
-	strip.against:SetText(againstText)
-	frame.stripForms={
-		with={withText,stripSide("With",info.with)},
-		against={againstText,stripSide("Vs",info.against)},
-	}
 	frame.stripRounds=math.min(#pips,#strip.rounds)
-	frame.stripFloor=A.playerStripFloor(frame.stripRounds,withText,againstText,strip.with)
+	frame.stripFloor=A.playerStripFloor(frame.stripRounds,lead)
 	frame.stripResult=resultWords
 	return info.id,info
-end
-
-local function fitStripSides(frame,body)
-	local forms=frame.stripForms
-	frame.stripForms=nil
-	if type(forms)~="table"or not frame.matchStrip:IsShown()then
-		return
-	end
-	local strip=frame.matchStrip
-	local room=math.floor(body-A.playerStripLeftEnd(frame.stripRounds)-A.metric("paneGap")
-		-A.metric("standPad"))
-	frame.stripSideRoom=room
-	for _,side in ipairs({"with","against"})do
-		local text=A.fittedForm(strip[side],room,forms[side])or forms[side][#forms[side]]
-		strip[side]:SetWidth(math.max(1,room))
-		strip[side]:SetText(text)
-	end
 end
 
 local function paintHead(frame,dossier)
@@ -805,11 +789,14 @@ local function paintHead(frame,dossier)
 		end
 	end
 	frame.name:SetPoint("RIGHT",edge,"LEFT",-A.metric("paneGap"),0)
+	frame.name.onRefit=function(fit)
+		pcall(A.trace,"paint",{source="player-head",headRoom=fit.room,headNeed=fit.need,
+			headForm=fit.form},"ui")
+	end
 	A.fitNameHead(frame.name,identity.bare or A.UNKNOWN_PLAYER,identity.realm,"dim")
 end
 
-local function paintMet(frame,dossier,widths)
-	A.paintEncounterHeader(frame.metHeader,widths)
+local function metShown(frame,dossier)
 	local encounters=dossier.encounters or{}
 	local shown={}
 	for i=1,math.min(#encounters,MET_ROWS)do
@@ -831,12 +818,22 @@ local function paintMet(frame,dossier,widths)
 			end
 		end
 	end
+	local lines,drawnLines={},{}
+	for i=1,MET_ROWS do
+		lines[i]=shown[i]and A.encounterLine(shown[i])or nil
+		drawnLines[#drawnLines+1]=lines[i]
+	end
+	return shown,lines,drawnLines
+end
 
+local function paintMet(frame,dossier,widths,sideWord,shown,lines)
+	A.paintEncounterHeader(frame.metHeader,widths,sideWord)
+	local encounters=dossier.encounters or{}
 	local drawn,marked=0,false
 	for i=1,MET_ROWS do
 		local row=frame.metRows[i]
 		local encounter=shown[i]
-		local line=encounter and A.encounterLine(encounter)or nil
+		local line=lines[i]
 		if line then
 			drawn=drawn+1
 			local here=frame.fromMatch~=nil and encounter.id==frame.fromMatch
@@ -867,7 +864,7 @@ end
 
 local function paintComments(frame,width)
 	local comments=A.playerComments(frame.guid)
-	A.style(frame.commentTitle,"label","dim")
+	A.style(frame.commentTitle,"section","dim")
 	frame.commentTitle:SetText(("COMMENTS  %s%d|r"):format(A.colorEscape("text"),#comments))
 	A.style(frame.commentOrder,"note","dimmer")
 	frame.commentOrder:SetText(#comments>1 and"newest first"or"")
@@ -882,7 +879,8 @@ local function paintComments(frame,width)
 		row.commentIndex=comment.index
 		row.commentText=comment.text
 		A.style(row.stamp,"note","dimmer")
-		row.stamp:SetText(comment.at and A.minuteStamp(tostring(comment.at))or"-")
+		local at=comment.at and tostring(comment.at)or nil
+		row.stamp:SetText(at and(A.stampWords(at)or A.minuteStamp(at))or"-")
 		A.style(row.text,"bodyText","text")
 		row.text:SetWidth(textWidth)
 		row.text:SetText(comment.text)
@@ -917,9 +915,12 @@ paintWindow=function(frame,index)
 	if not dossier then
 		return false
 	end
-	frame.heading:SetText(dossier.identity.full)
+	frame.heading:SetText("Player")
 	local stripId,stripInfo=paintMatchStrip(frame,index)
-	local floorWidth=A.playerWindowWidth(frame.stripFloor)
+	local shownMet,metLines,drawnLines=metShown(frame,dossier)
+	local sideWord,sideKind=A.encounterSideWord(drawnLines)
+	frame.sideWord=sideWord
+	local floorWidth=A.playerWindowWidth(frame.stripFloor,sideWord)
 	local width=floorWidth
 	frame.widthFrom="paint"
 	if type(frame.wantWidth)=="number"and frame.wantWidth>floorWidth then
@@ -928,10 +929,9 @@ paintWindow=function(frame,index)
 	end
 	pcall(frame.SetWidth,frame,width)
 	bound(frame,floorWidth)
-	local body,bodyFloor=A.playerWindowBodyAt(width,frame.stripFloor)
+	local body,bodyFloor=A.playerWindowBodyAt(width,frame.stripFloor,sideWord)
 	frame.paintBody=body
 	pcall(frame.commentList.SetWidth,frame.commentList,body)
-	fitStripSides(frame,body)
 	paintHead(frame,dossier)
 	A.paintRepControl(frame.rep,dossier.rating,body,true)
 	A.paintSideCards(frame.cards,dossier,body)
@@ -939,8 +939,8 @@ paintWindow=function(frame,index)
 	local shown,typed=A.paintNoteBox(frame.noteRow.box,frame,frame.guid,note and note.text)
 	A.paintNoteRow(frame.noteRow,shown)
 	local tagRows=A.paintTagRow(frame.tagRow,note,body)
-	local widths=A.playerWindowColumns(body-bodyFloor)
-	local metDrawn,marked=paintMet(frame,dossier,widths)
+	local widths=A.playerWindowColumns(body-bodyFloor,sideWord)
+	local metDrawn,marked=paintMet(frame,dossier,widths,sideWord,shownMet,metLines)
 	local comments=paintComments(frame,body)
 
 	local tagline,credit=A.windowFootLine()
@@ -963,7 +963,11 @@ paintWindow=function(frame,index)
 		matchWith=stripInfo and A.sideReading(stripInfo.with)or nil,
 		matchAgainst=stripInfo and A.sideReading(stripInfo.against)or nil,
 		result=frame.stripResult,
-		stripRoom=frame.stripFloor and A.unitFigure(body-frame.stripFloor+A.metric("paneGap"))or nil,
+		stripRoom=frame.stripFloor and A.unitFigure(body-frame.stripFloor)or nil,
+		metSide=sideKind,
+		headRoom=frame.name.headFit and frame.name.headFit.room or nil,
+		headNeed=frame.name.headFit and frame.name.headFit.need or nil,
+		headForm=frame.name.headFit and frame.name.headFit.form or nil,
 		bodyWidth=A.unitFigure(body),bodyFloor=A.unitFigure(bodyFloor)},"ui")
 	return true
 end
@@ -1090,7 +1094,7 @@ end
 
 local function place(frame,beside)
 	frame.cascadeStep=nextStep(frame)
-	frame.undocked=nil
+	frame.moved=nil
 	pcall(frame.ClearAllPoints,frame)
 	local cascade=A.metric("detailCascade")*frame.cascadeStep
 	local gap=A.metric("detailGap")
@@ -1098,7 +1102,7 @@ local function place(frame,beside)
 	if type(beside)=="table"then
 		local okWidth,width=pcall(frame.GetWidth,frame)
 		if not(okWidth and type(width)=="number"and width>0)then
-			width=A.playerWindowWidth(frame.stripFloor)
+			width=A.playerWindowWidth(frame.stripFloor,frame.sideWord)
 			frame.widthFrom="fallback"
 		end
 		local side,room,screen=A.playerWindowSide(beside,width)
@@ -1117,15 +1121,17 @@ local function place(frame,beside)
 	end
 
 	frame.placedRoom,frame.placedScreen=nil,nil
-	local list=type(A.windowFrameOf)=="function"and A.windowFrameOf("matches")or nil
-	if not list then
-		frame.placedSide="screen"
-		pcall(frame.SetPoint,frame,"CENTER")
-		return frame.placedSide
+	local point,x,y=nil,0,0
+	if type(A.pooledOpenPoint)=="function"then
+		point,x,y=A.pooledOpenPoint("player")
 	end
-	frame.placedSide="dock"
-	local across=gap*2+A.detailWindowWidth()
-	pcall(frame.SetPoint,frame,"TOPLEFT",list,"TOPRIGHT",across+cascade,-cascade)
+	if point then
+		frame.placedSide="stored"
+		pcall(frame.SetPoint,frame,point,UIParent,point,x+cascade,y-cascade)
+	else
+		frame.placedSide="screen"
+		pcall(frame.SetPoint,frame,"CENTER",UIParent,"CENTER",cascade,-cascade)
+	end
 	pcall(frame.SetUserPlaced,frame,false)
 	return frame.placedSide
 end
@@ -1226,7 +1232,7 @@ function A.playerWindowsOpen()
 		local frame=open[order[i]]
 		if frame then
 			out[#out+1]={guid=frame.guid,name=frame.windowName,frame=frame,
-				step=frame.cascadeStep,docked=frame.undocked~=true}
+				step=frame.cascadeStep,moved=frame.moved==true}
 		end
 	end
 	return out

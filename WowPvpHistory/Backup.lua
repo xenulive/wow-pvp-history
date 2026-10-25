@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.16
+-- WowPvpHistory 0.70.27
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -529,11 +529,7 @@ local function busyRefusal()
 	if A.sandboxed()then
 		return A.refusalText("sandbox"),"sandbox"
 	end
-	local db=A.db()
-	if db and db.active~=nil then
-		return A.refusalText("in-flight"),"in-flight"
-	end
-	if type(A.harvestsPending)=="function"and A.harvestsPending()>0 then
+	if A.matchInFlight(A.db())then
 		return A.refusalText("in-flight"),"in-flight"
 	end
 	return nil
@@ -709,16 +705,6 @@ function A.applyImport(text)
 	return{matches=#db.matches,replaced=before,indexRebuilt=indexRebuilt}
 end
 
-local function bytesText(bytes)
-	if bytes<1024 then
-		return("%d bytes"):format(bytes)
-	end
-	if tonumber(("%.1f"):format(bytes/1024))<1024 then
-		return("%.1f KB"):format(bytes/1024)
-	end
-	return("%.1f MB"):format(bytes/(1024*1024))
-end
-
 local function hasPin(held)
 	local pinned=held and held.pinned
 	return type(pinned)=="table"and type(pinned.blob)=="string"
@@ -764,7 +750,7 @@ local function backupText()
 	local current=held.current
 	local text=("%d %s from %s, %s"):format(current.matches or 0,
 		current.matches==1 and"match"or"matches",tostring(current.at),
-		bytesText(current.bytes or 0))
+		A.bytesText(current.bytes or 0))
 
 	local refused=held.refused
 	if type(refused)=="table"then

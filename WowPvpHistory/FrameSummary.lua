@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.16
+-- WowPvpHistory 0.70.27
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -7,6 +7,8 @@ local _,A=...
 
 local TILE_COUNT=6
 local OPPONENT_ROWS=4
+
+local HEADING_ROLE="section"
 
 local READING_ROWS=7
 
@@ -567,7 +569,7 @@ function standing.blocks(strip,bars,from,to)
 	local pooled=math.min(#bars,#strip.bars)
 	local fit=math.max(0,math.floor((to-from+gap)/(1+gap)))
 	local count=math.min(pooled,fit)
-	local shed=pooled-count
+	local shed=#bars-count
 	if count==0 then
 		return 0,shed
 	end
@@ -861,7 +863,7 @@ function standing.paintCells(strip,reading,width)
 				format=tile.format,rating=tile.rating,label=tile.label,figure=tostring(tile.rating),
 				change=tile.played and A.stripChangeText(tile.change)or nil,
 				changeTone=(tile.change or 0)>0 and"win"or(tile.change or 0)<0 and"loss"or"dim",
-				tier=tierName,faded=not tile.played,
+				tier=tierName,
 				unranked=A.ratingTierEnum(tile.format,tile.rating)==0,
 			}
 		end
@@ -918,10 +920,6 @@ function standing.paintCells(strip,reading,width)
 			keepPlaced(held)
 			if math.abs(off)>math.abs(centre)then
 				centre=off
-			end
-			local alpha=(cell.faded and not cell.unranked)and 0.5 or 1
-			for _,key in ipairs(cellTexts)do
-				pcall(held[key].SetAlpha,held[key],alpha)
 			end
 			labels[#labels+1]=cell.label or"?"
 			drawnWidths[#drawnWidths+1]=tostring(widths[i])
@@ -1527,7 +1525,7 @@ function A.buildDuelPanel(parent)
 	panel.rule:SetPoint("TOPLEFT",panel,"TOPLEFT",0,0)
 	panel.rule:SetPoint("BOTTOMLEFT",panel,"BOTTOMLEFT",0,0)
 	panel.rule:SetWidth(1)
-	panel.title=standing.text(panel,"label","dim")
+	panel.title=standing.text(panel,HEADING_ROLE,"dim")
 	panel.title:SetPoint("TOPLEFT",panel,"TOPLEFT",10,-8)
 	local head=A.metric("rowHeadRow")
 	local tall=A.metric("duelPanelRow")
@@ -2186,8 +2184,8 @@ local function drawMarkers(plot,series,place,foot,height,loose,note,width)
 		plot.dots[i]:Hide()
 	end
 
-	local from=A.dayText(series[1].at)
-	local to=A.dayText(series[endIndex].at)
+	local from=A.shortDay(series[1].at)
+	local to=A.shortDay(series[endIndex].at)
 	A.style(plot.startDate,"note","dimmer")
 	A.style(plot.endDate,"note","dimmer")
 	plot.startDate:SetText(from or"")
@@ -2735,7 +2733,7 @@ function A.buildSummaryRegion(parent,controlHost,scopeChoices,onScopePick,onDeta
 	region.plotLabel=region.plot:CreateFontString(nil,"ARTWORK","GameFontDisableSmall")
 	region.plotLabel:SetPoint("TOPLEFT",region.plot,"TOPLEFT",0,0)
 	region.plotLabel:SetJustifyH("LEFT")
-	A.style(region.plotLabel,"label","dim")
+	A.style(region.plotLabel,HEADING_ROLE,"dim")
 
 	region.plot.peakLabel=region.plot:CreateFontString(nil,"ARTWORK","GameFontDisableSmall")
 	region.plot.peakLabel:SetJustifyH("LEFT")
@@ -3031,19 +3029,19 @@ function A.ratedFigures(summary)
 	local format=summary.format
 	local tier=type(A.ratingTierName)=="function"and A.ratingTierName(format,summary.rating)or nil
 
-	local peakDay,peakEpoch=nil,nil
+	local peakForms,peakEpoch=nil,nil
 	for _,point in ipairs(summary.series or{})do
 		local at=type(point.at)=="string"and A.stampEpoch(point.at)or nil
 		if summary.peak~=nil and point.rating==summary.peak and at~=nil
 			and(peakEpoch==nil or at<peakEpoch)then
-			peakDay,peakEpoch=A.shortDayText(point.at),at
+			peakForms,peakEpoch=A.shortDayForms(point.at),at
 		end
 	end
 
 	local cards={
 		{"RATING",tostring(math.floor(summary.rating)),nil,nil,nil,{beside=tier,rating=summary.rating}},
 		{"PEAK",summary.peak~=nil and tostring(math.floor(summary.peak))or nil,nil,nil,nil,
-			{beside=peakDay,rating=summary.peak}},
+			{beside=peakForms and peakForms[1]or nil,besideForms=peakForms,rating=summary.peak}},
 	}
 	if(summary.roundsPlayed or 0)>0 and summary.roundRate~=nil then
 		local lost=summary.roundsPlayed-summary.roundsWon
@@ -4048,7 +4046,7 @@ function A.paintStatsHeading(region,format,shown)
 	end
 	region.headingDrawn,region.headingSpan=heading,from and region.plotSpan:GetText()or nil
 	A.trace("stats-heading",{format=format,statsView=view,heading=heading,
-		spanFrom=from,spanTo=to,rangeWord=choice},"ui")
+		spanFrom=from,spanTo=to,rangeWord=choice,headRole=HEADING_ROLE},"ui")
 	return heading
 end
 
@@ -4657,9 +4655,9 @@ local OVERVIEW_WEEK_MIN=6
 local WEEK_BAR_CAP=24
 local WEEK_LABEL_GAP=8
 local OVERVIEW_CELL_MIN=14
-local OVERVIEW_CHART_MIN=20
 local OVERVIEW_CHART_MAX=96
 local OVERVIEW_CELL_MAX=40
+local OVERVIEW_SCROLL_BAR=14
 
 local function overviewText(parent,justify)
 	local text=parent:CreateFontString(nil,"ARTWORK","GameFontHighlightSmall")
@@ -4673,9 +4671,20 @@ local function overviewTexture(parent,layer)
 end
 
 function A.buildStatsOverview(frame,anchor)
-	local host=CreateFrame("Frame","WowPvpHistoryFrameStatsOverview",frame)
-	host:SetAllPoints(anchor)
+	local scroll=CreateFrame("ScrollFrame","WowPvpHistoryFrameStatsOverviewScroll",frame,"ScrollFrameTemplate")
+	scroll:SetPoint("TOPLEFT",anchor,"TOPLEFT",0,0)
+	scroll:SetPoint("BOTTOMRIGHT",anchor,"BOTTOMRIGHT",0,0)
+	scroll:Hide()
+	if type(scroll.ScrollBar)=="table"then
+		pcall(scroll.ScrollBar.SetHideIfUnscrollable,scroll.ScrollBar,true)
+	end
+	local host=CreateFrame("Frame","WowPvpHistoryFrameStatsOverview",scroll)
+	host:SetWidth(A.bodyWidth())
+	host:SetHeight(1)
+	scroll:SetScrollChild(host)
 	host:Hide()
+	host.scroll=scroll
+	host.anchor=anchor
 	host.title=overviewText(host)
 	host.title:SetPoint("TOPLEFT",host,"TOPLEFT",A.metric("rowLabelPad"),-2)
 	host.record=overviewText(host)
@@ -4796,22 +4805,6 @@ function A.overviewRecordText(record)
 	return table.concat(parts,", ")
 end
 
-function A.overviewBlockFloors()
-	local label,note=A.fontSize("label"),A.fontSize("note")
-	local week=label+8+OVERVIEW_CHART_MIN+note*2+6
-	local days=type(A.heatDays)=="function"and#A.heatDays()or 7
-	local grid=label+6+note+4+days*(OVERVIEW_CELL_MIN+2)+note+6
-	return week,grid
-end
-
-function A.overviewBlocksFit(room)
-	if type(room)~="number"then
-		return false,false
-	end
-	local week,grid=A.overviewBlockFloors()
-	return room>=week,room>=grid
-end
-
 function A.overviewRatingForms(held)
 	if type(held)~="table"or held.rating==nil then
 		return{}
@@ -4836,20 +4829,81 @@ function A.paintStatsOverview(frame,overview,season,bound,settled,choice)
 	if host==nil then
 		return nil
 	end
+	local scroll=host.scroll
+	scroll:Show()
 	host:Show()
 	if type(overview)~="table"then
 		overview={record={matches=0,wins=0,losses=0,draws=0},formats={},weeks={},
 			cells={},floor=A.rankFloor("cells")or 0}
 	end
-	local width=A.bodyWidth()
 	local pad=A.metric("rowLabelPad")
 	local label=A.fontSize("label")
+	local section=A.fontSize(HEADING_ROLE)
+	local note=A.fontSize("note")
+	local paneGap=A.metric("paneGap")
+	local formats=overview.formats or{}
+
+	local subs,heights,tableHeight={},{},0
+	for i=1,#formats do
+		local held=formats[i]
+		local sub=""
+		if(held.played or 0)==0 then
+			local phrase=bound~=nil and type(A.scopePhrase)=="function"and A.scopePhrase(A.summaryScope())or nil
+			if season~=nil then
+				sub="none this season"
+			elseif phrase~=nil then
+				sub="none in the "..phrase
+			else
+				sub="none yet"
+			end
+		elseif(held.draws or 0)>0 then
+			sub=("%d drawn"):format(held.draws)
+		end
+		subs[i]=sub
+		heights[i]=A.overviewRowHeight(sub~="")
+		tableHeight=tableHeight+heights[i]
+	end
+
+	local headTop=-(2+section+3+note+paneGap)
+	local top=headTop-label-4
+	local blocksTop=top-tableHeight-paneGap
+	local chart=OVERVIEW_CHART_MAX
+	local foot=note*2+6
+	local heatTop=blocksTop-section-8-chart-foot-paneGap
+	local days=A.heatDays()
+	local cellHeight=OVERVIEW_CELL_MAX
+	local gridTop=heatTop-section-6
+	local rowsTop=gridTop-note-4
+	local legendTop=rowsTop-#days*(cellHeight+2)-4
+	local contentHeight=note-legendTop+paneGap
+
+	local viewHeight=scroll:GetHeight()
+	local measured=type(viewHeight)=="number"and viewHeight>0
+	if not measured then
+		viewHeight=400
+	end
+	local scrollable=contentHeight>viewHeight
+	local bodyWidth=A.bodyWidth()
+	local width=scrollable and bodyWidth-OVERVIEW_SCROLL_BAR or bodyWidth
+	scroll:ClearAllPoints()
+	scroll:SetPoint("TOPLEFT",host.anchor,"TOPLEFT",0,0)
+	scroll:SetPoint("BOTTOMRIGHT",host.anchor,"BOTTOMRIGHT",scrollable and-OVERVIEW_SCROLL_BAR or 0,0)
+	if type(scroll.ScrollBar)=="table"then
+		scroll.ScrollBar:SetShown(scrollable)
+	end
+	host:SetSize(width,contentHeight)
+	local range=math.max(0,contentHeight-viewHeight)
+	local wasAt=scroll:GetVerticalScroll()
+	local kept=math.min(math.max(type(wasAt)=="number"and wasAt or 0,0),range)
+	if kept~=wasAt then
+		scroll:SetVerticalScroll(kept)
+	end
 
 	if choice==nil and type(A.windowScope)=="function"then
 		choice=A.windowScope()
 	end
 	host.title:SetText(A.overviewTitle(choice))
-	A.style(host.title,"label","dim")
+	A.style(host.title,HEADING_ROLE,"dim")
 	host.record:SetText(A.overviewRecordText(overview.record))
 	A.style(host.record,"note","text")
 
@@ -4869,7 +4923,6 @@ function A.paintStatsOverview(frame,overview,season,bound,settled,choice)
 	at[4]=at[3]+OVERVIEW_BAR+OVERVIEW_RATE+gap*2
 	at[5]=at[4]+OVERVIEW_RATING+gap
 	at[6]=at[5]+seasonWidth+gap
-	local headTop=-(2+label+3+A.fontSize("note")+A.metric("paneGap"))
 	for i=1,#host.head do
 		local text=host.head[i]
 		text:ClearAllPoints()
@@ -4883,8 +4936,6 @@ function A.paintStatsOverview(frame,overview,season,bound,settled,choice)
 		text:Show()
 	end
 
-	local top=headTop-label-4
-	local formats=overview.formats or{}
 	local track=OVERVIEW_BAR
 
 	local namesFit,tiersFit=true,true
@@ -4903,26 +4954,12 @@ function A.paintStatsOverview(frame,overview,season,bound,settled,choice)
 	end
 
 	local rowTop=top
-	local heights={}
 	for i=1,#formats do
 		local held=formats[i]
 		local row=overviewRow(host,i)
 		local none=(held.played or 0)==0
-		local sub=""
-		if none then
-			local phrase=bound~=nil and type(A.scopePhrase)=="function"and A.scopePhrase(A.summaryScope())or nil
-			if season~=nil then
-				sub="none this season"
-			elseif phrase~=nil then
-				sub="none in the "..phrase
-			else
-				sub="none yet"
-			end
-		elseif(held.draws or 0)>0 then
-			sub=("%d drawn"):format(held.draws)
-		end
-		local rowHeight=A.overviewRowHeight(sub~="")
-		heights[i]=rowHeight
+		local sub=subs[i]
+		local rowHeight=heights[i]
 		row:ClearAllPoints()
 		row:SetPoint("TOPLEFT",host,"TOPLEFT",0,rowTop)
 		row:SetSize(width,rowHeight)
@@ -5013,38 +5050,17 @@ function A.paintStatsOverview(frame,overview,season,bound,settled,choice)
 		host.rows[i]:Hide()
 	end
 
-	local blocksTop=rowTop-A.metric("paneGap")
-	local hostHeight=host:GetHeight()
-	local measured=type(hostHeight)=="number"and hostHeight>0
-	if not measured then
-		hostHeight=400
-	end
-	local room=hostHeight+blocksTop
-	local half=math.floor((width-A.metric("paneSplitGap"))/2)
-	local weekFits,gridFits=A.overviewBlocksFit(room)
-	local drew,withdrawn={},{}
-	local roomText=tostring(A.unitFigure and A.unitFigure(room)or math.floor(room))
-	if weekFits then
-		drew[#drew+1]="BY WEEK"
-	else
-		withdrawn[#withdrawn+1]="BY WEEK:room="..roomText
-	end
-	if gridFits then
-		drew[#drew+1]="WHEN YOU WIN"
-	else
-		withdrawn[#withdrawn+1]="WHEN YOU WIN:room="..roomText
-	end
-
 	host.weekTitle:ClearAllPoints()
 	host.weekTitle:SetPoint("TOPLEFT",host,"TOPLEFT",pad,blocksTop)
 	host.weekTitle:SetText("BY WEEK")
-	A.style(host.weekTitle,"label","dim")
+	A.style(host.weekTitle,HEADING_ROLE,"dim")
+	host.weekTitle:Show()
 	host.weekKey:ClearAllPoints()
-	local weekRight=gridFits and half or width
-	local weekWidth=weekRight-pad
-	host.weekKey:SetPoint("TOPRIGHT",host,"TOPLEFT",weekRight,blocksTop)
+	local weekWidth=width-pad
+	host.weekKey:SetPoint("TOPRIGHT",host,"TOPLEFT",width,blocksTop)
 	host.weekKey:SetText("won above, lost below")
 	A.style(host.weekKey,"note","dimmer")
+	host.weekKey:Show()
 
 	local allWeeks=overview.weeks or{}
 	local weekRoom=math.max(1,math.floor(weekWidth/OVERVIEW_WEEK_MIN))
@@ -5060,10 +5076,8 @@ function A.paintStatsOverview(frame,overview,season,bound,settled,choice)
 	for i=1,#weeks do
 		tallest=math.max(tallest,weeks[i].won,weeks[i].lost)
 	end
-	local foot=A.fontSize("note")*2+6
-	local chart=math.min(OVERVIEW_CHART_MAX,math.max(OVERVIEW_CHART_MIN,room-label-8-foot))
 	local halfChart=math.floor(chart/2)
-	local axisY=blocksTop-label-8-halfChart
+	local axisY=blocksTop-section-8-halfChart
 	local column=#weeks>0 and math.max(OVERVIEW_WEEK_MIN,math.floor(weekWidth/#weeks))or 0
 	local barWidth=math.max(2,math.min(WEEK_BAR_CAP,math.floor(column*0.7)))
 	local barInset=math.floor((column-barWidth)/2)
@@ -5078,6 +5092,7 @@ function A.paintStatsOverview(frame,overview,season,bound,settled,choice)
 	host.axis:SetPoint("TOPLEFT",host,"TOPLEFT",pad,axisY)
 	host.axis:SetSize(weekWidth,1)
 	host.axis:SetColorTexture(A.color("dimmer"))
+	host.axis:Show()
 	local scale=tallest>0 and(chart/2-2)/tallest or 0
 	for i=1,#weeks do
 		local held=weeks[i]
@@ -5117,23 +5132,20 @@ function A.paintStatsOverview(frame,overview,season,bound,settled,choice)
 		week.lost:Hide()
 	end
 
-	local left=half+A.metric("paneSplitGap")
+	local left=pad
 	host.heatTitle:ClearAllPoints()
-	host.heatTitle:SetPoint("TOPLEFT",host,"TOPLEFT",left,blocksTop)
+	host.heatTitle:SetPoint("TOPLEFT",host,"TOPLEFT",left,heatTop)
 	host.heatTitle:SetText("WHEN YOU WIN")
-	A.style(host.heatTitle,"label","dim")
+	A.style(host.heatTitle,HEADING_ROLE,"dim")
+	host.heatTitle:Show()
 	host.heatNote:ClearAllPoints()
-	host.heatNote:SetPoint("TOPRIGHT",host,"TOPLEFT",width,blocksTop)
+	host.heatNote:SetPoint("TOPRIGHT",host,"TOPLEFT",width,heatTop)
 	host.heatNote:SetText("local time")
 	A.style(host.heatNote,"note","dimmer")
+	host.heatNote:Show()
 	local blocks=A.heatBlocks()
-	local days=A.heatDays()
 	local dayWidth=34
 	local cellWidth=math.max(OVERVIEW_CELL_MIN,math.floor((width-left-dayWidth)/#blocks)-2)
-	local gridTop=blocksTop-label-6
-	local legend=A.fontSize("note")+6
-	local cellHeight=math.min(OVERVIEW_CELL_MAX,math.max(OVERVIEW_CELL_MIN,
-		math.floor((room-label-6-A.fontSize("note")-4-legend)/#days)-2))
 	for b=1,#blocks do
 		local text=host.heatHead[b]or overviewText(host,"CENTER")
 		host.heatHead[b]=text
@@ -5150,7 +5162,6 @@ function A.paintStatsOverview(frame,overview,season,bound,settled,choice)
 		{"TOPRIGHT","BOTTOMRIGHT",1,nil},
 	}
 	local drawn,blank=0,0
-	local rowsTop=gridTop-A.fontSize("note")-4
 	for d=1,#days do
 		local dayText=host.heatDays[d]or overviewText(host)
 		host.heatDays[d]=dayText
@@ -5205,7 +5216,6 @@ function A.paintStatsOverview(frame,overview,season,bound,settled,choice)
 			cell.rated=rated
 		end
 	end
-	local legendTop=rowsTop-#days*(cellHeight+2)-4
 	host.legendLoss:ClearAllPoints()
 	host.legendLoss:SetPoint("TOPLEFT",host,"TOPLEFT",left+dayWidth,legendTop)
 	host.legendLoss:SetText("lost more")
@@ -5214,72 +5224,38 @@ function A.paintStatsOverview(frame,overview,season,bound,settled,choice)
 	host.legendWin:SetPoint("TOPRIGHT",host,"TOPLEFT",width,legendTop)
 	host.legendWin:SetText("won more")
 	A.style(host.legendWin,"note","win")
-
-	if not weekFits then
-		host.weekTitle:Hide()
-		host.weekKey:Hide()
-		host.axis:Hide()
-		for i=1,#host.weeks do
-			local week=host.weeks[i]
-			week.up:Hide()
-			week.down:Hide()
-			week.rate:Hide()
-			week.label:Hide()
-		end
-	else
-		host.weekTitle:Show()
-		host.weekKey:Show()
-		host.axis:Show()
-	end
-	if not gridFits then
-		drawn,blank=0,0
-		host.heatTitle:Hide()
-		host.heatNote:Hide()
-		host.legendLoss:Hide()
-		host.legendWin:Hide()
-		for b=1,#host.heatHead do
-			host.heatHead[b]:Hide()
-		end
-		for d=1,#host.heatDays do
-			host.heatDays[d]:Hide()
-		end
-		for _,row in pairs(host.cells)do
-			for _,cell in pairs(row)do
-				cell:Hide()
-			end
-		end
-	else
-		host.heatTitle:Show()
-		host.heatNote:Show()
-		host.legendLoss:Show()
-		host.legendWin:Show()
-	end
+	host.legendLoss:Show()
+	host.legendWin:Show()
 
 	local record=overview.record or{}
 	local heightsText={}
 	for i=1,#heights do
 		heightsText[i]=tostring(heights[i])
 	end
-	local figures={weeks=weekFits and#weeks or 0,cells=drawn,blank=blank,draws=record.draws or 0,
-		n=#formats,drew=table.concat(drew,","),withdrawn=table.concat(withdrawn,","),
+	local offset=scroll:GetVerticalScroll()
+	local figures={weeks=#weeks,cells=drawn,blank=blank,draws=record.draws or 0,
+		n=#formats,drew="BY WEEK,WHEN YOU WIN",
 		rowHeights=table.concat(heightsText,","),nameForm=namesFit and"long"or"short",
 		ratingForm=tiersFit and"tier"or"rating",chart=chart,cell=cellHeight,
-		weekBar=weekFits and#weeks>0 and barWidth or nil,weekStep=weekFits and#weeks>0 and step or nil,
-		dropped=weeksDropped>0 and weeksDropped or nil,weekWidth=weekFits and weekWidth or nil,
-		rangeWord=choice~=nil and tostring(choice)or nil,title=host.title:GetText()}
+		weekBar=#weeks>0 and barWidth or nil,weekStep=#weeks>0 and step or nil,
+		dropped=weeksDropped>0 and weeksDropped or nil,weekWidth=weekWidth,
+		rangeWord=choice~=nil and tostring(choice)or nil,title=host.title:GetText(),
+		viewHeight=measured and viewHeight or nil,contentHeight=contentHeight,scrollable=scrollable,
+		offset=type(offset)=="number"and offset or 0,range=range,contentWidth=width}
 	A.trace("stats-overview",{weeks=figures.weeks,dropped=figures.dropped,cells=figures.cells,blank=figures.blank,
-		draws=figures.draws,n=figures.n,drew=figures.drew~=""and figures.drew or"none",
-		withdrawn=figures.withdrawn~=""and figures.withdrawn or nil,rowHeights=figures.rowHeights,
+		draws=figures.draws,n=figures.n,drew=figures.drew,rowHeights=figures.rowHeights,
 		nameForm=figures.nameForm,ratingForm=figures.ratingForm,chart=chart,cell=cellHeight,
 		weekBar=figures.weekBar,weekStep=figures.weekStep,
-		weekWidth=figures.weekWidth~=nil and A.unitFigure(figures.weekWidth)or nil,rangeWord=figures.rangeWord,
-		height=measured and A.unitFigure(hostHeight)or nil},"ui")
+		weekWidth=A.unitFigure(figures.weekWidth),rangeWord=figures.rangeWord,
+		viewHeight=measured and A.unitFigure(viewHeight)or nil,contentHeight=A.unitFigure(contentHeight),
+		scrollable=scrollable,offset=A.unitFigure(figures.offset),range=A.unitFigure(range),
+		contentWidth=A.unitFigure(width),headRole=HEADING_ROLE},"ui")
 	host.figures=figures
 
-	host.paintedHeight=measured and hostHeight or nil
+	host.paintedHeight=measured and viewHeight or nil
 	if not settled and type(C_Timer)=="table"and type(C_Timer.After)=="function"then
 		C_Timer.After(0,function()
-			local now=host:GetHeight()
+			local now=scroll:GetHeight()
 			if host:IsShown()and type(now)=="number"and now>0 and now~=host.paintedHeight then
 				A.paintStatsOverview(frame,overview,season,bound,true,choice)
 			end
@@ -5289,7 +5265,11 @@ function A.paintStatsOverview(frame,overview,season,bound,settled,choice)
 end
 
 function A.hideStatsOverview(frame)
-	if frame and frame.statsOverview then
-		frame.statsOverview:Hide()
+	local host=frame and frame.statsOverview
+	if host==nil then
+		return
 	end
+	host.scroll:SetVerticalScroll(0)
+	host.scroll:Hide()
+	host:Hide()
 end

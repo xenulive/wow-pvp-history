@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.16
+-- WowPvpHistory 0.70.27
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -15,6 +15,8 @@ local installed,pending=false,false
 local last={state="none"}
 
 local GRID={"With you","Against","Met"}
+
+local HEAD_ROLE="section"
 
 local function text(parent,role)
 	local fs=parent:CreateFontString(nil,"OVERLAY")
@@ -76,7 +78,7 @@ local function cardOrNil()
 		f.ground=f:CreateTexture(nil,"BACKGROUND")
 		f.ground:SetAllPoints(f)
 		f.edges=edges(f)
-		f.head=text(f,"cardHead")
+		f.head=text(f,HEAD_ROLE)
 		f.chip=CreateFrame("Frame",nil,f)
 		f.chip.ground=f.chip:CreateTexture(nil,"BACKGROUND")
 		f.chip.ground:SetAllPoints(f.chip)
@@ -153,11 +155,11 @@ local function tagChip(f,index)
 end
 
 local function layoutHeader(f,said,inner,padX,padY)
-	local headSize=A.fontSize("cardHead")
+	local headSize=A.fontSize(HEAD_ROLE)
 	local chipH=A.metric("nameCardChipHeight")
 	local rowH=math.max(headSize,chipH)
 
-	A.style(f.head,"cardHead","accent")
+	A.style(f.head,HEAD_ROLE,"accent")
 	f.head:SetText(A.displayName():upper())
 	f.head:ClearAllPoints()
 	f.head:SetPoint("TOPLEFT",f,"TOPLEFT",padX,-(padY+math.floor((rowH-headSize)/2)))
@@ -263,7 +265,7 @@ local function gridColumns(f,inner)
 end
 
 function A.cardMetLast(said)
-	local day=type(said)=="table"and said.last~=nil and A.shortDayText(said.last)or nil
+	local day=type(said)=="table"and said.last~=nil and A.shortDay(said.last)or nil
 	return day and("last %s"):format(day)or nil
 end
 
@@ -377,7 +379,7 @@ local function layout(f,said,finderClass)
 	local classToken,classFrom=nameClass(said,finderClass)
 	y=y+layoutName(f,said,inner,padX,y,classToken)
 
-	local drew={note=false,tags=0,tagLines=0,nameClass=classFrom}
+	local drew={note=false,tags=0,tagLines=0,nameClass=classFrom,headRole=HEAD_ROLE}
 	y=y+gap
 	if said.kind=="stranger"then
 		A.style(f.line,"cardText","dim")
@@ -504,6 +506,7 @@ local function traceCard(said,source,drew)
 		cardRight=drew and drew.cardRight,
 		chipFrom=drew and drew.chipFrom,
 		nameClass=drew and drew.nameClass,
+		headRole=drew and drew.headRole,
 	},"ui")
 end
 

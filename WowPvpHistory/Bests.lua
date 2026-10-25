@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.16
+-- WowPvpHistory 0.70.27
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -272,7 +272,7 @@ function A.bestsLines(format,season,character,bound)
 			local held=row.bests[best.key]
 			if held then
 				local where={}
-				where[#where+1]=type(A.shortDayText)=="function"and A.shortDayText(held.stamp)or nil
+				where[#where+1]=A.stampWords(held.stamp)
 				where[#where+1]=held.map
 				where[#where+1]=held.id~=nil and("#"..tostring(held.id))or nil
 				parts[#parts+1]=("%s %s (%s)"):format(best.word,A.bestText(best.key,held.value),

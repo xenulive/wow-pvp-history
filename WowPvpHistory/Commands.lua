@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.16
+-- WowPvpHistory 0.70.27
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -315,7 +315,7 @@ local NOTES_CONTROLS={
 	sort=function(value)
 		local word,dir=(value or""):lower():match("^(%S+)%s*(%S*)%s*$")
 		if not A.setNotesSort(word,dir~=""and dir or nil)then
-			return nil,"/pvph notes sort <recent||met||rep||player||with||against> [up||down]"
+			return nil,"/pvph notes sort <recent||met||rep||player||record||with||against> [up||down]"
 		end
 		local state=A.notesState()
 		return("the players list is sorted %s%s for this session"):format(state.sort,
@@ -1181,7 +1181,7 @@ local function compFormLine(format)
 end
 
 local function reportCompForm(form,format,index)
-	if A.refuseUnstoredFormat(format,nil)then
+	if A.refuseUnstoredFormat(format,form=="pairs"and A.windowCharacter()or nil)then
 		return
 	end
 	format=format or A.windowFormat()
@@ -2111,8 +2111,34 @@ local function reportWindow(word,words)
 
 	if word=="scroll"then
 		local where=words[3]and words[3]:lower()or nil
+		if where=="overview"then
+			local to=words[4]and words[4]:lower()or nil
+			if to~=nil and to~="top"and to~="bottom"then
+				A.say("/pvph window scroll overview [top|bottom]: the All tab's Stats page moved, or where it is")
+				return
+			end
+			if type(A.scrollOverview)~="function"then
+				A.say("the match window did not load, so there is no Stats page to scroll")
+				return
+			end
+			local offset,range=A.scrollOverview(to)
+			if offset==nil then
+				if range=="closed"then
+					A.say("the window is closed, so no Stats page is drawn and nothing scrolled")
+				elseif range=="body"then
+					A.say("the window is not on its Stats body, so no Stats page is drawn and nothing scrolled")
+				else
+					A.say("the window is not on the All tab's Stats page, so nothing scrolled")
+				end
+				return
+			end
+			A.say(("the All tab's Stats page is at offset %s of a range of %s"):format(
+				A.unitFigure(offset),A.unitFigure(range)))
+			return
+		end
 		if where~="top"then
 			A.say("/pvph window scroll top: the History list back to its top")
+			A.say("/pvph window scroll overview [top|bottom]: the All tab's Stats page moved, or where it is")
 			return
 		end
 		if type(A.scrollListTop)~="function"then
@@ -2749,11 +2775,16 @@ local function reportCsvImport(forced)
 					:format(dropped,dropped==1 and"result was"or"results were",
 						dropped==1 and"it"or"them"))
 			end
+			local resultSetAside=tonumber(result.resultSetAside)or 0
+			if resultSetAside>0 then
+				A.say(("csv import: %d typed match %s set aside, because the match's recorded result settles %s")
+					:format(resultSetAside,resultSetAside==1 and"result was"or"results were",
+						resultSetAside==1 and"it"or"them"))
+			end
 			local resultDropped=tonumber(result.resultDropped)or 0
 			if resultDropped>0 then
-				A.say(("csv import: %d typed match %s left off, because the match's recorded result rules %s out")
-					:format(resultDropped,resultDropped==1 and"result was"or"results were",
-						resultDropped==1 and"it"or"them"))
+				A.say(("csv import: %d typed match %s left off, because the match takes no result")
+					:format(resultDropped,resultDropped==1 and"result was"or"results were"))
 			end
 			local cellsDropped=tonumber(result.cellsDropped)or 0
 			if cellsDropped>0 then
@@ -4225,6 +4256,7 @@ local USAGE={
 	"/pvph window size match|player <w> [h]  the newest match or player window, this session, never stored",
 	"/pvph window scale [<percent>||reset]  every window's scale. A percentage holds for this session and stores nothing; reset puts the setting back",
 	"/pvph window scroll top  the History list back to its top. Holds nothing and stores nothing",
+	"/pvph window scroll overview [top|bottom]  the All tab's Stats page moved to its top or bottom, or where it is. Holds nothing and stores nothing",
 	"/pvph window store   the store panel. window player <who> opens that player's window",
 	"/pvph window menu <id||last||draw||typed||short> [open||note||roster||print||talents||compare||result <win||loss||draw>]  a match row's menu, or one entry of it. menu close closes an open menu",
 	"/pvph window hover [<id||last||left>]  the Shift tooltip on a match row where it is drawn; left takes the newest left-early row. No id hides it",
@@ -4232,8 +4264,9 @@ local USAGE={
 	"/pvph compare add <id||last [n]>  pick a match; last n is the nth newest on the tab. remove <id> and clear take them out",
 	"/pvph compare box <id||last [n]>  press a row's pick box as a click there does; last n is the nth newest of the newest match's type",
 	"/pvph compare open   the Compare window over the picked matches. close shuts it and keeps them",
-	"/pvph compare base <id>  make a picked match the base. rows prints each drawn row, its values, the best and each difference",
-	"/pvph window round [n]  the hover over round n of the newest match window's table. No number hides it",
+	"/pvph compare tab <figures||rounds>  open the Compare window's Figures tab or its second tab, Rounds and lobby or Lobby",
+	"/pvph compare base <id>  make a picked match the base. rows prints each drawn row, its values, the best, each difference, the SAME IN ALL line, and on the second tab the rounds and each lobby row",
+	"/pvph window round [n]  the hover over round n's card in the newest match window. No number hides it",
 	"/pvph window dropdown [character||scope||result||spec]  open that dropdown's list. No word closes it",
 	"/pvph window tile [rate||matches||mmr||length||last]  a summary card's hover. No word hides it",
 	"/pvph window rect <history||summary||players||match||table||player||banner||overlay||overlaytile||tooltip||finder||card||hold||grip||compare||menu>  where it sits on screen, in pixels. grip is the history window's 64 pixel corner",
@@ -4249,7 +4282,7 @@ local USAGE={
 	"/pvph edit <id>      fill a field the capture did not record, marked as hand entered",
 	"/pvph notes          the players window: the index, and what you wrote on it",
 	"/pvph notes last     that window, scoped to the newest match. notes #<id> for one match",
-	"/pvph notes sort <recent||met||rep||player||with||against> [up||down]  order the players list for this session",
+	"/pvph notes sort <recent||met||rep||player||record||with||against> [up||down]  order the players list for this session",
 	"/pvph scoreboard sort <name||damage||healing||kb||dispels||objective||swing||wins> [up||down]  order the match window for this session",
 	"/pvph notes rep <bad||negative||neutral||positive||strong||none||off>  narrow the list to one rep",
 	"/pvph notes format <format||all>  narrow the list to players met in one format",
@@ -4335,13 +4368,13 @@ local function editDistance(one,two,bound)
 		current[0]=i
 		local best=current[0]
 		for j=1,#two do
-			local cost=one:sub(i,i)==two:sub(j,j)and 0 or 1
+			local swap=one:sub(i,i)==two:sub(j,j)and 0 or 1
 			local step=previous[j]+1
 			if current[j-1]+1<step then
 				step=current[j-1]+1
 			end
-			if previous[j-1]+cost<step then
-				step=previous[j-1]+cost
+			if previous[j-1]+swap<step then
+				step=previous[j-1]+swap
 			end
 			current[j]=step
 			if step<best then

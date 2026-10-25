@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.16
+-- WowPvpHistory 0.70.27
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -164,7 +164,7 @@ local function buildWindow()
 	frame.sectionHeading:SetJustifyH("LEFT")
 	frame.sectionHeading:SetWordWrap(false)
 	frame.sectionHeading:SetText("THE STORE NOW")
-	A.style(frame.sectionHeading,"label","accent")
+	A.style(frame.sectionHeading,"section","accent")
 
 	frame.rows={}
 	for i=1,4 do
@@ -199,7 +199,7 @@ function A.refreshStoreWindow()
 
 	A.containedPaint("store/heading",function()
 		window.heading:SetText(A.storeWindowTitle())
-		A.style(window.sectionHeading,"label","accent")
+		A.style(window.sectionHeading,"section","accent")
 	end)
 
 	local ok,rows=A.containedPaint("store/rows",A.storeRows)

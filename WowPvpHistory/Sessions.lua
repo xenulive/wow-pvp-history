@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.16
+-- WowPvpHistory 0.70.27
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -165,7 +165,7 @@ function A.buildSessions(entries)
 			current,previousStart=nil,nil
 		else
 			if current==nil or previousStart==nil or previousStart-ended>gap then
-				current={entries={},endEpoch=ended,endStamp=endedStamp(subject)or subject.openedAt}
+				current={entries={},endEpoch=ended,endStamp=endedStamp(subject)or A.stampAt(ended)}
 				sessions[#sessions+1]=current
 			end
 			current.entries[#current.entries+1]=entry
@@ -297,89 +297,65 @@ local function sessionDayPart(stamp)
 	return noon,part
 end
 
-local TODAY_WORDS={morning="This morning",afternoon="This afternoon",evening="This evening",
-	night="Tonight"}
-local YESTERDAY_WORDS={morning="Yesterday morning",afternoon="Yesterday afternoon",
-	evening="Yesterday evening",night="Last night"}
-
-function A.sessionHeadForms(stamp,now)
-	local day,part=sessionDayPart(stamp)
+function A.shortDayForms(stamp)
+	local day=A.shortDay(stamp)
 	if day==nil then
 		return nil
 	end
-	local okKey,dayKey=pcall(date,"%Y-%m-%d",day)
-	if type(now)=="number"and okKey then
-		local okToday,today=pcall(date,"%Y-%m-%d",now)
-		local okY,yesterday=pcall(function()
-			local text=date("%Y-%m-%d",now)
-			local y,m,d=text:match("^(%d+)%-(%d+)%-(%d+)$")
-			return date("%Y-%m-%d",time({year=tonumber(y),month=tonumber(m),day=tonumber(d),hour=12})-86400)
-		end)
-		if okToday and dayKey==today then
-			return{TODAY_WORDS[part]}
-		end
-		if okY and dayKey==yesterday then
-			return{YESTERDAY_WORDS[part]}
-		end
+	local forms={day}
+	local bare=day:match("^%a+ (%d+ %a+)$")
+	if bare~=nil then
+		forms[2]=bare
 	end
-	local okParts,long,weekday,dayOfMonth,month,short=pcall(function()
-		return date("%A",day),date("%a",day),tonumber(date("%d",day)),date("%B",day),date("%b",day)
-	end)
-	if not okParts or type(dayOfMonth)~="number"then
-		return nil
-	end
-	return{
-		("%s %d %s"):format(long,dayOfMonth,month),
-		("%s %d %s"):format(weekday,dayOfMonth,short),
-		("%d %s"):format(dayOfMonth,short),
-	}
+	return forms
 end
 
-local function gridLabelForms(stamp,now,earlier)
-	local forms=A.sessionHeadForms(stamp,now)
+function A.sessionHeadForms(stamp)
+	local day=sessionDayPart(stamp)
+	if day==nil then
+		return nil
+	end
+	local okKey,key=pcall(date,"%Y-%m-%d",day)
+	if not okKey then
+		return nil
+	end
+	return A.shortDayForms(key)
+end
+
+local function gridLabelForms(stamp,earlier)
+	local forms=A.sessionHeadForms(stamp)
 	if forms==nil then
 		return nil
 	end
-	if#forms<2 then
-		if earlier and forms[1]~=nil then
-			return{"Earlier "..forms[1]:lower()}
-		end
-		return forms
-	end
-	local day,part=sessionDayPart(stamp)
-	local ok,weekday,dayOfMonth,month=pcall(function()
-		return date("%a",day),tonumber(date("%d",day)),date("%b",day)
-	end)
-	if not ok or type(dayOfMonth)~="number"then
-		return forms
-	end
+	local _,part=sessionDayPart(stamp)
 	local said=(earlier and"earlier "or"")..part
-	return{
-		("%s %d %s, %s"):format(weekday,dayOfMonth,month,said),
-		("%d %s, %s"):format(dayOfMonth,month,said),
-	}
-end
-
-function A.sessionGridLabelForms(stamp,now)
-	return gridLabelForms(stamp,now,false)
-end
-
-function A.sessionHeadList(sessions,now)
 	local out={}
-	for _,session in ipairs(type(sessions)=="table"and sessions or{})do
-		out[session]=A.sessionHeadForms(session.startStamp,now)or{}
+	for i=1,#forms do
+		out[i]=forms[i]..", "..said
 	end
 	return out
 end
 
-function A.sessionGridLabelList(sessions,now)
-	local heads=A.sessionHeadList(sessions,now)
+function A.sessionGridLabelForms(stamp)
+	return gridLabelForms(stamp,false)
+end
+
+function A.sessionHeadList(sessions)
+	local out={}
+	for _,session in ipairs(type(sessions)=="table"and sessions or{})do
+		out[session]=A.sessionHeadForms(session.startStamp)or{}
+	end
+	return out
+end
+
+function A.sessionGridLabelList(sessions)
+	local heads=A.sessionHeadList(sessions)
 	local out,seen,earlier={},{},0
 	for _,session in ipairs(type(sessions)=="table"and sessions or{})do
 		local day,part=sessionDayPart(session.startStamp)
 		local key=day~=nil and(day.." "..part)or nil
 		local taken=key~=nil and seen[key]==true
-		local forms=gridLabelForms(session.startStamp,now,taken)
+		local forms=gridLabelForms(session.startStamp,taken)
 		if taken and forms~=nil then
 			earlier=earlier+1
 		end
@@ -1121,7 +1097,7 @@ function A.duelReading(records,character,season,bound)
 	return hero
 end
 
-function A.otherReading(records,entries,now)
+function A.otherReading(records,entries)
 	local hero={others=#records,wins=0,losses=0,leftEarly=#entries,unset=0,reasons={}}
 	for i=1,#records do
 		local verdict=A.recordVerdict(records[i])
@@ -1161,8 +1137,8 @@ function A.otherReading(records,entries,now)
 		hero.reasons[#hero.reasons+1]={label="Not set",count=hero.unset,unset=true}
 	end
 	if newest then
-		hero.lastPlayed=A.sessionDayLabel(newest,now)
-		hero.lastForms=A.sessionDayForms(newest,now)
+		hero.lastForms=A.shortDayForms(newest)
+		hero.lastPlayed=hero.lastForms and hero.lastForms[1]or nil
 		local clock=A.clockKey(newest)
 		hero.lastSub=clock and newestMap and(clock..", "..newestMap)or clock
 	end
@@ -1171,7 +1147,7 @@ end
 
 local WORLD_TREND=20
 
-function A.worldReading(records,now)
+function A.worldReading(records)
 	records=type(records)=="table"and records or{}
 	local hero={kind="world",outings=#records,kills=0,deaths=0,tallied=0,bars={},
 		seconds=0,timed=0}
@@ -1212,11 +1188,8 @@ function A.worldReading(records,now)
 	local last=records[1]
 	local stamp=last and(last.openedAt or last.completedAt)or nil
 	if stamp~=nil then
-		hero.lastOut=A.sessionDayLabel(stamp,now)
-		hero.lastForms=A.sessionDayForms(stamp,now)
-		if hero.lastOut=="Tonight"then
-			hero.lastOut,hero.lastForms="Today",{"Today"}
-		end
+		hero.lastForms=A.shortDayForms(stamp)
+		hero.lastOut=hero.lastForms and hero.lastForms[1]or nil
 		local parts={}
 		local zone=A.recordZone(last)
 		if zone~=nil then
@@ -1261,7 +1234,7 @@ local function trendBars(records,newestKeys)
 	return bars
 end
 
-function A.standingReading(format,season,character,bound,summary,now,listed)
+function A.standingReading(format,season,character,bound,summary,_,listed)
 	summary=type(summary)=="table"and summary or A.summarize(format,season,character,bound)
 	local shape=A.standingShape(format)
 	local records=scopedRecords(format,season,character,bound)
@@ -1431,12 +1404,12 @@ function A.standingReading(format,season,character,bound,summary,now,listed)
 		reading.figures={
 			{label="MATCHES",value=tostring(summary.matches or 0),
 				sub=matchesSub},
-			{label="LAST PLAYED",value=lastStamp and A.sessionDayLabel(lastStamp,now)or"-",
-				forms=lastStamp and A.sessionDayForms(lastStamp,now)or nil,
+			{label="LAST PLAYED",value=lastStamp and A.shortDay(lastStamp)or"-",
+				forms=lastStamp and A.shortDayForms(lastStamp)or nil,
 				sub=lastStamp and A.clockKey(lastStamp)or nil},
 		}
 		if format=="world"then
-			reading.hero=A.worldReading(type(listed)=="table"and listed or records,now)
+			reading.hero=A.worldReading(type(listed)=="table"and listed or records)
 		elseif format=="duel"then
 			reading.hero=A.duelReading(records,character,season,bound)
 			reading.hero.kind="duel"
@@ -1453,7 +1426,7 @@ function A.standingReading(format,season,character,bound,summary,now,listed)
 					left[#left+1]=entry
 				end
 			end
-			reading.hero=A.otherReading(records,left,now)
+			reading.hero=A.otherReading(records,left)
 			reading.hero.kind="other"
 		end
 	end

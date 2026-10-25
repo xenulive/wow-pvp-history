@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.16
+-- WowPvpHistory 0.70.27
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -10,6 +10,8 @@ local tip
 local HEADS={"RATING","W-L","WON","LAST"}
 
 local WIDTHS={"finderRatingWidth","finderRecordWidth","finderRateWidth","finderSinceWidth"}
+
+local TITLE_ROLE="section"
 
 local session
 
@@ -432,7 +434,7 @@ local function tipOrNil()
 		f.edges=A.cardEdges(f)
 		f.rule=f:CreateTexture(nil,"ARTWORK")
 		f.rule:Hide()
-		f.title=text(f,"cardHead")
+		f.title=text(f,TITLE_ROLE)
 		f.scope=text(f,"bodyText","RIGHT")
 		f.heads={}
 		for i=1,#HEADS do
@@ -482,7 +484,7 @@ local function layout(f,rows)
 	A.cardOutline(f.edges,f,A.metric("nameCardEdge"),"cardBorder")
 
 	local title,scope=A.finderTitle(),A.finderScope()
-	A.style(f.title,"cardHead","accent")
+	A.style(f.title,TITLE_ROLE,"accent")
 	f.title:SetText(title)
 	A.style(f.scope,"bodyText","dim")
 	f.scope:SetText(scope)
@@ -519,7 +521,7 @@ local function layout(f,rows)
 	end
 	local width=inner+2*padX
 
-	local headH=math.max(A.fontSize("cardHead"),A.fontSize("bodyText"))
+	local headH=math.max(A.fontSize(TITLE_ROLE),A.fontSize("bodyText"))
 	f.title:ClearAllPoints()
 	f.title:SetPoint("TOPLEFT",f,"TOPLEFT",padX,-padY)
 	f.title:Show()
@@ -765,6 +767,7 @@ local function pass(reason)
 		via=via,
 		width=A.unitFigure(width),
 		height=A.unitFigure(height),
+		headRole=decision=="shown"and TITLE_ROLE or nil,
 	},"ui")
 	return decision
 end

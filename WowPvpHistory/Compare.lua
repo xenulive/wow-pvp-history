@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.16
+-- WowPvpHistory 0.70.27
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -12,6 +12,8 @@ local picked={ids={},held={},format=nil}
 local hooked={}
 
 local lastBoxes=nil
+
+local openTab="figures"
 
 function A.compareIds()
 	local out={}
@@ -30,6 +32,7 @@ local function takeOut(id)
 	picked.held[id]=nil
 	if#picked.ids==0 then
 		picked.format=nil
+		openTab="figures"
 	end
 end
 
@@ -48,8 +51,8 @@ local function prune()
 	for i=1,#gone do
 		takeOut(gone[i])
 	end
-	if#picked.ids==0 then
-		picked.format=nil
+	if#gone>0 then
+		A.trace("compare/drop",{count=#picked.ids,closed=#picked.ids<2 or nil,via="gone"},"ui")
 	end
 	return out
 end
@@ -192,6 +195,7 @@ end
 function A.compareClear(via)
 	local held=#picked.ids>0
 	picked.ids,picked.held,picked.format={},{},nil
+	openTab="figures"
 	A.trace("compare/clear",{via=via,count=0},"ui")
 	if type(A.hideCompareWindow)=="function"then
 		pcall(A.hideCompareWindow)
@@ -236,6 +240,7 @@ end
 
 function A.dropCompareSet()
 	lastBoxes=nil
+	openTab="figures"
 	if#picked.ids>0 then
 		picked.ids,picked.held,picked.format={},{},nil
 		A.trace("compare/clear",{via="replaced",count=0},"ui")
@@ -569,6 +574,10 @@ local BATTLEGROUNDS={bg=true,rbg=true,blitz=true,["blitz-unrated"]=true}
 
 local NO_SCOREBOARD={duel=true,world=true}
 
+local LOBBY_MOST=12
+
+local FOLD_JOIN=" \194\183 "
+
 local function own(record)
 	local list=type(record.participants)=="table"and record.participants or nil
 	local p=list and type(record.character)=="string"and list[record.character]or nil
@@ -606,8 +615,8 @@ local function openedFrom(record)
 	return type(record.openedState)=="string"and record.openedState or"StartUp"
 end
 
-local function specsMet(record)
-	local out,seen={},{}
+local function specGroups(record)
+	local out,byKey={},{}
 	local list=type(record.participants)=="table"and record.participants or{}
 	local guids={}
 	for guid in pairs(list)do
@@ -622,32 +631,16 @@ local function specsMet(record)
 		local spec=type(p)=="table"and p.spec or nil
 		if type(token)=="string"and token~=""and type(spec)=="string"and spec~=""then
 			local key=token..":"..spec
-			if not seen[key]then
-				seen[key]=true
-				out[#out+1]={key=key,classToken=token,spec=spec,class=p.class}
+			local group=byKey[key]
+			if not group then
+				group={key=key,classToken=token,spec=spec,class=p.class,guids={}}
+				byKey[key]=group
+				out[#out+1]=group
 			end
+			group.guids[#group.guids+1]=guids[i]
 		end
 	end
-	return out
-end
-
-local function largestSwing(record)
-	if type(A.lobbyTally)~="function"then
-		return nil
-	end
-	local ok,rows=pcall(A.lobbyTally,record)
-	if not ok or type(rows)~="table"then
-		return nil
-	end
-	local best=nil
-	for i=1,#rows do
-		local row=rows[i]
-		local swing=figure(row.swing)
-		if swing~=nil and(best==nil or math.abs(swing)>math.abs(best.value))then
-			best={value=swing,classToken=row.classToken,spec=row.spec,class=row.class}
-		end
-	end
-	return best
+	return out,byKey
 end
 
 local function objectiveValues(record)
@@ -680,9 +673,6 @@ local ROWS={
 	{key="killingBlows",label="Killing blows",group="YOU",kind="number",unit="plain",
 		skip=NO_SCOREBOARD,higher=true},
 	{key="objectives",group="YOU",expands=true,only=BATTLEGROUNDS},
-	{key="swing",label="Swing",group="YOU",kind="swing",only=SHUFFLES},
-	{key="specs",label="Specs met",group="LOBBY",kind="text",skip=NO_SCOREBOARD},
-	{key="common",label="In common",group="LOBBY",kind="text",skip=NO_SCOREBOARD},
 }
 
 local function rowApplies(spec,format)
@@ -693,7 +683,7 @@ local function rowApplies(spec,format)
 	return true
 end
 
-local function cellFor(spec,record,base)
+local function cellFor(spec,record)
 	local p=own(record)
 	local key=spec.key
 	if key=="rounds"then
@@ -732,43 +722,25 @@ local function cellFor(spec,record,base)
 	elseif key=="killingBlows"then
 		local v=p and figure(p.killingBlows)or nil
 		return{value=v,text=v~=nil and tostring(v)or"-"}
-	elseif key=="swing"then
-		local swing=largestSwing(record)
-		if swing==nil then
-			return{text="-"}
-		end
-		return{value=swing.value,text=A.signedText(swing.value),
-			icons={{classToken=swing.classToken,spec=swing.spec,class=swing.class}}}
-	elseif key=="specs"then
-		local specs=specsMet(record)
-		if#specs==0 then
-			return{text="-"}
-		end
-		return{text=("%d"):format(#specs),icons=specs,present=true}
-	elseif key=="common"then
-		if base==nil or record==base then
-			return{text="base",base=true}
-		end
-		local held,shared={},{}
-		for _,met in ipairs(specsMet(base))do
-			held[met.key]=true
-		end
-		local mine=specsMet(record)
-		if#mine==0 or next(held)==nil then
-			return{text="-"}
-		end
-		for _,met in ipairs(mine)do
-			if held[met.key]then
-				shared[#shared+1]=met
-			end
-		end
-		return{text=("%d"):format(#shared),icons=shared,present=true}
 	end
 	return{text="-"}
 end
 
 local function holds(cell)
 	return cell.value~=nil or cell.present==true
+end
+
+local function foldable(spec,key,cells)
+	if#cells<2 or not(spec.kind=="text"or key=="length")then
+		return false
+	end
+	local text=cells[1].text
+	for _,cell in ipairs(cells)do
+		if cell.text~=text then
+			return false
+		end
+	end
+	return true
 end
 
 local function settle(spec,cells)
@@ -813,18 +785,18 @@ local function settle(spec,cells)
 				cell.diffTone="dim"
 			else
 				cell.diffTone=d>0 and"win"or"loss"
+				cell.chip=true
 			end
 		end
 	end
 end
 
 function A.compareRows(records)
-	local rows,hidden={},{}
+	local rows,hidden,folded={},{},{}
 	if type(records)~="table"or#records==0 then
-		return rows,hidden
+		return rows,hidden,folded
 	end
 	local format=records[1].format
-	local base=records[1]
 
 	local function finish(spec,label,key,cells)
 		local any=false
@@ -837,9 +809,13 @@ function A.compareRows(records)
 			hidden[#hidden+1]=key
 			return
 		end
+		if foldable(spec,key,cells)then
+			folded[#folded+1]={key=key,label=label,text=cells[1].text}
+			return
+		end
 		settle(spec,cells)
 		rows[#rows+1]={key=key,label=label,group=spec.group,kind=spec.kind,tier=spec.tier,
-			cells=cells}
+			higher=spec.higher,cells=cells}
 	end
 
 	for _,spec in ipairs(ROWS)do
@@ -882,21 +858,77 @@ function A.compareRows(records)
 		else
 			local cells={}
 			for c,record in ipairs(records)do
-				cells[c]=cellFor(spec,record,base)
+				cells[c]=cellFor(spec,record)
 			end
 			finish(spec,spec.label,spec.key,cells)
 		end
 	end
-	return rows,hidden
+	return rows,hidden,folded
+end
+
+function A.compareFoldLabel(n)
+	return("SAME IN ALL %d"):format(n)
+end
+
+function A.compareFoldText(folded)
+	if type(folded)~="table"or#folded==0 then
+		return nil
+	end
+	local parts={}
+	for i,item in ipairs(folded)do
+		parts[i]=item.label.." "..item.text
+	end
+	return table.concat(parts,FOLD_JOIN)
 end
 
 function A.compareTitle(count,format)
 	return("Compare %d %s"):format(count,A.formatPlural(format))
 end
 
+local RESULT_WORDS={win="WON",loss="LOST",draw="DRAW"}
+
+function A.compareResultWord(record)
+	if type(record)~="table"then
+		return nil
+	end
+	local decided=A.effectiveResult(record)
+	local word=decided~=nil and RESULT_WORDS[decided]or nil
+	if word==nil then
+		local verdict,won,played=A.roundsVerdict(record)
+		if verdict=="draw"then
+			word=RESULT_WORDS.draw
+		elseif verdict=="count"then
+			word=won*2>played and RESULT_WORDS.win or RESULT_WORDS.loss
+		end
+	end
+	if word==nil then
+		return nil
+	end
+	return word,A.resultTone(record)or"dim"
+end
+
+function A.compareScoreText(record)
+	local verdict,won,played=A.roundsVerdict(record)
+	if verdict=="count"or verdict=="draw"then
+		return("%d-%d"):format(won,played-won)
+	end
+	return nil
+end
+
+function A.compareRatingText(record)
+	if type(record)~="table"or not A.movesRating(record.format)then
+		return nil
+	end
+	local text,tone=A.ratingDelta(record)
+	if text==nil then
+		return nil
+	end
+	return text,tone or"dim"
+end
+
 function A.compareHeadLines(record)
 	local map=type(record.map)=="table"and type(record.map.name)=="string"and record.map.name or"-"
-	return"#"..A.matchIdText(record.id),map,A.shortDayText(record.openedAt)or"-"
+	return"#"..A.matchIdText(record.id),map,A.stampWords(record.openedAt)or"-"
 end
 
 function A.compareRowLines(records,rows)
@@ -941,6 +973,235 @@ function A.compareKeysText(keys)
 		return nil
 	end
 	return table.concat(keys,",")
+end
+
+function A.compareFoldedKeys(folded)
+	local out={}
+	for i,item in ipairs(folded or{})do
+		out[i]=item.key
+	end
+	return out
+end
+
+function A.compareSecondTab(format)
+	if type(format)~="string"or format==""or format=="unknown"or NO_SCOREBOARD[format]then
+		return nil
+	end
+	return SHUFFLES[format]and"Rounds and lobby"or"Lobby"
+end
+
+function A.compareTab()
+	if openTab=="rounds"and A.compareSecondTab(picked.format)~=nil then
+		return"rounds"
+	end
+	return"figures"
+end
+
+function A.compareLobbyMost()
+	return LOBBY_MOST
+end
+
+function A.compareLobby(records)
+	local lobby={rows={},swing=false}
+	if type(records)~="table"or#records==0 or A.compareSecondTab(records[1].format)==nil then
+		return lobby
+	end
+	local format=records[1].format
+	lobby.swing=SHUFFLES[format]==true
+	local byKey,groupsOf={},{}
+	for c,record in ipairs(records)do
+		local swings={}
+		if lobby.swing and type(A.lobbyTally)=="function"then
+			local ok,tally=pcall(A.lobbyTally,record)
+			if ok and type(tally)=="table"then
+				for _,entry in ipairs(tally)do
+					if type(entry.guid)=="string"then
+						swings[entry.guid]=figure(entry.swing)
+					end
+				end
+			end
+		end
+		local groups,keyed=specGroups(record)
+		groupsOf[c]={list=groups,keyed=keyed}
+		for _,group in ipairs(groups)do
+			local row=byKey[group.key]
+			if not row then
+				row={key=group.key,classToken=group.classToken,spec=group.spec,class=group.class,
+					cells={},met=0}
+				byKey[group.key]=row
+				lobby.rows[#lobby.rows+1]=row
+			end
+			row.met=row.met+1
+			local cell={count=#group.guids}
+			if lobby.swing then
+				local each,furthest={},nil
+				for i,guid in ipairs(group.guids)do
+					local s=swings[guid]
+					each[i]=A.signedText(s)or"-"
+					if s~=nil and(furthest==nil or math.abs(s)>math.abs(furthest))then
+						furthest=s
+					end
+				end
+				cell.value,cell.each=furthest,each
+				cell.text=A.signedText(furthest)or"-"
+				cell.tone=furthest==nil and"dim"or furthest>0 and"win"or furthest<0 and"loss"or"dim"
+				if furthest~=nil then
+					row.swung=true
+				end
+			else
+				cell.value=#group.guids
+				cell.text=tostring(#group.guids)
+				cell.tone="text"
+			end
+			row.cells[c]=cell
+		end
+	end
+	for _,row in ipairs(lobby.rows)do
+		if lobby.swing and not row.swung then
+			for _,cell in pairs(row.cells)do
+				cell.tone="dim"
+			end
+		end
+		local baseCell=row.cells[1]
+		row.baseSwing=lobby.swing and baseCell~=nil and baseCell.value~=nil and math.abs(baseCell.value)or-1
+	end
+	table.sort(lobby.rows,function(a,b)
+		if a.met~=b.met then
+			return a.met>b.met
+		end
+		if a.baseSwing~=b.baseSwing then
+			return a.baseSwing>b.baseSwing
+		end
+		if a.spec~=b.spec then
+			return a.spec<b.spec
+		end
+		return a.classToken<b.classToken
+	end)
+	if not BATTLEGROUNDS[format]then
+		lobby.shared={"base"}
+		local baseKeyed=groupsOf[1].keyed
+		for c=2,#records do
+			local list=groupsOf[c].list
+			if#list==0 then
+				lobby.shared[c]="-"
+			else
+				local n=0
+				for _,group in ipairs(list)do
+					if baseKeyed[group.key]then
+						n=n+1
+					end
+				end
+				lobby.shared[c]=("%d of %d"):format(n,#list)
+			end
+		end
+	end
+	return lobby
+end
+
+function A.compareLobbyTooltip(row,cell)
+	if type(row)~="table"or type(cell)~="table"or type(cell.each)~="table"or#cell.each<2 then
+		return nil
+	end
+	return("%s %s: %s"):format(row.spec,row.class or row.classToken,table.concat(cell.each,", "))
+end
+
+function A.compareRoundLines(records)
+	local lines={}
+	if type(records)~="table"or#records==0 or not SHUFFLES[records[1].format]then
+		return lines
+	end
+	for c,record in ipairs(records)do
+		local word,tone=A.compareResultWord(record)
+		local line={id="#"..A.matchIdText(record.id),word=word,tone=tone,rounds={}}
+		local rounds=type(record.rounds)=="table"and record.rounds or{}
+		for r=1,#rounds do
+			local won=nil
+			if type(A.roundResult)=="function"then
+				local ok,got=pcall(A.roundResult,record,r)
+				if ok and type(got)=="boolean"then
+					won=got
+				end
+			end
+			local card={n=r,letter="-",tone="dim",mates={}}
+			if won~=nil then
+				card.letter,card.tone=won and"W"or"L",won and"win"or"loss"
+			end
+			local mates=type(A.roundSides)=="function"and A.roundSides(record,rounds[r])or nil
+			for _,entry in ipairs(type(mates)=="table"and mates or{})do
+				local p=type(entry.p)=="table"and entry.p or{}
+				card.mates[#card.mates+1]={classToken=p.classToken,spec=p.spec,class=p.class}
+			end
+			line.rounds[r]=card
+		end
+		lines[c]=line
+	end
+	return lines
+end
+
+function A.compareSecondReading(records)
+	local lobby=A.compareLobby(records)
+	local lines=A.compareRoundLines(records)
+	return{lobby=lobby,lines=lines,lobbyRows=#lobby.rows,roundLines=#lines,
+		scrolled=#lobby.rows>LOBBY_MOST}
+end
+
+function A.compareSetTab(tab,via)
+	if tab~="figures"and tab~="rounds"then
+		return false,"word"
+	end
+	if tab=="rounds"and A.compareSecondTab(picked.format)==nil then
+		return false,"none"
+	end
+	openTab=tab
+	if type(A.compareSetChanged)=="function"then
+		pcall(A.compareSetChanged)
+	end
+	local reading=A.compareSecondReading(prune())
+	A.trace("compare/tab",{
+		tab=tab,via=via,lobbyRows=reading.lobbyRows,roundLines=reading.roundLines,
+		scrolled=reading.scrolled,
+	},"ui")
+	return true
+end
+
+function A.compareLobbyLines(records,lobby)
+	local out={}
+	for _,row in ipairs(lobby and lobby.rows or{})do
+		local parts={}
+		for c,record in ipairs(records)do
+			local cell=row.cells[c]
+			local text=cell and cell.text or"none"
+			if cell and cell.each and#cell.each>1 then
+				text=text.." ("..table.concat(cell.each,", ")..")"
+			end
+			parts[c]=("#%s %s"):format(A.matchIdText(record.id),text)
+		end
+		out[#out+1]=("lobby %s %s: %s"):format(row.spec,row.class or row.classToken,table.concat(parts,", "))
+	end
+	if lobby and lobby.shared then
+		local parts={}
+		for c,record in ipairs(records)do
+			parts[c]=("#%s %s"):format(A.matchIdText(record.id),lobby.shared[c]or"-")
+		end
+		out[#out+1]="shared with base: "..table.concat(parts,", ")
+	end
+	return out
+end
+
+function A.compareRoundTexts(lines)
+	local out={}
+	for _,line in ipairs(lines or{})do
+		local letters,seated={},0
+		for r,card in ipairs(line.rounds)do
+			letters[r]=card.letter
+			if#card.mates>0 then
+				seated=seated+1
+			end
+		end
+		out[#out+1]=("rounds %s %s: %s, mates read in %d of %d"):format(line.id,line.word or"-",
+			#letters>0 and table.concat(letters," ")or"none",seated,#line.rounds)
+	end
+	return out
 end
 
 local function newestOnTab(n,sameFormat)
@@ -1008,7 +1269,8 @@ function A.compareSetLine()
 	for i=1,#picked.ids do
 		ids[i]="#"..A.matchIdText(picked.ids[i])
 	end
-	return("compare: %s, base %s; columns %s"):format(A.compareCountText(),ids[1],table.concat(ids,", "))
+	return("compare: %s, base %s; columns %s; tab %s"):format(A.compareCountText(),ids[1],
+		table.concat(ids,", "),A.compareTab())
 end
 
 local function refusedWhy(reason)
@@ -1112,13 +1374,39 @@ function A.reportCompare(words)
 			A.say("compare: nothing picked, so no rows")
 			return
 		end
-		local rows,hidden=A.compareRows(records)
+		local rows,hidden,folded=A.compareRows(records)
 		A.say(("compare: %d rows drawn, left out: %s"):format(#rows,A.compareKeysText(hidden)or"none"))
 		for _,line in ipairs(A.compareRowLines(records,rows))do
 			A.say(line)
 		end
+		local same=A.compareFoldText(folded)
+		A.say(same and("%s: %s"):format(A.compareFoldLabel(#records),same)or"compare: no row folded")
+		if A.compareTab()=="rounds"then
+			local reading=A.compareSecondReading(records)
+			for _,line in ipairs(A.compareRoundTexts(reading.lines))do
+				A.say(line)
+			end
+			for _,line in ipairs(A.compareLobbyLines(records,reading.lobby))do
+				A.say(line)
+			end
+		end
 		return
 	end
-	A.say(("/pvph compare takes add, box, remove, clear, open, base, close or rows, and %q is none of them")
+	if verb=="tab"then
+		local word=words[3]and words[3]:lower()or nil
+		if word~="figures"and word~="rounds"then
+			A.say("/pvph compare tab <figures||rounds>: rounds opens the second tab on any match type that has one")
+			return
+		end
+		if#picked.ids==0 then
+			A.say("compare: nothing picked, so no tab")
+			return
+		end
+		local ok=A.compareSetTab(word,"typed")
+		A.say(ok and("compare: tab %s"):format(word)
+			or("compare: no second tab for %s"):format(A.formatLabel(picked.format)))
+		return
+	end
+	A.say(("/pvph compare takes add, box, remove, clear, open, base, close, rows or tab, and %q is none of them")
 		:format(verb))
 end

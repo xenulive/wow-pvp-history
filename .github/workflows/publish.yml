@@ -10,6 +10,12 @@
 # names, taking WOWI_API_TOKEN, a secret on this repository, and uploads nothing for a release
 # candidate, since WoWInterface has no beta channel.
 #
+# One zip serves the Retail and the Forever client. Each upload job reads ## Interface: into Retail
+# game versions and Forever ones, a 16xxx value being Forever, and tags the upload with both kinds
+# on a site that lists them. A Retail version a site does not list fails CurseForge and Wago, where
+# a mistyped number is what produces one; a Forever version a site does not list is left out, and
+# the job's summary names it with the site's answer.
+#
 # A release arrives here as a pull request from release/v<version>, carrying the stripped addon,
 # LICENSE, wiki/ and this file, beside a draft release for v<version> with the zip attached. Merging
 # that pull request is the decision to release. A push runs the workflow file in the pushed commit,
@@ -164,7 +170,10 @@ jobs:
           $tagAt = {
             $code = 0
             $ref = Invoke-RestMethod -Uri "$api/git/ref/tags/$tag" -TimeoutSec 60 -Headers $headers -SkipHttpErrorCheck -StatusCodeVariable code
-            if ($code -ne 200) { return '' }
+            # Trap: a 404 alone says the tag is absent. Any other answer is a read that failed, and read
+            # as no tag it sends the run green over a summary nothing read.
+            if ($code -eq 404) { return '' }
+            if ($code -ne 200) { Write-Host "::error title=release::Reading the tag $tag answered $code, so where it points is not known."; exit 1 }
             if ($ref.object.type -cne 'commit') { return "a $($ref.object.type) object" }
             return [string]$ref.object.sha
           }
@@ -250,7 +259,10 @@ jobs:
           Get-ChildItem -LiteralPath 'wiki' -Force | Copy-Item -Destination $work -Recurse -Force
           & git -C $work add -A
           if ($LASTEXITCODE -ne 0) { Write-Host "::error title=wiki::git add answered $LASTEXITCODE. $finish"; exit 1 }
-          $images = @(Get-ChildItem -LiteralPath 'wiki/images' -Recurse -File -ErrorAction SilentlyContinue).Count
+          # Trap: a listing told to keep quiet counts a folder it could not read as holding nothing, so
+          # only an absent folder reads as no images and a refused one stops the step.
+          $images = 0
+          if (Test-Path -LiteralPath 'wiki/images') { $images = @(Get-ChildItem -LiteralPath 'wiki/images' -Recurse -File -ErrorAction Stop).Count }
           # Trap: a status that fails prints nothing, which reads as unchanged and lets the prune step
           # remove wiki/ from main with no wiki push behind it, so the exit code is read first.
           $status = @(& git -C $work status --porcelain)
@@ -273,7 +285,7 @@ jobs:
           'state=pushed', "commit=$local", "pages=$($pages.Count)", "images=$images" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
       # Runs once the wiki push succeeded, so main keeps the addon, the README, LICENSE and this file,
-      # and the pages live on the wiki alone; the README reads its pictures from the wiki. It works on
+      # and the pages live only on the wiki; the README reads its pictures from the wiki. It works on
       # main's tip rather than the pushed commit and pushes without force, so a main that moved during
       # the step refuses the push rather than losing a commit.
       - name: Remove the wiki folder from main
@@ -312,7 +324,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { Write-Host "::error title=prune::Checking out main answered $LASTEXITCODE. $finish"; exit 1 }
           & git rm -r -q -- wiki
           if ($LASTEXITCODE -ne 0) { Write-Host "::error title=prune::git rm answered $LASTEXITCODE. $finish"; exit 1 }
-          & git commit -q -m "release: v$env:VERSION keeps its pages on the wiki alone"
+          & git commit -q -m "release: v$env:VERSION publishes the wiki to the repository"
           if ($LASTEXITCODE -ne 0) { Write-Host "::error title=prune::git commit answered $LASTEXITCODE. $finish"; exit 1 }
           $local = (& git rev-parse HEAD).Trim()
           & git push -q origin 'HEAD:refs/heads/main'
@@ -391,7 +403,9 @@ jobs:
 
       # An Interface number names its game version by digit pairs, 120100 being 12.1.0 and 120007
       # being 12.0.7. A value that is no interface number fails rather than being left out, since an
-      # upload missing a version is hidden from players on it and nothing says so.
+      # upload missing a version is hidden from players on it and nothing says so. A 16xxx value is
+      # the Forever client's, as the BigWigs packager reads it (L2, its release.sh, read 2026-10-24),
+      # and goes to the forever output; every other value is Retail and goes to versions.
       - name: Read the CurseForge project and game versions off the shipped .toc
         id: curseforge-toc
         shell: pwsh
@@ -418,6 +432,7 @@ jobs:
             exit 1
           }
           $names = [System.Collections.Generic.List[string]]::new()
+          $forever = [System.Collections.Generic.List[string]]::new()
           foreach ($value in (($interfaces[0] -replace '^##\s*Interface:', '').Trim() -split '\s*,\s*')) {
             if ($value -notmatch '^[1-9]\d{4,5}$') {
               Write-Host "::error title=curseforge::The ## Interface: value '$value' is no interface number, so no game version can be named for it."
@@ -425,10 +440,13 @@ jobs:
             }
             $n = [int]$value
             $name = '{0}.{1}.{2}' -f [int][math]::Truncate($n / 10000), ([int][math]::Truncate($n / 100) % 100), ($n % 100)
-            if (-not $names.Contains($name)) { $names.Add($name) }
+            # Trap: 16001 by digit pairs is 1.60.1, a name in the range CurseForge lists Classic under, so it is never matched as a Retail version.
+            $into = $names
+            if ($value -match '^16\d{3}$') { $into = $forever }
+            if (-not $into.Contains($name)) { $into.Add($name) }
           }
-          Write-Host "curseforge: project $project, game versions $($names -join ', ')"
-          "project=$project", "versions=$($names -join ',')" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          Write-Host "curseforge: project $project, game versions $($names -join ', '), Forever $(if ($forever.Count -gt 0) { $forever -join ', ' } else { 'none' })"
+          "project=$project", "versions=$($names -join ',')", "forever=$($forever -join ',')" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
       # CurseForge's API lists no project's files (L3, its API article, modified 2026-09-27), so a
       # second copy is told apart off this run's own earlier attempts: an attempt whose curseforge
@@ -458,6 +476,13 @@ jobs:
       # The CurseForge token is handed to this step alone, in a header from the environment, never on
       # a command line or in a URL. The changelog is the release body, which the release run already
       # searched for the source author, and the display name is fixed text.
+      #
+      # Each name is matched inside its game type, by gameVersionTypeID, since one name can sit under
+      # several types: Retail is 517 and Forever 88568, the ids the BigWigs packager matches on (L2,
+      # its release.sh, read 2026-10-24). Both kinds go into one gameVersions list for one upload. A
+      # Retail name CurseForge does not list fails the job, a mistyped number being what produces one;
+      # a Forever name it does not list is left out and named. If 88568 stops matching, the type ids
+      # are listed at /api/game/version-types with the same token.
       - name: Upload the release zip to CurseForge
         id: curseforge-upload
         if: steps.curseforge-rerun.outputs.uploaded != 'true'
@@ -469,6 +494,7 @@ jobs:
           PRERELEASE: ${{ needs.publish.outputs.prerelease }}
           PROJECT: ${{ steps.curseforge-toc.outputs.project }}
           VERSIONS: ${{ steps.curseforge-toc.outputs.versions }}
+          FOREVER: ${{ steps.curseforge-toc.outputs.forever }}
         run: |
           $ErrorActionPreference = 'Stop'
           # The message of an annotation escapes percent, CR and LF, so a host's answer stays one message and
@@ -488,13 +514,26 @@ jobs:
           $listed = @($answer)
           if ($code -ne 200) { Write-Host "::error title=curseforge::CurseForge's game version list answered $code. $finish"; exit 1 }
           $versionIds = [System.Collections.Generic.List[int]]::new()
-          foreach ($name in ($env:VERSIONS -split ',')) {
-            $match = @($listed | Where-Object { $null -ne $_ -and $_.PSObject.Properties['name'] -and [string]$_.name -ceq $name })
-            if ($match.Count -eq 0) { Write-Host "::error title=curseforge::CurseForge lists no WoW game version named $name, of $($listed.Count) listed. $finish"; exit 1 }
-            if ($match.Count -gt 1) { Write-Host "::error title=curseforge::CurseForge lists $($match.Count) game versions named $name, ids $(@($match.id) -join ', '), so which one is not settled. $finish"; exit 1 }
-            $versionIds.Add([int]$match[0].id)
-            Write-Host "game version: $name is id $($match[0].id)"
+          $sent = [System.Collections.Generic.List[string]]::new()
+          $left = [System.Collections.Generic.List[string]]::new()
+          foreach ($kind in @(@{ Name = 'Retail'; Type = 517; Values = $env:VERSIONS }, @{ Name = 'Forever'; Type = 88568; Values = $env:FOREVER })) {
+            $typed = @($listed | Where-Object { $null -ne $_ -and $_.PSObject.Properties['name'] -and $_.PSObject.Properties['gameVersionTypeID'] -and [string]$_.gameVersionTypeID -ceq [string]$kind.Type })
+            foreach ($name in @(([string]$kind.Values -split ',') | Where-Object { $_ })) {
+              $match = @($typed | Where-Object { [string]$_.name -ceq $name })
+              if ($match.Count -eq 0 -and $kind.Name -ceq 'Forever') {
+                $left.Add("$name (Forever: CurseForge lists no version of that name under type $($kind.Type), of $($typed.Count) there)")
+                Write-Host "curseforge: Forever $name is left out, CurseForge lists no version of that name under type $($kind.Type), of $($typed.Count) there"
+                continue
+              }
+              if ($match.Count -eq 0) { Write-Host "::error title=curseforge::CurseForge lists no $($kind.Name) game version named $name under type $($kind.Type), of $($typed.Count) there and $($listed.Count) listed. $finish"; exit 1 }
+              if ($match.Count -gt 1) { Write-Host "::error title=curseforge::CurseForge lists $($match.Count) $($kind.Name) game versions named $name under type $($kind.Type), ids $(@($match.id) -join ', '), so which one is not settled. $finish"; exit 1 }
+              $versionIds.Add([int]$match[0].id)
+              $sent.Add($name)
+              Write-Host "game version: $($kind.Name) $name is id $($match[0].id) under type $($kind.Type)"
+            }
           }
+          if ($versionIds.Count -eq 0) { Write-Host "::error title=curseforge::No game version reached the upload. $finish"; exit 1 }
+          "sent=$($sent -join ',')", "left=$($left -join '; ')" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           $api = "https://api.github.com/repos/$env:GITHUB_REPOSITORY"
           $headers = @{ Authorization = "Bearer $env:RELEASE_TOKEN"; Accept = 'application/vnd.github+json'; 'X-GitHub-Api-Version' = '2022-11-28' }
           $release = Invoke-RestMethod -Uri "$api/releases/tags/v$env:VERSION" -TimeoutSec 60 -Headers $headers
@@ -534,10 +573,13 @@ jobs:
           TOC_OUTCOME: ${{ steps.curseforge-toc.outcome }}
           PROJECT: ${{ steps.curseforge-toc.outputs.project }}
           VERSIONS: ${{ steps.curseforge-toc.outputs.versions }}
+          FOREVER: ${{ steps.curseforge-toc.outputs.forever }}
           RERUN_OUTCOME: ${{ steps.curseforge-rerun.outcome }}
           RERUN_UPLOADED: ${{ steps.curseforge-rerun.outputs.uploaded }}
           RERUN_ATTEMPT: ${{ steps.curseforge-rerun.outputs.attempt }}
           UPLOAD_OUTCOME: ${{ steps.curseforge-upload.outcome }}
+          SENT: ${{ steps.curseforge-upload.outputs.sent }}
+          LEFT: ${{ steps.curseforge-upload.outputs.left }}
           FILE_ID: ${{ steps.curseforge-upload.outputs.file }}
           RELEASE_TYPE: ${{ steps.curseforge-upload.outputs.type }}
           ZIP_SHA: ${{ steps.curseforge-upload.outputs.sha }}
@@ -546,7 +588,8 @@ jobs:
           $out += "version  $env:VERSION"
           if ($env:TOC_OUTCOME -ne 'success') { $out += "curseforge: not uploaded, the .toc step reads $(if ($env:TOC_OUTCOME) { $env:TOC_OUTCOME } else { 'not run' })" }
           else {
-            $out += "project  $env:PROJECT", "game     $($env:VERSIONS -replace ',', ', ')"
+            $out += "project  $env:PROJECT", "game     $($env:VERSIONS -replace ',', ', ')", "forever  $(if ($env:FOREVER) { $env:FOREVER -replace ',', ', ' } else { 'none' })"
+            if ($env:SENT) { $out += "sent     $($env:SENT -replace ',', ', ')", "left out $(if ($env:LEFT) { $env:LEFT } else { 'none' })" }
             if ($env:RERUN_OUTCOME -ne 'success') { $out += "curseforge: not uploaded, the rerun read reads $(if ($env:RERUN_OUTCOME) { $env:RERUN_OUTCOME } else { 'not run' })" }
             elseif ($env:RERUN_UPLOADED -eq 'true') { $out += "curseforge: skipped, attempt $env:RERUN_ATTEMPT of this run uploaded the file (read off this run's earlier attempts, since CurseForge lists no project files)" }
             elseif ($env:UPLOAD_OUTCOME -eq 'success') { $out += "curseforge: file $env:FILE_ID uploaded as $env:RELEASE_TYPE", "zip      sha256 $env:ZIP_SHA" }
@@ -575,7 +618,8 @@ jobs:
         with:
           persist-credentials: false
 
-      # The game versions are read off ## Interface: by the same digit pairs the CurseForge job uses.
+      # The game versions are read off ## Interface: by the same digit pairs the CurseForge job uses,
+      # a 16xxx value going to the forever output.
       - name: Read the Wago project and game versions off the shipped .toc
         id: wago-toc
         shell: pwsh
@@ -602,6 +646,7 @@ jobs:
             exit 1
           }
           $names = [System.Collections.Generic.List[string]]::new()
+          $forever = [System.Collections.Generic.List[string]]::new()
           foreach ($value in (($interfaces[0] -replace '^##\s*Interface:', '').Trim() -split '\s*,\s*')) {
             if ($value -notmatch '^[1-9]\d{4,5}$') {
               Write-Host "::error title=wago::The ## Interface: value '$value' is no interface number, so no game version can be named for it."
@@ -609,10 +654,12 @@ jobs:
             }
             $n = [int]$value
             $name = '{0}.{1}.{2}' -f [int][math]::Truncate($n / 10000), ([int][math]::Truncate($n / 100) % 100), ($n % 100)
-            if (-not $names.Contains($name)) { $names.Add($name) }
+            $into = $names
+            if ($value -match '^16\d{3}$') { $into = $forever }
+            if (-not $into.Contains($name)) { $into.Add($name) }
           }
-          Write-Host "wago: project $project, game versions $($names -join ', ')"
-          "project=$project", "versions=$($names -join ',')" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          Write-Host "wago: project $project, game versions $($names -join ', '), Forever $(if ($forever.Count -gt 0) { $forever -join ', ' } else { 'none' })"
+          "project=$project", "versions=$($names -join ',')", "forever=$($forever -join ',')" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
       # Whether Wago's API lists a project's versions is not read here, so a second copy is told
       # apart off this run's own earlier attempts, as the CurseForge job does.
@@ -638,9 +685,11 @@ jobs:
           "uploaded=$(if ($found -gt 0) { 'true' } else { 'false' })", "attempt=$found" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
       # The Wago token is handed to this step alone, in a header from the environment. The metadata
-      # carries the fields the BigWigs packager sends (L2, its release.sh, read 2026-10-13): label,
-      # supported_retail_patches, stability and changelog. Each game version has to be one Wago's
-      # game data lists for retail, or the job fails naming it.
+      # carries the fields the BigWigs packager sends (L2, its release.sh, read 2026-10-13 and
+      # 2026-10-24): label, supported_retail_patches, supported_forever_patches where a Forever
+      # version is sent, stability and changelog. Each Retail version has to be one Wago's game data
+      # lists for retail, or the job fails naming it; a Forever version its forever list does not
+      # carry is left out and named.
       - name: Upload the release zip to Wago
         id: wago-upload
         if: steps.wago-rerun.outputs.uploaded != 'true'
@@ -652,6 +701,7 @@ jobs:
           PRERELEASE: ${{ needs.publish.outputs.prerelease }}
           PROJECT: ${{ steps.wago-toc.outputs.project }}
           VERSIONS: ${{ steps.wago-toc.outputs.versions }}
+          FOREVER: ${{ steps.wago-toc.outputs.forever }}
         run: |
           $ErrorActionPreference = 'Stop'
           # The message of an annotation escapes percent, CR and LF, so a host's answer stays one message and
@@ -677,6 +727,24 @@ jobs:
             if ($retail -cnotcontains $name) { Write-Host "::error title=wago::Wago lists no retail patch named $name, of $($retail.Count) listed. $finish"; exit 1 }
             $patches.Add($name)
           }
+          $foreverListed = @()
+          $foreverKey = $false
+          if ($null -ne $game -and $game -isnot [string] -and $game.PSObject.Properties['patches'] -and $game.patches.PSObject.Properties['forever']) {
+            $foreverKey = $true
+            $foreverListed = @($game.patches.forever | ForEach-Object { [string]$_ })
+          }
+          $foreverPatches = [System.Collections.Generic.List[string]]::new()
+          $left = [System.Collections.Generic.List[string]]::new()
+          foreach ($name in @(([string]$env:FOREVER -split ',') | Where-Object { $_ })) {
+            if ($foreverListed -ccontains $name) { $foreverPatches.Add($name); continue }
+            # Game data with no forever list and a forever list holding nothing are two readings.
+            $reason = if (-not $foreverKey) { "Wago's game data carries no forever list" }
+              elseif ($foreverListed.Count -eq 0) { "Wago's forever list holds no patch" }
+              else { "Wago lists no forever patch of that name, of $($foreverListed.Count) listed" }
+            $left.Add("$name (Forever: $reason)")
+            Write-Host "wago: Forever $name is left out, $reason"
+          }
+          "sent=$((@($patches) + @($foreverPatches)) -join ',')", "left=$($left -join '; ')" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           $api = "https://api.github.com/repos/$env:GITHUB_REPOSITORY"
           $headers = @{ Authorization = "Bearer $env:RELEASE_TOKEN"; Accept = 'application/vnd.github+json'; 'X-GitHub-Api-Version' = '2022-11-28' }
           $release = Invoke-RestMethod -Uri "$api/releases/tags/v$env:VERSION" -TimeoutSec 60 -Headers $headers
@@ -689,14 +757,16 @@ jobs:
           if ($size -ne [long]$assets[0].size) { Write-Host "::error title=wago::The zip downloaded at $size bytes and the release lists $($assets[0].size). $finish"; exit 1 }
           $sha = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
           $stability = if ($env:PRERELEASE -eq 'true') { 'beta' } else { 'stable' }
-          $metadata = [ordered]@{
+          $fields = [ordered]@{
             label                    = $env:VERSION
             supported_retail_patches = [string[]]$patches.ToArray()
-            stability                = $stability
-            changelog                = [string]$release.body
-          } | ConvertTo-Json -Depth 3 -Compress
+          }
+          if ($foreverPatches.Count -gt 0) { $fields['supported_forever_patches'] = [string[]]$foreverPatches.ToArray() }
+          $fields['stability'] = $stability
+          $fields['changelog'] = [string]$release.body
+          $metadata = $fields | ConvertTo-Json -Depth 3 -Compress
           $wagoHeaders = @{ Authorization = "Bearer $env:WAGO_TOKEN"; Accept = 'application/json' }
-          Write-Host "uploading: $($assets[0].name), $size bytes, sha256 $sha, $stability, patches $($patches -join ', ')"
+          Write-Host "uploading: $($assets[0].name), $size bytes, sha256 $sha, $stability, patches $($patches -join ', '), forever patches $(if ($foreverPatches.Count -gt 0) { $foreverPatches -join ', ' } else { 'none' })"
           # Trap: Wago redirects a refused upload, and a followed redirect answers 200 off the page it lands on, so no redirect is followed and a 3xx fails below.
           $response = Invoke-RestMethod -Method Post -Uri "https://addons.wago.io/api/projects/$env:PROJECT/version" -TimeoutSec 300 -Headers $wagoHeaders -Form @{ metadata = $metadata; file = Get-Item -LiteralPath $zip } -MaximumRedirection 0 -SkipHttpErrorCheck -StatusCodeVariable code
           if ($code -ne 200 -and $code -ne 201) {
@@ -716,10 +786,13 @@ jobs:
           TOC_OUTCOME: ${{ steps.wago-toc.outcome }}
           PROJECT: ${{ steps.wago-toc.outputs.project }}
           VERSIONS: ${{ steps.wago-toc.outputs.versions }}
+          FOREVER: ${{ steps.wago-toc.outputs.forever }}
           RERUN_OUTCOME: ${{ steps.wago-rerun.outcome }}
           RERUN_UPLOADED: ${{ steps.wago-rerun.outputs.uploaded }}
           RERUN_ATTEMPT: ${{ steps.wago-rerun.outputs.attempt }}
           UPLOAD_OUTCOME: ${{ steps.wago-upload.outcome }}
+          SENT: ${{ steps.wago-upload.outputs.sent }}
+          LEFT: ${{ steps.wago-upload.outputs.left }}
           UPLOAD_CODE: ${{ steps.wago-upload.outputs.code }}
           STABILITY: ${{ steps.wago-upload.outputs.stability }}
           ZIP_SHA: ${{ steps.wago-upload.outputs.sha }}
@@ -728,7 +801,8 @@ jobs:
           $out += "version  $env:VERSION"
           if ($env:TOC_OUTCOME -ne 'success') { $out += "wago: not uploaded, the .toc step reads $(if ($env:TOC_OUTCOME) { $env:TOC_OUTCOME } else { 'not run' })" }
           else {
-            $out += "project  $env:PROJECT", "game     $($env:VERSIONS -replace ',', ', ')"
+            $out += "project  $env:PROJECT", "game     $($env:VERSIONS -replace ',', ', ')", "forever  $(if ($env:FOREVER) { $env:FOREVER -replace ',', ', ' } else { 'none' })"
+            if ($env:SENT) { $out += "sent     $($env:SENT -replace ',', ', ')", "left out $(if ($env:LEFT) { $env:LEFT } else { 'none' })" }
             if ($env:RERUN_OUTCOME -ne 'success') { $out += "wago: not uploaded, the rerun read reads $(if ($env:RERUN_OUTCOME) { $env:RERUN_OUTCOME } else { 'not run' })" }
             elseif ($env:RERUN_UPLOADED -eq 'true') { $out += "wago: skipped, attempt $env:RERUN_ATTEMPT of this run uploaded the file" }
             elseif ($env:UPLOAD_OUTCOME -eq 'success') { $out += "wago: uploaded as $env:STABILITY, answered $env:UPLOAD_CODE", "zip      sha256 $env:ZIP_SHA" }
@@ -779,7 +853,8 @@ jobs:
           Write-Host "wowi: v$env:VERSION is a final release"
           'skip=false' | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
-      # The game versions are read off ## Interface: by the same digit pairs the other two jobs use.
+      # The game versions are read off ## Interface: by the same digit pairs the other two jobs use,
+      # a 16xxx value going to the forever output.
       - name: Read the WoWInterface project and game versions off the shipped .toc
         id: wowi-toc
         if: steps.wowi-candidate.outputs.skip == 'false'
@@ -807,6 +882,7 @@ jobs:
             exit 1
           }
           $names = [System.Collections.Generic.List[string]]::new()
+          $forever = [System.Collections.Generic.List[string]]::new()
           foreach ($value in (($interfaces[0] -replace '^##\s*Interface:', '').Trim() -split '\s*,\s*')) {
             if ($value -notmatch '^[1-9]\d{4,5}$') {
               Write-Host "::error title=wowi::The ## Interface: value '$value' is no interface number, so no game version can be named for it."
@@ -814,21 +890,27 @@ jobs:
             }
             $n = [int]$value
             $name = '{0}.{1}.{2}' -f [int][math]::Truncate($n / 10000), ([int][math]::Truncate($n / 100) % 100), ($n % 100)
-            if (-not $names.Contains($name)) { $names.Add($name) }
+            $into = $names
+            if ($value -match '^16\d{3}$') { $into = $forever }
+            if (-not $into.Contains($name)) { $into.Add($name) }
           }
-          Write-Host "wowi: project $project, game versions $($names -join ', ')"
-          "project=$project", "versions=$($names -join ',')" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          Write-Host "wowi: project $project, game versions $($names -join ', '), Forever $(if ($forever.Count -gt 0) { $forever -join ', ' } else { 'none' })"
+          "project=$project", "versions=$($names -join ',')", "forever=$($forever -join ',')" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
       # WoWInterface's list of game versions has lagged the client (L1, 2026-10-16: newest 12.1.0
       # against a client at 12.1.5), so a version it does not carry is left out and named rather than
       # failing every release. Entries are matched on id, since older ones carry a null interface,
-      # and no lower version is sent in place of one left out.
+      # and no lower version is sent in place of one left out. A Forever version is kept only where
+      # the list carries it under a game named Forever; it carried none (L1, 2026-10-24, its games
+      # being Retail, Classic, TBC-Classic, WOTLK-Classic and Cata-Classic), so it is left out and
+      # named, and the upload goes with the Retail versions alone.
       - name: Keep the game versions WoWInterface lists
         id: wowi-versions
         if: steps.wowi-candidate.outputs.skip == 'false'
         shell: pwsh
         env:
           VERSIONS: ${{ steps.wowi-toc.outputs.versions }}
+          FOREVER: ${{ steps.wowi-toc.outputs.forever }}
         run: |
           $ErrorActionPreference = 'Stop'
           if ([string]::IsNullOrWhiteSpace($env:VERSIONS)) { Write-Host "::error title=wowi::The game versions did not reach this step."; exit 1 }
@@ -843,11 +925,19 @@ jobs:
           foreach ($name in ($env:VERSIONS -split ',')) {
             if ($retail -ccontains $name) { $kept.Add($name) } else { $dropped.Add($name) }
           }
+          if ($kept.Count -eq 0) { Write-Host "::error title=wowi::WoWInterface lists none of $($env:VERSIONS -replace ',', ', '), of $($retail.Count) Retail versions listed."; exit 1 }
+          $foreverListed = @($rows | Where-Object { [string]$_.game -ceq 'Forever' } | ForEach-Object { [string]$_.id })
+          $left = [System.Collections.Generic.List[string]]::new()
+          foreach ($name in @(([string]$env:FOREVER -split ',') | Where-Object { $_ })) {
+            if ($foreverListed -ccontains $name) { $kept.Add($name); continue }
+            $reason = if ($foreverListed.Count -eq 0) { 'WoWInterface lists no Forever game' } else { "WoWInterface lists no Forever version of that name, of $($foreverListed.Count) there" }
+            $left.Add("$name (Forever: $reason)")
+            Write-Host "wowi: Forever $name is left out, $reason"
+          }
           $sent = @($kept | Sort-Object -Property { [version]$_ } -Descending)
-          if ($sent.Count -eq 0) { Write-Host "::error title=wowi::WoWInterface lists none of $($env:VERSIONS -replace ',', ', '), of $($retail.Count) Retail versions listed."; exit 1 }
           foreach ($name in $dropped) { Write-Host "wowi: $name is not on WoWInterface's list, sent $($sent -join ', ')" }
           Write-Host "wowi: game versions $($sent -join ', ') of $($retail.Count) Retail versions listed"
-          "versions=$($sent -join ',')", "dropped=$($dropped -join ',')" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          "versions=$($sent -join ',')", "dropped=$($dropped -join ',')", "left=$($left -join '; ')" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
       # Whether WoWInterface's API lists a project's files is not read here, so a second copy is told
       # apart off this run's own earlier attempts, as the other two jobs do.
@@ -946,6 +1036,7 @@ jobs:
           VERSIONS_OUTCOME: ${{ steps.wowi-versions.outcome }}
           SENT: ${{ steps.wowi-versions.outputs.versions }}
           DROPPED: ${{ steps.wowi-versions.outputs.dropped }}
+          LEFT: ${{ steps.wowi-versions.outputs.left }}
           RERUN_OUTCOME: ${{ steps.wowi-rerun.outcome }}
           RERUN_UPLOADED: ${{ steps.wowi-rerun.outputs.uploaded }}
           RERUN_ATTEMPT: ${{ steps.wowi-rerun.outputs.attempt }}
@@ -963,7 +1054,7 @@ jobs:
             $out += "project  $env:PROJECT"
             if ($env:VERSIONS_OUTCOME -ne 'success') { $out += "wowi: not uploaded, the game version step reads $(& $reads $env:VERSIONS_OUTCOME)" }
             else {
-              $out += "game     $($env:SENT -replace ',', ', ')", "dropped  $(if ($env:DROPPED) { $env:DROPPED -replace ',', ', ' } else { 'none' })"
+              $out += "game     $($env:SENT -replace ',', ', ')", "dropped  $(if ($env:DROPPED) { $env:DROPPED -replace ',', ', ' } else { 'none' })", "left out $(if ($env:LEFT) { $env:LEFT } else { 'none' })"
               if ($env:RERUN_OUTCOME -ne 'success') { $out += "wowi: not uploaded, the rerun read reads $(& $reads $env:RERUN_OUTCOME)" }
               elseif ($env:RERUN_UPLOADED -eq 'true') { $out += "wowi: skipped, attempt $env:RERUN_ATTEMPT of this run uploaded the file" }
               elseif ($env:UPLOAD_OUTCOME -eq 'success') { $out += "wowi: uploaded, answered $env:UPLOAD_CODE", "zip      sha256 $env:ZIP_SHA" }
