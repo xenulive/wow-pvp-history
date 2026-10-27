@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.27
+-- WowPvpHistory 0.70.33
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -171,7 +171,7 @@ function A.colorHex(r,g,b,a)
 end
 
 function A.channelEscape(r,g,b)
-	return("|cff%02x%02x%02x"):format(channelByte(r),channelByte(g),channelByte(b))
+	return("|cff%02x%02x%02x"):format(channelByte(r or 1),channelByte(g or 1),channelByte(b or 1))
 end
 
 function A.colorEscape(name)
@@ -959,7 +959,9 @@ function A.cutTexts(fontStrings)
 	local cut,shown,unread=0,0,0
 	for _,text in ipairs(type(fontStrings)=="table"and fontStrings or{})do
 		local okShown,isShown=pcall(text.IsShown,text)
-		if okShown and isShown then
+		if okShown and type(isShown)~="nil"and not A.canRead(isShown)then
+			unread=unread+1
+		elseif okShown and isShown then
 			shown=shown+1
 			local ok,truncated=pcall(text.IsTruncated,text)
 			if ok and A.canRead(truncated)and type(truncated)=="boolean"then
@@ -1724,7 +1726,7 @@ function A.bodyWidth(width)
 	if type(width)~="number"or width<=0 then
 		width=A.windowWidth()
 	end
-	return width-METRICS.margin*2-METRICS.paneRightPad
+	return math.max(0,width-METRICS.margin*2-METRICS.paneRightPad)
 end
 
 function A.listSplitWidth()
@@ -1760,7 +1762,7 @@ function A.objectiveCellWidth(short)
 end
 
 function A.askSplitWidth(width)
-	return math.floor((A.bodyWidth(width)-METRICS.paneSplitGap)/2)
+	return math.max(0,math.floor((A.bodyWidth(width)-METRICS.paneSplitGap)/2))
 end
 
 function A.askPaneWidth(width)
@@ -1769,11 +1771,11 @@ function A.askPaneWidth(width)
 		or(type(A.tableViewShowing)=="function"and A.tableViewShowing()~=nil))then
 		return A.bodyWidth()
 	end
-	return A.bodyWidth(width)-METRICS.paneSplitGap-A.askSplitWidth(width)
+	return math.max(0,A.bodyWidth(width)-METRICS.paneSplitGap-A.askSplitWidth(width))
 end
 
 function A.askTableWidth(width)
-	return A.askPaneWidth(width)-METRICS.rowLabelPad
+	return math.max(0,A.askPaneWidth(width)-METRICS.rowLabelPad)
 end
 
 local function columnFurniture(count)
@@ -1798,15 +1800,18 @@ function A.askColumnShares(room)
 	met=math.max(met,metFloor)
 	record=math.max(record,recordFloor)
 	rate=math.max(rate,rateFloor)
-	local name=room-furniture-met-record-rate
+	local name=math.max(0,room-furniture-met-record-rate)
 	return name,met,record,rate,room
 end
 
 local ASK_SHARES={askName=1,askMet=2,askRecord=3,askRate=4}
 
 function A.barSplit(bar,share)
-	if type(bar)~="number"or bar<=0 or type(share)~="number"then
+	if type(bar)~="number"or bar<=0 or type(share)~="number"or share~=share then
 		return nil,nil
+	end
+	if share>1 then
+		share=1
 	end
 	local win=(share<=0)and 0 or math.max(1,math.floor(bar*share))
 	if win>=bar and share<1 then
@@ -2223,9 +2228,10 @@ function A.rowGap(rows,index,edges,base)
 	end
 	local offset=type(edges.offset)=="number"and edges.offset or 0
 	local visible=type(edges.visible)=="number"and edges.visible or 0
-	if edges.first~=nil and index<edges.first then
-		local top=offset+(edges.pinned~=nil and(edges.pin or 0)or 0)
-		return"above",top-(tops[index+1]or content),edges.first-index
+	local top=offset+(edges.pinned~=nil and(edges.pin or 0)or 0)
+	if(edges.first~=nil and index<edges.first)
+		or(edges.first==nil and(tops[index+1]or content)<=top)then
+		return"above",top-(tops[index+1]or content),edges.first and(edges.first-index)or 0
 	end
 	return"below",tops[index]-(offset+visible),edges.last and(index-edges.last)or 0
 end
@@ -2292,10 +2298,19 @@ function A.unitFigure(value)
 		return nil
 	end
 	local scaled=value*100
-	if scaled<0 then
-		return-math.floor(-scaled+0.5)/100
+	if scaled==math.huge or scaled==-math.huge then
+		return nil
 	end
-	return math.floor(scaled+0.5)/100
+	local rounded
+	if scaled<0 then
+		rounded=-math.floor(-scaled+0.5)/100
+	else
+		rounded=math.floor(scaled+0.5)/100
+	end
+	if rounded==0 then
+		return 0
+	end
+	return rounded
 end
 
 function A.stripHeight(headline)

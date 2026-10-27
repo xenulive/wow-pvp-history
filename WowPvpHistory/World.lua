@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.27
+-- WowPvpHistory 0.70.33
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -164,7 +164,10 @@ local function open(db,now)
 	A.trace("world",{id=record.id,state="stored",kept=kept,mapRead=map~=nil})
 
 	A.recordStored("world")
-	pcall(A.noteCanary)
+	local noted,notedError=pcall(A.noteCanary)
+	if not noted then
+		A.noteError(notedError,"world-canary")
+	end
 	return record
 end
 
@@ -476,15 +479,19 @@ end
 local function onLogin()
 	local db=A.savedDB()
 	if not(db and type(db.matches)=="table")then
+		A.trace("world",{state="boundary",source="login",reason="no-database"})
 		return
 	end
 	current,currentIndex=nil,nil
+	local closed=0
 	for i=1,#db.matches do
 		local record=db.matches[i]
 		if type(record)=="table"and record.format=="world"and record.worldOpen then
 			close(record,"login",db)
+			closed=closed+1
 		end
 	end
+	A.trace("world",{state="boundary",source="login",n=closed})
 end
 
 function A.closeWorldSession(reason)
@@ -498,7 +505,8 @@ function A.closeWorldSession(reason)
 end
 
 local function onLogout()
-	A.closeWorldSession("logout")
+	local closed=A.closeWorldSession("logout")
+	A.trace("world",{state="boundary",source="logout",reason=closed and"closed"or"none-open"})
 end
 
 A.on("PLAYER_PVP_KILLS_CHANGED",function()

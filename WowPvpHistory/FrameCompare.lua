@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.27
+-- WowPvpHistory 0.70.33
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -631,7 +631,7 @@ local function paintFigures(rows,folded,count,y,columnX,columnWidth,labelWidth)
 		A.style(row.label,"bodyText","dim")
 		row.label:Show()
 		for c,cellData in ipairs(data.cells)do
-			pcall(paintCell,row,row.cells[c],cellData,columnX(c),y,columnWidth)
+			A.containedPaint("compare/cell",paintCell,row,row.cells[c],cellData,columnX(c),y,columnWidth)
 		end
 		y=y-A.metric("compareRow")
 	end
@@ -916,23 +916,23 @@ function A.refreshCompareWindow()
 	for c=1,4 do
 		local card=window.heads[c]
 		if records[c]then
-			pcall(paintHead,card,records[c],c,columnX(c),columnWidth)
+			A.containedPaint("compare/head",paintHead,card,records[c],c,columnX(c),columnWidth)
 		else
 			card:Hide()
 		end
 	end
 
 	local y=-(A.metric("compareHead")+A.metric("paneGap"))
-	local okTabs,strip=pcall(paintTabs,second,tab,y,body)
+	local okTabs,strip=A.containedPaint("compare/tabs",paintTabs,second,tab,y,body)
 	y=y-(okTabs and strip or 0)
 	hideFigures()
 	hideSecond()
 	window.lobbyDrawn=0
 	if tab=="rounds"and reading~=nil then
-		local ok,_,drawn=pcall(paintSecond,reading,records,y,columnX,columnWidth,labelWidth,body)
+		local ok,_,drawn=A.containedPaint("compare/second",paintSecond,reading,records,y,columnX,columnWidth,labelWidth,body)
 		window.lobbyDrawn=ok and drawn or 0
 	else
-		pcall(paintFigures,rows,folded,#records,y,columnX,columnWidth,labelWidth)
+		A.containedPaint("compare/figures",paintFigures,rows,folded,#records,y,columnX,columnWidth,labelWidth)
 	end
 	local need=math.max(figuresNeed(rows,folded),secondNeed(reading))
 	window.fit=fitHeight(A.metric("headerHeight")-y+need+A.metric("compareFoot")+A.metric("margin"))

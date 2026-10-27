@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.27
+-- WowPvpHistory 0.70.33
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -251,12 +251,15 @@ local function onTarget()
 end
 
 A.on("NAME_PLATE_UNIT_ADDED",function(_,token)
+	A.trace("sight",{state="event",source="plate-added"})
 	contained(onPlateAdded,token)
 end)
 A.on("NAME_PLATE_UNIT_REMOVED",function(_,token)
+	A.trace("sight",{state="event",source="plate-removed"})
 	contained(onPlateRemoved,token)
 end)
 A.on("PLAYER_TARGET_CHANGED",function()
+	A.trace("sight",{state="event",source="target"})
 	contained(onTarget)
 end)
 

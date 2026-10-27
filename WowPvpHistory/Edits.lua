@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.27
+-- WowPvpHistory 0.70.33
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -36,7 +36,7 @@ local function block(subject)
 end
 
 local function count(manual)
-	manual.edits=(manual.edits or 0)+1
+	manual.edits=(tonumber(manual.edits)or 0)+1
 
 	local ok,stamp=pcall(A.stamp)
 	local read,epoch=pcall(time)
@@ -93,6 +93,10 @@ local function writeNote(subject,text,source)
 		return false,nil,"no-subject"
 	end
 
+	if text~=nil and type(text)~="string"then
+		traceEdit(source,subject,"refused","not-text")
+		return false,nil,"not-text"
+	end
 	if text~=nil and#text>A.MANUAL_NOTE_MAX then
 		traceEdit(source,subject,"refused","too-long",text,A.MANUAL_NOTE_MAX)
 		return false,nil,"too-long",#text,A.MANUAL_NOTE_MAX

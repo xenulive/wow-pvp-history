@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.27
+-- WowPvpHistory 0.70.33
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -447,7 +447,8 @@ function A.comparePointerInLane(row)
 		return false
 	end
 	local across=pointerAcross(row)
-	return across~=nil and across>=0 and across<=A.unitFigure(right)
+	local edge=A.unitFigure(right)
+	return across~=nil and edge~=nil and across>=0 and across<=edge
 end
 
 local function pressBox(record)
@@ -532,16 +533,15 @@ end
 
 function A.compareCountText()
 	prune()
+	return A.compareSetCountText()
+end
+
+function A.compareSetCountText()
 	local count=#picked.ids
 	if count==0 then
 		return nil
 	end
 	return("%d %s"):format(count,count==1 and A.formatLabel(picked.format)or A.formatPlural(picked.format))
-end
-
-function A.comparePickedText()
-	local count=A.compareCountText()
-	return count and(count.." picked")or nil
 end
 
 function A.paintCompareBar(frame,listing)
@@ -557,7 +557,8 @@ function A.paintCompareBar(frame,listing)
 	end
 	bar.ground:SetColorTexture(A.color("pinGround"))
 	bar.rule:SetColorTexture(A.color("hairline"))
-	bar.count:SetText(A.comparePickedText())
+	local pickedText=A.compareSetCountText()
+	bar.count:SetText(pickedText and(pickedText.." picked")or nil)
 	A.style(bar.count,"bodyText","text")
 	bar.compare:SetText(("Compare %d"):format(count))
 	A.setControlTone(bar.compare,"accent")
@@ -686,6 +687,9 @@ end
 local function cellFor(spec,record)
 	local p=own(record)
 	local key=spec.key
+	if p and(key=="ratingChange"or key=="ratingAfter"or key=="mmr")and A.ladderSilent(p)then
+		p=nil
+	end
 	if key=="rounds"then
 		local outcome,won,played=A.roundsOutcome(record)
 		if outcome==nil then
@@ -709,6 +713,9 @@ local function cellFor(spec,record)
 		return cell
 	elseif key=="mmr"then
 		local v=p and figure(p.mmrPost)or nil
+		if v==0 then
+			v=nil
+		end
 		return{value=v,text=v~=nil and tostring(v)or"-"}
 	elseif key=="length"then
 		local v=figure(record.duration)

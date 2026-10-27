@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.27
+-- WowPvpHistory 0.70.33
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -266,6 +266,9 @@ local function ringPath(path)
 end
 
 local function traceGrip(grip,state)
+	if not A.debugEnabled()then
+		return
+	end
 	local read,file=pcall(grip.art.GetTexture,grip.art)
 	local answered=nil
 	if read and(type(file)=="number"or type(file)=="string")and A.canRead(file)then
@@ -314,27 +317,29 @@ local function paintGrip(button)
 	end
 end
 
+local function paintByKind(button)
+	local kind=button.controlKind
+	if kind=="tab"then
+		paintTab(button)
+	elseif kind=="panelTab"then
+		paintPanelTab(button)
+	elseif kind=="segment"then
+		paintSegment(button)
+	elseif kind=="segmentTrack"then
+		paintSegmentTrack(button)
+	elseif kind=="entry"then
+		paintEntry(button)
+	elseif kind=="grip"then
+		paintGrip(button)
+	elseif kind=="dropdown"then
+		paintDropdown(button)
+	else
+		paintPill(button)
+	end
+end
+
 local function paint(button)
-	return pcall(function()
-		local kind=button.controlKind
-		if kind=="tab"then
-			paintTab(button)
-		elseif kind=="panelTab"then
-			paintPanelTab(button)
-		elseif kind=="segment"then
-			paintSegment(button)
-		elseif kind=="segmentTrack"then
-			paintSegmentTrack(button)
-		elseif kind=="entry"then
-			paintEntry(button)
-		elseif kind=="grip"then
-			paintGrip(button)
-		elseif kind=="dropdown"then
-			paintDropdown(button)
-		else
-			paintPill(button)
-		end
-	end)
+	return A.containedPaint("controls/paint",paintByKind,button)
 end
 
 function A.registerControl(button)
@@ -894,10 +899,12 @@ function A.dropdown(parent,choices,onPick)
 		panel:SetWidth(want)
 	end
 
-	local function fill()
+	local function fill(scrolled)
 		local visible=math.min(#button.choices,A.metric("dropdownRows"))
 		panel:SetHeight(math.max(visible*rowHeight+pad*2,rowHeight))
-		sizeToChoices()
+		if not scrolled then
+			sizeToChoices()
+		end
 
 		local most=math.max(#button.choices-visible,0)
 		if button.offset>most then
@@ -969,7 +976,7 @@ function A.dropdown(parent,choices,onPick)
 
 	panel:SetScript("OnMouseWheel",function(_,delta)
 		button.offset=button.offset-(type(delta)=="number"and delta or 0)
-		fill()
+		fill(true)
 	end)
 
 	local function open()
@@ -1068,6 +1075,12 @@ function A.grip(parent,onStop,onPress,onStarted)
 		if onStop then
 			pcall(onStop)
 		end
+	end)
+
+	grip:SetScript("OnHide",function(self)
+		self.gripDown=false
+		self.gripHot=false
+		paint(self)
 	end)
 
 	paintGrip(grip)

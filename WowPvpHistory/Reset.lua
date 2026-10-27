@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.27
+-- WowPvpHistory 0.70.33
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -35,7 +35,9 @@ local function pinPlan(db)
 	local pinned=held and held.pinned
 	local heldReal,offeredReal=A.pinGate(db)
 	if heldReal~=nil and heldReal>offeredReal then
-		return{state="keep",held=heldReal,matches=offeredReal,at=pinned.at}
+		local larger=A.largerRotationCopy()
+		return{state="keep",held=heldReal,matches=offeredReal,at=pinned.at,
+			rotation=larger and larger.matches or nil}
 	end
 
 	return{state="write",matches=#db.matches,
@@ -157,6 +159,12 @@ function A.applyReset()
 		return nil,A.refusalText("pin-failed"),"pin-failed"
 	end
 
+	local promoted
+	if pin.reason=="smaller"then
+		promoted=A.pinLargerRotationCopy()
+		pin.promoted=promoted
+	end
+
 	A.clearBackupGenerations()
 
 	local why
@@ -178,7 +186,10 @@ function A.applyReset()
 	local storedBefore=#db.matches
 	factory(db,db.schema)
 
-	pcall(A.notePrune,"reset",storedBefore)
+	local pruned,pruneError=pcall(A.notePrune,"reset",storedBefore)
+	if not pruned then
+		A.noteError(pruneError,"reset-prune")
+	end
 
 	redrive()
 
@@ -197,9 +208,14 @@ function A.pinLine(pin)
 	end
 
 	if pin.state=="keep"then
-		return("the pin already holds %d %s from %s and is larger, so it is kept rather than "
+		local line=("the pin already holds %d %s from %s and is larger, so it is kept rather than "
 			.."overwritten"):format(pin.held,pin.held==1 and"match"or"matches",
 			tostring(pin.at))
+		if pin.rotation then
+			line=line..(", except that the %d-match backup copy is larger and becomes the pin"):format(
+				pin.rotation)
+		end
+		return line
 	end
 
 	return"NOTHING IS PINNED: this client provides no encoding surface, so none of this comes back"

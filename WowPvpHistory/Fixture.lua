@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.27
+-- WowPvpHistory 0.70.33
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -1032,6 +1032,10 @@ function A.fixtureRefusalText(reason)
 	return"the fixture cannot be generated right now"
 end
 
+function A.isFixtureRecord(subject)
+	return type(subject)=="table"and subject[A.FIXTURE_KEY]==true
+end
+
 function A.fixtureCount(db)
 	db=type(db)=="table"and db or A.db()
 	if not(db and type(db.matches)=="table")then
@@ -1040,7 +1044,7 @@ function A.fixtureCount(db)
 	local marked,real=0,0
 	for i=1,#db.matches do
 		local r=db.matches[i]
-		if type(r)=="table"and r[A.FIXTURE_KEY]then
+		if A.isFixtureRecord(r)then
 			marked=marked+1
 		else
 			real=real+1
@@ -1160,7 +1164,10 @@ function A.generateFixture(n,options)
 	end
 	report.moved=moved
 
-	pcall(A.notePrune,"fixture",storedBefore)
+	local pruned,pruneError=pcall(A.notePrune,"fixture",storedBefore)
+	if not pruned then
+		A.noteError(pruneError,"fixture-prune")
+	end
 
 	if moved>0 then
 		A.storeReplaced()
@@ -1209,8 +1216,8 @@ function A.fixturePreview()
 	local leaving,authored=0,0
 	if db and type(db.players)=="table"then
 		for guid,entry in pairs(db.players)do
-			if type(entry)=="table"and(entry.fixture or 0)>0
-				and(entry.fixture or 0)>=(entry.matches or 0)then
+			local generated=type(entry)=="table"and tonumber(entry.fixture)or 0
+			if generated>0 and generated>=(tonumber(entry.matches)or 0)then
 				leaving=leaving+1
 				if A.noteFor and A.noteFor(guid)~=nil then
 					authored=authored+1
@@ -1222,7 +1229,7 @@ function A.fixturePreview()
 	local leftEarly=0
 	local incomplete=db and type(db.incomplete)=="table"and db.incomplete or{}
 	for i=1,#incomplete do
-		if type(incomplete[i])=="table"and incomplete[i][A.FIXTURE_KEY]then
+		if A.isFixtureRecord(incomplete[i])then
 			leftEarly=leftEarly+1
 		end
 	end
@@ -1246,7 +1253,7 @@ function A.clearFixture()
 	local kept={}
 	for i=1,#db.matches do
 		local r=db.matches[i]
-		if not(type(r)=="table"and r[A.FIXTURE_KEY])then
+		if not A.isFixtureRecord(r)then
 			kept[#kept+1]=r
 		end
 	end
@@ -1255,7 +1262,7 @@ function A.clearFixture()
 	local leftKept,leftRemoved={},0
 	for i=1,#(type(db.incomplete)=="table"and db.incomplete or{})do
 		local entry=db.incomplete[i]
-		if type(entry)=="table"and entry[A.FIXTURE_KEY]then
+		if A.isFixtureRecord(entry)then
 			leftRemoved=leftRemoved+1
 		else
 			leftKept[#leftKept+1]=entry
@@ -1271,7 +1278,10 @@ function A.clearFixture()
 		A.say(("the generated records are gone and the player index was not rebuilt: %s. /pvph rebuild")
 			:format(tostring(why)))
 	end
-	pcall(A.notePrune,"fixture-clear",storedBefore)
+	local pruned,pruneError=pcall(A.notePrune,"fixture-clear",storedBefore)
+	if not pruned then
+		A.noteError(pruneError,"fixture-clear-prune")
+	end
 	A.storeReplaced()
 
 	local noted=0

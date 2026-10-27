@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.27
+-- WowPvpHistory 0.70.33
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -106,7 +106,7 @@ function A.bestsTally(format,season,character,bound)
 		local record=db.matches[i]
 		if type(record)=="table"and(format==nil or record.format==format)
 			and A.bestsViewOffered(record.format)
-			and(season==nil or A.recordSeason(record)==season)
+			and(season==nil or A.recordInSeason(record,season))
 			and A.recordedBy(record,character)and A.recordSince(record,bound)
 			and ownRow(record)~=nil and not botVenue(record)then
 			admitted[#admitted+1]=record

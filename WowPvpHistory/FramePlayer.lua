@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.27
+-- WowPvpHistory 0.70.33
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -466,7 +466,7 @@ local function buildDetail(frame,body)
 	box:SetScript("OnEscapePressed",function(self)
 		pcall(self.ClearFocus,self)
 		A.discardTypedNote(self,frame)
-		pcall(paintWindow,frame)
+		A.containedPaint("player/window",paintWindow,frame)
 	end)
 
 	frame.tagRow=hang(A.buildTagRow(body,tagClicked,suggestClicked,function()
@@ -480,7 +480,7 @@ local function buildDetail(frame,body)
 	end
 	frame.tagRow.box:HookScript("OnTextChanged",function(_,userInput)
 		if userInput then
-			pcall(paintTagSuggestions,frame)
+			A.containedPaint("player/tag-suggestions",paintTagSuggestions,frame)
 		end
 	end)
 
@@ -669,7 +669,7 @@ local function buildWindow(index)
 			end,
 			repaint=function(self)
 				if self.guid then
-					pcall(paintWindow,self)
+					A.containedPaint("player/window",paintWindow,self)
 				end
 			end,
 		})
@@ -956,6 +956,7 @@ paintWindow=function(frame,index)
 	end
 	frame.drawn={met=metDrawn,tagRows=tagRows,comments=comments,strip=stripId,
 		marked=marked}
+	local fit=frame.name.headFit
 	pcall(A.trace,"paint",{source="player",rows=metDrawn,n=comments,
 		shown=tagRows,typed=typed or nil,id=stripId,marked=marked or nil,
 		with=A.sideReading(dossier.with),against=A.sideReading(dossier.against),
@@ -965,9 +966,9 @@ paintWindow=function(frame,index)
 		result=frame.stripResult,
 		stripRoom=frame.stripFloor and A.unitFigure(body-frame.stripFloor)or nil,
 		metSide=sideKind,
-		headRoom=frame.name.headFit and frame.name.headFit.room or nil,
-		headNeed=frame.name.headFit and frame.name.headFit.need or nil,
-		headForm=frame.name.headFit and frame.name.headFit.form or nil,
+		headRoom=fit and fit.room or nil,
+		headNeed=fit and fit.need or nil,
+		headForm=fit and fit.form or nil,
 		bodyWidth=A.unitFigure(body),bodyFloor=A.unitFigure(bodyFloor)},"ui")
 	return true
 end
@@ -1220,7 +1221,7 @@ function A.refreshPlayerWindows(index)
 				local built,made=pcall(A.encounterIndex)
 				index=built and made or nil
 			end
-			pcall(paintWindow,frame,index)
+			A.containedPaint("player/window",paintWindow,frame,index)
 		end
 	end
 	return true
@@ -1256,7 +1257,7 @@ if type(A.registerWindowKind)=="function"then
 			frame.wantWidth,frame.wantFrom=geometry.width,"typed"
 			pcall(frame.SetHeight,frame,geometry.height)
 			frame.sizeFrom="typed"
-			pcall(paintWindow,frame)
+			A.containedPaint("player/window",paintWindow,frame)
 		end,
 	})
 end

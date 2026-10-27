@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.27
+-- WowPvpHistory 0.70.33
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -1048,11 +1048,11 @@ function A.paintAboutBody(width)
 
 	local leftOk,how,bests=false,nil,nil
 	if about.left then
-		leftOk,how,bests=pcall(paintLeft,about.left,leftW)
+		leftOk,how,bests=A.containedPaint("about/left",paintLeft,about.left,leftW)
 	end
 	local rightOk,drew=false,nil
 	if about.right then
-		rightOk,drew=pcall(paintRight,about.right,leftW,body-leftW)
+		rightOk,drew=A.containedPaint("about/right",paintRight,about.right,leftW,body-leftW)
 	end
 
 	local bestWords={}

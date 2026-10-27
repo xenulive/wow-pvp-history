@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.27
+-- WowPvpHistory 0.70.33
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -261,10 +261,7 @@ local function newMatch(w)
 	for i=#db.matches,1,-1 do
 		local r=db.matches[i]
 		local id=type(r)=="table"and r.id or nil
-		if type(id)=="number"then
-			if id<w.nextId then
-				break
-			end
+		if type(id)=="number"and id>=w.nextId then
 			if r.imported~=nil then
 				reason=reason or"store-moved"
 			elseif r.format=="world"then
@@ -498,6 +495,7 @@ end
 local function onRegen()
 	holdRegen()
 	local due=waitingNow()
+	A.trace("meter",{source="regen",n=#due})
 	local db=A.db()
 	for i=1,#due do
 		local w=due[i]
@@ -530,6 +528,7 @@ local function onReset()
 		active.meterResets=(type(active.meterResets)=="number"and active.meterResets or 0)+1
 	end
 	local due=waitingNow()
+	A.trace("meter",{source="reset",n=#due})
 	for i=1,#due do
 		local w=due[i]
 		if w.kind=="attach"then
@@ -549,8 +548,12 @@ local function contained(fn,source)
 	end
 end
 
-A.on("PLAYER_REGEN_ENABLED",contained(onRegen,"meter-regen"))
-A.on("DAMAGE_METER_RESET",contained(onReset,"meter-reset"))
+A.on("PLAYER_REGEN_ENABLED",function()
+	contained(onRegen,"meter-regen")()
+end)
+A.on("DAMAGE_METER_RESET",function()
+	contained(onReset,"meter-reset")()
+end)
 
 function A.meterState(record)
 	local meter=type(record)=="table"and record.meter or nil
@@ -641,13 +644,6 @@ function A.roundMeter(record,index)
 end
 
 local REASON_WORDS={
-	["no-source"]="the meter listed no source for this player",
-	["list-unread"]="the meter's dispel list did not answer when it was read",
-	secret="the client withheld the figure when it was read",
-	reset="the meter was reset before it was read",
-	["not-reached"]="the meter was not read before combat, a new match or the timeout",
-	["round-began"]="the next round began before the read",
-	pending="waiting for combat to end before reading",
 	unrecorded="this match was stored before dispels were read",
 }
 

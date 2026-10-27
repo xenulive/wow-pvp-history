@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.27
+-- WowPvpHistory 0.70.33
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -236,10 +236,10 @@ local function worldTally(season,character)
 	for i=1,#db.matches do
 		local record=db.matches[i]
 		if type(record)=="table"and record.format=="world"
-			and(season==nil or A.recordSeason(record)==season)
+			and(season==nil or A.recordInSeason(record,season))
 			and A.recordedBy(record,character)then
 			local k,d=A.worldCounts(record)
-			if k~=nil then
+			if k~=nil and d~=nil then
 				counted=counted+1
 				kills=kills+k
 				deaths=deaths+d
@@ -261,7 +261,7 @@ local function newestEpochs(season,character)
 	for i=1,#db.matches do
 		local record=db.matches[i]
 		if type(record)=="table"and type(record.format)=="string"
-			and(season==nil or A.recordSeason(record)==season)
+			and(season==nil or A.recordInSeason(record,season))
 			and A.recordedBy(record,character)then
 			local epoch=A.recordEpoch(record)
 			if epoch~=nil and(out[record.format]==nil or epoch>out[record.format])then
@@ -812,7 +812,7 @@ function A.dropFinderWalk()
 	end
 end
 
-local function install()
+local function install(source)
 	if not finderHooked and type(PVEFrame)=="table"and type(PVEFrame.HookScript)=="function"then
 		finderHooked=true
 		PVEFrame:HookScript("OnShow",function()schedule("finder-show")end)
@@ -829,10 +829,12 @@ local function install()
 		PVPUIFrame:HookScript("OnShow",function()schedule("panel-show")end)
 		PVPUIFrame:HookScript("OnHide",function()schedule("panel-hide")end)
 	end
+	local inPlace=(finderHooked and 1 or 0)+(showHooked and 1 or 0)+(panelHooked and 1 or 0)
+	A.trace("finder",{state="install",source=source,kept=inPlace})
 end
 
 A.on("PLAYER_LOGIN",function()
-	local ok,err=pcall(install)
+	local ok,err=pcall(install,"login")
 	if not ok then
 		A.noteError(err,"finder-install")
 	end
@@ -840,7 +842,7 @@ end)
 
 A.on("ADDON_LOADED",function(_,name)
 	if name=="Blizzard_PVPUI"or name=="Blizzard_GroupFinder"then
-		local ok,err=pcall(install)
+		local ok,err=pcall(install,name)
 		if not ok then
 			A.noteError(err,"finder-install")
 		end

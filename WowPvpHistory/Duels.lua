@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.27
+-- WowPvpHistory 0.70.33
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -288,7 +288,10 @@ local function storeDuel(opened,result,ended)
 		A.noteError(why2,"duel-merge")
 	end
 
-	pcall(A.noteCanary)
+	local noted,notedError=pcall(A.noteCanary)
+	if not noted then
+		A.noteError(notedError,"duel-canary")
+	end
 
 	local line="switch"
 	local said,chatErr=pcall(function()
@@ -307,6 +310,9 @@ local function storeDuel(opened,result,ended)
 	end)
 	if not said then
 		pcall(A.trace,"chat-line",{source="duel",state=line,id=record.id,err=chatErr})
+	else
+		pcall(A.trace,"chat-line",{source="duel",state=line=="switch"and"switch"or"said",
+			id=record.id})
 	end
 end
 

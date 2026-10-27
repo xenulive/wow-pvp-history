@@ -1,9 +1,14 @@
--- WowPvpHistory 0.70.27
+-- WowPvpHistory 0.70.33
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
 -- License: MIT, see LICENSE
 local _,A=...
+
+local LADDER_SLOTS=10
+local CARD_SLOTS=6
+local CARD_NAMES=6
+local TEAM_CARD_PAIRS=4
 
 function A.matchRatingParts(format,from,to)
 	if type(from)~="number"or type(to)~="number"then
@@ -71,13 +76,24 @@ function A.matchRoundCards(record)
 	for i=1,#record.rounds do
 		local row=table_.rounds[i]or{}
 		local mates,foes={},{}
+		local cut=0
 		for _,cell in ipairs(row.mates or{})do
-			if not cell.self then
-				mates[#mates+1]=cell
+			if type(cell)=="table"and not cell.self then
+				if#mates<CARD_NAMES then
+					mates[#mates+1]=cell
+				else
+					cut=cut+1
+				end
 			end
 		end
 		for _,cell in ipairs(row.foes or{})do
-			foes[#foes+1]=cell
+			if type(cell)=="table"then
+				if#mates+#foes<CARD_NAMES then
+					foes[#foes+1]=cell
+				else
+					cut=cut+1
+				end
+			end
 		end
 		local word=row.result or"-"
 		if row.byHand==true then
@@ -92,7 +108,7 @@ function A.matchRoundCards(record)
 			n=i,word=word,tone=row.tone or"dim",state=state,meter=meter,
 			classToken=type(own)=="table"and own.classToken or nil,
 			spec=type(own)=="table"and own.spec or nil,
-			mates=mates,foes=foes,
+			mates=mates,foes=foes,cut=cut,
 			mmrYours=row.mmrYours,mmrTheirs=row.mmrTheirs,
 		}
 	end
@@ -131,7 +147,7 @@ end
 function A.roundCardsHeight(cards)
 	local names=1
 	for _,card in ipairs(type(cards)=="table"and cards or{})do
-		local held=1+#card.mates+#card.foes
+		local held=math.min(CARD_NAMES+1,1+#card.mates+#card.foes)
 		if held>names then
 			names=held
 		end
@@ -141,10 +157,6 @@ function A.roundCardsHeight(cards)
 		+A.metric("roundCardLine")+names*line+A.roundCardVsBand()
 end
 
-local LADDER_SLOTS=10
-local CARD_SLOTS=6
-local CARD_NAMES=6
-local TEAM_CARD_PAIRS=4
 local BUILD_ICONS=4
 
 local function outline(line,layer)
@@ -925,6 +937,7 @@ function A.traceMatchHead(id,rows,height)
 	end
 	local heading,headline,ladder,cards=nil,nil,nil,false
 	local team,teamCards=false,false
+	local cut=0
 	local counts={spec=0,class=0,square=0,blank=0,rows=0,bots=0}
 	for _,row in ipairs(type(rows)=="table"and rows or{})do
 		local h=type(row)=="table"and row.head or nil
@@ -952,6 +965,9 @@ function A.traceMatchHead(id,rows,height)
 				ladder=h.ladder
 			elseif h.kind=="cards"then
 				cards=true
+				for _,card in ipairs(type(h.cards)=="table"and h.cards or{})do
+					cut=cut+(type(card)=="table"and tonumber(card.cut)or 0)
+				end
 			end
 		end
 	end
@@ -969,6 +985,7 @@ function A.traceMatchHead(id,rows,height)
 		markFrom=ladder and ladder.from or"none",
 		markTo=ladder and ladder.to or"none",
 		cards=cards,
+		dropped=cut>0 and cut or nil,
 		height=height,
 		teamCards=drewCards,
 		rows=team and counts.rows or nil,

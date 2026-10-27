@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.27
+-- WowPvpHistory 0.70.33
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -10,6 +10,8 @@ local SIGNATURE="WPHCSV"
 local FORMAT_VERSION=8
 
 local SOURCE="csv"
+
+local RECORD_TRACE_LIMIT=20
 
 local ENTRY_SEPARATOR=";"
 local FIELD_SEPARATOR=":"
@@ -23,15 +25,34 @@ local function packEncode(value)
 	return text
 end
 
+local function neutralLead(text)
+	local first=text:sub(1,1)
+	if first=="="or first=="+"or first=="-"or first=="@"or first=="\t"or first=="\r"then
+		return string.format("%%%02X",first:byte())..text:sub(2)
+	end
+	return text
+end
+
 local function textEncode(value)
 	local text=tostring(value)
 	text=text:gsub("%%","%%25")
 	text=text:gsub("|","%%7C")
-	local first=text:sub(1,1)
-	if first=="="or first=="+"or first=="-"or first=="@"then
-		text=string.format("%%%02X",first:byte())..text:sub(2)
+	return neutralLead(text)
+end
+
+local function plainNumber(text)
+	if type(text)~="string"or text:find("[^%d%.eE%+%-]")then
+		return nil
 	end
-	return text
+	local value=tonumber(text)
+	if value==nil or value~=value or value==math.huge or value==-math.huge then
+		return nil
+	end
+	return value
+end
+
+local function guidShaped(text)
+	return type(text)=="string"and#text<=64 and text:find("^%a[%w]*%-[%w%-]+$")~=nil
 end
 
 local function packDecode(text)
@@ -298,7 +319,7 @@ local function seatMeterRead(text,reasons)
 	local out={}
 	for pair in text:gmatch("[^,]+")do
 		local seat,value=pair:match("^(%d+)=(.+)$")
-		local dispels=tonumber(value)
+		local dispels=plainNumber(value)
 		if seat==nil or dispels==nil then
 			return nil,false
 		end
@@ -350,6 +371,9 @@ local MATCH_COLUMNS={
 			local entries={}
 			for i=1,#rounds do
 				local round=rounds[i]
+				if type(round)~="table"then
+					round={endedEpoch=""}
+				end
 				local mates=""
 				if type(round.mates)=="table"and#round.mates>0 then
 					local parts={}
@@ -382,7 +406,7 @@ local MATCH_COLUMNS={
 			local entries=packSplit(cell)
 			for i=1,#entries do
 				local fields=entries[i]
-				local epoch=tonumber(fields[1])
+				local epoch=plainNumber(fields[1])
 				if epoch==nil then
 					return false
 				end
@@ -399,7 +423,7 @@ local MATCH_COLUMNS={
 
 				local rating=fields[3]
 				if rating~=nil and rating~=""then
-					round.ratingPost=tonumber(rating)
+					round.ratingPost=plainNumber(rating)
 					if round.ratingPost==nil then
 						return false
 					end
@@ -409,7 +433,7 @@ local MATCH_COLUMNS={
 				if mates~=nil and mates~=""then
 					local seats={}
 					for part in mates:gmatch("[^,]+")do
-						local seat=tonumber(part)
+						local seat=plainNumber(part)
 						if seat==nil then
 							return false
 						end
@@ -430,7 +454,7 @@ local MATCH_COLUMNS={
 
 				local wins=fields[6]
 				if wins~=nil and wins~=""then
-					round.winsPost=tonumber(wins)
+					round.winsPost=plainNumber(wins)
 					if round.winsPost==nil then
 						return false
 					end
@@ -468,7 +492,7 @@ local MATCH_COLUMNS={
 			local entries=packSplit(cell)
 			for i=1,#entries do
 				local fields=entries[i]
-				local id,order=tonumber(fields[1]),tonumber(fields[2])
+				local id,order=plainNumber(fields[1]),plainNumber(fields[2])
 				if id==nil or(fields[2]~=nil and fields[2]~=""and order==nil)then
 					return false
 				end
@@ -537,7 +561,7 @@ local MATCH_COLUMNS={
 			for f,key in ipairs({"readAt","waited"})do
 				local text=fields[f+2]
 				if text~=nil and text~=""then
-					meter[key]=tonumber(text)
+					meter[key]=plainNumber(text)
 					if meter[key]==nil then
 						return false
 					end
@@ -570,7 +594,7 @@ local MATCH_COLUMNS={
 			local entries=packSplit(cell)
 			for i=1,#entries do
 				local fields=entries[i]
-				local index=tonumber(fields[1])
+				local index=plainNumber(fields[1])
 				if not index or(index~=0 and index~=1)then
 					return false
 				end
@@ -578,7 +602,7 @@ local MATCH_COLUMNS={
 				for f,key in ipairs({"mmr","rating","ratingNew"})do
 					local text=fields[f+1]
 					if text~=nil and text~=""then
-						team[key]=tonumber(text)
+						team[key]=plainNumber(text)
 						if team[key]==nil then
 							return false
 						end
@@ -662,7 +686,7 @@ local PARTICIPANT_COLUMNS={
 			local stats={}
 			local entries=packSplit(cell)
 			for i=1,#entries do
-				local id,value=tonumber(entries[i][1]),tonumber(entries[i][2])
+				local id,value=plainNumber(entries[i][1]),plainNumber(entries[i][2])
 				if id==nil or value==nil then
 					return false
 				end
@@ -738,7 +762,7 @@ local function fill(column,subject,text)
 		return true
 	end
 	if column.kind=="number"then
-		local value=tonumber(text)
+		local value=plainNumber(text)
 		if value==nil then
 			return false
 		end
@@ -784,7 +808,9 @@ local function matchRows(record,into)
 	local guids={}
 	if type(participants)=="table"then
 		for guid in pairs(participants)do
-			guids[#guids+1]=guid
+			if type(guid)=="string"then
+				guids[#guids+1]=guid
+			end
 		end
 		table.sort(guids)
 	end
@@ -804,6 +830,9 @@ local function matchRows(record,into)
 	for g=1,#guids do
 		local guid=guids[g]
 		local participant=participants[guid]
+		if type(participant)~="table"then
+			participant={}
+		end
 		local row={}
 		local from=g==1 and head or thin
 		for i=1,#head do
@@ -812,7 +841,7 @@ local function matchRows(record,into)
 		for i=1,#PARTICIPANT_COLUMNS do
 			local column=PARTICIPANT_COLUMNS[i]
 			if column.name=="guid"then
-				row[#head+i]=guid
+				row[#head+i]=neutralLead(guid)
 			else
 				row[#head+i]=cell(column,participant,record)
 			end
@@ -849,7 +878,7 @@ local function selected(db,filter)
 	local list=db.matches
 	for i=1,#list do
 		local record=list[i]
-		local keep=format==nil or record.format==format
+		local keep=type(record)=="table"and(format==nil or record.format==format)
 		if keep and since~=nil then
 			local at=recordDate(record)
 			keep=at~=nil and at>=since
@@ -989,6 +1018,8 @@ local REFUSAL={
 	["checksum"]="this file has been altered since it was exported: its contents do not match "
 		.."what it says they are",
 	["no-database"]="no database",
+	["headroom"]="importing this file would take the stored history past what the game can load "
+		.."from the account file, so nothing was imported",
 	["disagree"]="a row carries the same time, format and character as the row above it but "
 		.."different match details, so the file was changed after export and nothing was imported",
 }
@@ -999,10 +1030,50 @@ end
 
 local function naturalKey(record)
 	return table.concat({
-		record.completedEpoch~=nil and number(record.completedEpoch)or"",
+		type(record.completedEpoch)=="number"and number(record.completedEpoch)or"",
 		record.format~=nil and tostring(record.format)or"",
 		record.character~=nil and tostring(record.character)or"",
 	},"\1")
+end
+
+local function heldKey(record)
+	local key=naturalKey(record)
+	if type(record.completedEpoch)~="number"then
+		local opened=record.openedEpoch
+		if type(opened)~="number"then
+			opened=record.openedAt
+		end
+		key=key.."\1"..(type(opened)=="number"and number(opened)or tostring(opened or""))
+	end
+	return key
+end
+
+local function projectedConstants(records)
+	local seen,count={},0
+	local function note(value)
+		local kind=type(value)
+		if(kind=="string"or kind=="number")and not seen[value]then
+			seen[value]=true
+			count=count+1
+		end
+	end
+	local function walk(value,depth)
+		if depth>8 then
+			return
+		end
+		for key,held in pairs(value)do
+			note(key)
+			if type(held)=="table"then
+				walk(held,depth+1)
+			else
+				note(held)
+			end
+		end
+	end
+	for i=1,#records do
+		walk(records[i],1)
+	end
+	return count+#records
 end
 
 function A.csvRemapRows(rows)
@@ -1157,6 +1228,9 @@ local function readRow(row,width)
 		end
 		return record,nil,nil,continuation,dropped
 	end
+	if not guidShaped(guid)then
+		return nil
+	end
 
 	local participant={}
 	for i=2,#PARTICIPANT_COLUMNS do
@@ -1197,7 +1271,9 @@ function A.csvImport(text,forced)
 
 	local held={}
 	for i=1,#db.matches do
-		held[naturalKey(db.matches[i])]=true
+		if type(db.matches[i])=="table"then
+			held[heldKey(db.matches[i])]=true
+		end
 	end
 
 	local rows=preview.rows
@@ -1219,12 +1295,12 @@ function A.csvImport(text,forced)
 		if refiled then
 			record.format="bg"
 		end
-		local key=naturalKey(record)
+		local key=heldKey(record)
 		if held[key]then
 			skipped=skipped+1
 			return
 		end
-		if record[A.FIXTURE_KEY]then
+		if A.isFixtureRecord(record)then
 			if fixtureHeld>=fixtureCeiling then
 				fixtureDropped=fixtureDropped+1
 				return
@@ -1259,7 +1335,7 @@ function A.csvImport(text,forced)
 			manual.result=nil
 		end
 
-		if record[A.FIXTURE_KEY]then
+		if A.isFixtureRecord(record)then
 			db.nextFixtureId=type(db.nextFixtureId)=="number"and db.nextFixtureId or 1
 			record.id=("F%d"):format(db.nextFixtureId)
 			db.nextFixtureId=db.nextFixtureId+1
@@ -1311,6 +1387,8 @@ function A.csvImport(text,forced)
 			local verdict=sameMatch(currentRow,row)
 			if verdict=="other"then
 				joins=false
+			elseif verdict=="differs"and currentKey:sub(1,1)=="\1"then
+				joins=false
 			elseif verdict=="differs"then
 				A.trace("csv-import",{state="refused",reason="disagree"},"data")
 				return nil,A.csvRefusalText("disagree")..(" (line %d)"):format(i),"disagree"
@@ -1346,6 +1424,15 @@ function A.csvImport(text,forced)
 	end
 	close()
 
+	if#pending>0 and type(A.storedSize)=="function"then
+		local size=A.storedSize()
+		local room=type(size)=="table"and size.headroom or nil
+		if type(room)=="number"and projectedConstants(pending)>room then
+			A.trace("csv-import",{state="refused",reason="headroom"},"data")
+			return nil,A.csvRefusalText("headroom"),"headroom"
+		end
+	end
+
 	local committed,commitError=pcall(function()
 		for p=1,#pending do
 			commit(pending[p])
@@ -1367,7 +1454,10 @@ function A.csvImport(text,forced)
 			A.say(("the records are stored and the player index was not rebuilt: %s. /pvph rebuild")
 				:format(tostring(rebuildError)))
 		end
-		pcall(A.notePrune,"csv",#db.matches-added)
+		local pruned,pruneError=pcall(A.notePrune,"csv",#db.matches-added)
+		if not pruned then
+			A.noteError(pruneError,"csv-prune")
+		end
 		pcall(A.storeReplaced)
 	end
 
@@ -1378,7 +1468,8 @@ function A.csvImport(text,forced)
 		skipped=skipped,
 		refusals=refused,
 		moved=moved,
-		records=#addedIds>0 and table.concat(addedIds,"+")or nil,
+		records=#addedIds>0 and table.concat(addedIds,"+",1,math.min(#addedIds,RECORD_TRACE_LIMIT))
+			or nil,
 		ids=#refiledIds>0 and table.concat(refiledIds,",")or nil,
 		roundsDropped=roundsDropped,
 		resultDropped=resultDropped,

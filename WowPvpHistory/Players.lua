@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.27
+-- WowPvpHistory 0.70.33
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -18,6 +18,62 @@ local function newEntry()
 		ratings={},
 		fixture=0,
 	}
+end
+
+local function traceRepair(field,found)
+	A.trace("repair",{field=field,foundType=type(found)})
+end
+
+local ENTRY_TABLES={"names","formats","ratings"}
+local ENTRY_SIDES={"with","against"}
+local SIDE_COUNTS={"count","wins","decided","manualDecided","draws"}
+local ENTRY_COUNTS={"matches","undetermined","fixture"}
+local ENTRY_EPOCHS={"firstEpoch","lastEpoch"}
+
+local function numberField(holder,key,field,fallback)
+	local value=holder[key]
+	if type(value)=="number"then
+		return
+	end
+	if value~=nil then
+		traceRepair(field,value)
+		holder[key]=fallback
+	elseif fallback~=nil then
+		holder[key]=fallback
+	end
+end
+
+local function shapedEntry(entry)
+	for i=1,#ENTRY_TABLES do
+		local key=ENTRY_TABLES[i]
+		if type(entry[key])~="table"then
+			if entry[key]~=nil then
+				traceRepair("players."..key,entry[key])
+			end
+			entry[key]={}
+		end
+	end
+	for i=1,#ENTRY_SIDES do
+		local key=ENTRY_SIDES[i]
+		local bucket=entry[key]
+		if type(bucket)~="table"then
+			if bucket~=nil then
+				traceRepair("players."..key,bucket)
+			end
+			bucket={}
+			entry[key]=bucket
+		end
+		for j=1,#SIDE_COUNTS do
+			numberField(bucket,SIDE_COUNTS[j],"players."..key.."."..SIDE_COUNTS[j],0)
+		end
+	end
+	for i=1,#ENTRY_COUNTS do
+		numberField(entry,ENTRY_COUNTS[i],"players."..ENTRY_COUNTS[i],0)
+	end
+	for i=1,#ENTRY_EPOCHS do
+		numberField(entry,ENTRY_EPOCHS[i],"players."..ENTRY_EPOCHS[i],nil)
+	end
+	return entry
 end
 
 local function ratingReading(participant)
@@ -376,15 +432,20 @@ function A.indexMatch(record,db)
 
 	local format=record.format~=nil and tostring(record.format)or nil
 
-	local generated=record[A.FIXTURE_KEY]==true
+	local generated=A.isFixtureRecord(record)
 
 	local counted=0
 	for guid,participant in pairs(participants)do
 		if type(guid)=="string"and type(participant)=="table"then
 			local entry=players[guid]
 			if type(entry)~="table"then
+				if entry~=nil then
+					traceRepair("players",entry)
+				end
 				entry=newEntry()
 				players[guid]=entry
+			else
+				shapedEntry(entry)
 			end
 
 			entry.matches=(entry.matches or 0)+1
@@ -430,14 +491,22 @@ function A.repairDuelRecord(record)
 	if type(participants)~="table"then
 		return false
 	end
+	local rows=0
 	for _,participant in pairs(participants)do
-		if type(participant)=="table"and participant.side=="against"then
-			return false
+		if type(participant)=="table"then
+			if participant.side=="against"then
+				return false
+			end
+			rows=rows+1
 		end
 	end
 
 	participants[name]={name=name,side="against"}
-	record.participantCount=(tonumber(record.participantCount)or 0)+1
+	local stored=tonumber(record.participantCount)
+	if stored==nil then
+		traceRepair("participantCount",record.participantCount)
+	end
+	record.participantCount=(stored or rows)+1
 	return true
 end
 
@@ -851,6 +920,7 @@ local function backfill()
 
 	local stamped=db.playerIndexVersion
 	if type(stamped)=="number"and stamped>=A.indexVersion then
+		A.trace("rebuild",{state="skipped",reason="current",source="login"},"data")
 		return
 	end
 
