@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.27
+-- WowPvpHistory 0.70.33
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -17,6 +17,18 @@ local function wholeArgument(word,first,last)
 	return n
 end
 A.wholeArgument=wholeArgument
+
+local function decimalArgument(word)
+	local text=word~=nil and tostring(word)or nil
+	if text==nil or not(text:match("^%-?%d+%.?%d*$")or text:match("^%-?%.%d+$"))then
+		return nil
+	end
+	local n=tonumber(text)
+	if n==nil or n==math.huge or n==-math.huge then
+		return nil
+	end
+	return n
+end
 
 local SEASON_NOT_WHOLE="a season is a whole number above zero"
 
@@ -1007,7 +1019,7 @@ local function reportEdit(msg,words)
 	end
 
 	if words[2]:lower()=="left"then
-		local id=words[3]and tonumber(words[3]:match("^#?(%d+)$")or words[3]:match("^[Ll](%d+)$")or"")
+		local id=words[3]and wholeArgument(words[3]:match("^#?(%d+)$")or words[3]:match("^[Ll](%d+)$"))
 		if not id then
 			A.say("/pvph edit left #<n> ...  needs an entry number, #1 or L1. /pvph left lists them")
 			return
@@ -1088,7 +1100,7 @@ local function reportCompRow(format,index,scope)
 
 	local matches={}
 	for _,record in ipairs(A.matches(format,scope.character))do
-		if(scope.season==nil or A.recordSeason(record)==scope.season)
+		if(scope.season==nil or A.recordInSeason(record,scope.season))
 			and A.recordSince(record,scope.bound)then
 			matches[#matches+1]=record
 		end
@@ -1845,6 +1857,17 @@ local function reportWindowSize(words)
 		end
 		return
 	end
+	local function sizeWordReads(sizeWord)
+		return sizeWord==nil or sizeWord=="min"or sizeWord=="max"or sizeWord=="authored"
+			or sizeWord=="same"or decimalArgument(sizeWord)~=nil
+	end
+	local unreadAxis=(not sizeWordReads(widthWord)and"width")
+		or(not sizeWordReads(heightWord)and"height")or nil
+	if unreadAxis then
+		A.say(("the %s %q is not a number, min, max, authored or same"):format(unreadAxis,
+			unreadAxis=="width"and widthWord or heightWord))
+		return
+	end
 	if kind=="players"then
 		A.showNotes()
 	elseif kind=="matches"then
@@ -1925,13 +1948,14 @@ local function reportWindowClick(words)
 	if type(record)~="table"and newest.kind=="match"then
 		record=A.match(newest.id)
 	end
-	local handle=tonumber(text:match("^#(%d+)$"))
-	if handle then
+	local digits=text:match("^#(%d+)$")
+	if digits then
 		local roster=A.matchRoster(record)
-		local row=roster[handle]
+		local handle=wholeArgument(digits)
+		local row=handle and roster[handle]or nil
 		if not row then
-			A.say(("match %s's roster holds %d, so there is no #%d. Nothing clicked"):format(
-				tostring(newest.id),#roster,handle))
+			A.say(("match %s's roster holds %d, so there is no #%s. Nothing clicked"):format(
+				tostring(newest.id),#roster,digits))
 			return
 		end
 		sayClick(row.name,A.clickParticipant(row.guid,newest.frame,mods,mods and"typed"or nil))
@@ -2468,7 +2492,10 @@ local function reportSize()
 		A.say(lines[i])
 	end
 
-	pcall(A.noteCanary,size.constants)
+	local noted,notedError=pcall(A.noteCanary,size.constants)
+	if not noted then
+		A.noteError(notedError,"size-canary")
+	end
 end
 
 local function reportReset(confirmed)
@@ -3371,7 +3398,7 @@ local function reportAnnounceFigure(word,figure)
 		min,max,step=A.announceSizeRange()
 		was=A.announceSize()
 	end
-	local want=tonumber(figure)
+	local want=decimalArgument(figure)
 
 	if want==nil then
 		if figure~=nil then
@@ -3610,7 +3637,7 @@ local function reportOverlayFigure(word,figure)
 	end
 
 	local range=count and""or(" in steps of %d"):format(step)
-	local want=tonumber(figure)
+	local want=decimalArgument(figure)
 	if want==nil then
 		A.say(("%q is not a number. /pvph overlay %s takes %d to %d%s"):format(tostring(figure),word,
 			min,max,range))
@@ -3619,8 +3646,6 @@ local function reportOverlayFigure(word,figure)
 
 	if count then
 		want=wholeArgument(figure,-math.huge)
-	elseif want~=want or want==math.huge or want==-math.huge then
-		want=nil
 	end
 	if want==nil then
 		A.say(("%s is not one this takes. /pvph overlay %s takes %d to %d%s"):format(tostring(figure),
@@ -4453,16 +4478,61 @@ local TAKES_NO_WORD={
 
 local TAKES_ONE_WORD={about="copy",error="clear"}
 
-local function refusesWord(first,words)
+local LAST_WORD_READ={
+	repaint=2,appearance=2,tab=2,minimap=2,alert=2,login=2,postgame=2,
+	tooltip=2,groupnotes=2,menu=2,duel=2,list=2,region=2,faults=2,bests=2,
+	perf=2,aftermatch=2,closeall=2,sight=2,chatmark=2,meter=2,finder=2,
+	reset=2,summary=3,fold=3,session=3,
+	announce={lock=3,unlock=3,time=3,size=3,opacity=3,shape=3,preview=3},
+	overlay={count=3,opacity=3,combat=3,hover=3,preview=3},
+	hold={preview=4},
+	ask={sort=4,open=3,specs=4,under=3},
+}
+
+local function lastWordRead(first,words)
+	local held=LAST_WORD_READ[first]
+	if type(held)~="table"then
+		return held
+	end
+	local second=words[2]and words[2]:lower()or nil
+	if first=="overlay"and second=="preview"and words[3]and words[3]:lower()=="opacity"then
+		return 4
+	end
+	return second and held[second]or 2
+end
+
+local function unreadWord(first,words)
 	local noWord=TAKES_NO_WORD[first]
 	if noWord and words[2]then
-		refuseUnread(words[2],noWord)
-		return true
+		return words[2],noWord
 	end
 	local takes=TAKES_ONE_WORD[first]
 	local unread=takes and((words[2]and words[2]:lower()~=takes and words[2])or words[3])or nil
 	if unread then
-		refuseUnread(unread,("/pvph %s [%s]"):format(first,takes))
+		return unread,("/pvph %s [%s]"):format(first,takes)
+	end
+	local last=lastWordRead(first,words)
+	if last and words[last+1]then
+		local read={first}
+		for i=2,last-1 do
+			read[#read+1]=words[i]:lower()
+		end
+		return words[last+1],("/pvph %s takes no word after %q"):format(table.concat(read," "),words[last])
+	end
+	return nil
+end
+
+local function commandRefused(first,words)
+	local lowered=first and first:lower()or nil
+	local unread,usage
+	if lowered then
+		unread,usage=unreadWord(lowered,words)
+	end
+	if lowered~="debug"then
+		A.trace("command",{source=commandSource(first),n=#words,reason=unread and"unread"or nil},"ui")
+	end
+	if unread then
+		refuseUnread(unread,usage)
 		return true
 	end
 	return false
@@ -4486,8 +4556,8 @@ SlashCmdList["WOWPVPHISTORY"]=function(msg)
 
 	local first=words[1]
 
-	if not first or first:lower()~="debug"then
-		A.trace("command",{source=commandSource(first),n=#words},"ui")
+	if commandRefused(first,words)then
+		return
 	end
 
 	if not first then
@@ -4496,9 +4566,6 @@ SlashCmdList["WOWPVPHISTORY"]=function(msg)
 	end
 
 	first=first:lower()
-	if refusesWord(first,words)then
-		return
-	end
 
 	if first=="show"then
 		if words[2]and words[2]:lower()=="last"and not words[3]then

@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.27
+-- WowPvpHistory 0.70.33
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -1687,6 +1687,20 @@ local rowSurface={TOOLTIP_TRACES=20,tooltipShown=0,tooltipOn=nil,WHEEL_TRACES=30
 
 rowSurface.metRowPaint,rowSurface.metRowTraced=0,nil
 
+function rowSurface.wheelTraces(scroller)
+	return rowSurface.wheelCounted(scroller)and rowSurface.wheelN+1<=rowSurface.WHEEL_TRACES
+end
+
+function rowSurface.wheelCounted(scroller)
+	return type(A.trace)=="function"and scroller==(window and window.list)
+end
+
+function rowSurface.countWheel(scroller)
+	if rowSurface.wheelCounted(scroller)then
+		rowSurface.wheelN=rowSurface.wheelN+1
+	end
+end
+
 function rowSurface.traceWheel(scroller,fields)
 	if type(A.trace)~="function"or scroller~=(window and window.list)then
 		return
@@ -2242,7 +2256,7 @@ local function initRow(row,data,at)
 			end
 			self.compareHover=true
 			if type(A.paintCompareBox)=="function"then
-				pcall(A.paintCompareBox,self,at)
+				A.containedPaint("window/compare-box",A.paintCompareBox,self,at)
 			end
 			self.pointerInLane=type(A.comparePointerInLane)=="function"and A.comparePointerInLane(self)or false
 			if at=="list"then
@@ -2263,7 +2277,7 @@ local function initRow(row,data,at)
 			end
 			self.compareHover=nil
 			if type(A.paintCompareBox)=="function"then
-				pcall(A.paintCompareBox,self,at)
+				A.containedPaint("window/compare-box",A.paintCompareBox,self,at)
 			end
 		end)
 		row:SetScript("OnEvent",function(self,event)
@@ -2416,10 +2430,15 @@ local function initRow(row,data,at)
 		ground:SetPoint("BOTTOMRIGHT",row,"BOTTOMRIGHT",-trail,0)
 	end
 
+	if not(at=="list"and row.entryKind=="match"and row.compareHover==true)then
+		row:SetScript("OnUpdate",nil)
+		row.pointerInLane=nil
+	end
+
 	row.resultMark:Hide()
 	darkList.hideGrid(row)
 	if type(A.paintCompareBox)=="function"then
-		pcall(A.paintCompareBox,row,at)
+		A.containedPaint("window/compare-box",A.paintCompareBox,row,at)
 	end
 
 	if row.isSeparator then
@@ -2807,7 +2826,10 @@ local function initSpecLine(line,data,room)
 		if widths.where>0 then
 			cell(2,cells.where or"","bodyText","text",widths.where):SetPoint("LEFT",line,"LEFT",at.where,0)
 		end
-		local counted=look.rounds~=nil and cells.rounds or cells.result
+		local counted=cells.result
+		if look.rounds~=nil then
+			counted=cells.rounds
+		end
 		cell(3,counted or"-","numberSmall",tone or"dim",widths.rounds):SetPoint("LEFT",line,"LEFT",at.rounds,0)
 		if look.rounds~=nil then
 			local pip,pipGap=A.metric("rowPip"),A.metric("rowPipGap")
@@ -4484,6 +4506,7 @@ function rowSurface.clearCompRow(row)
 	row.compKey=nil
 	row.compMembers=nil
 	row:EnableMouse(false)
+	row.hover:SetColorTexture(0,0,0,0)
 	row.selection:Hide()
 	for i=1,#row.compRegions do
 		row.compRegions[i]:Hide()
@@ -5134,6 +5157,44 @@ local function applyWholeRows(scroller)
 	return edges
 end
 
+function rowSurface.stepWheel(self,delta,scroller,base)
+	if type(self.IsScrollAllowed)=="function"and not self:IsScrollAllowed()then
+		return
+	end
+	local offset=self:GetDerivedScrollOffset()
+	local visible=scroller.composedExtent
+	if type(visible)~="number"or visible<=0 then
+		visible=self:GetVisibleExtent()
+	end
+	local wholeBase=scroller.wholeBase or base
+	local traced=rowSurface.wheelTraces(scroller)
+	local beforeFirst,beforeContent,beforeRange
+	if traced then
+		local before=A.rowEdges(scroller.rows,offset,visible,wholeBase,scroller.pinHeight)
+		beforeFirst,beforeContent,beforeRange=before.first,before.content,before.range
+	end
+	local target=A.rowStep(scroller.rows,offset,visible,wholeBase,
+		delta<0 and 2 or-2,scroller.pinHeight)
+	self:ScrollToOffset(target,true)
+	local okAfter,landed=pcall(self.GetDerivedScrollOffset,self)
+	landed=okAfter and landed or nil
+	scroller.wheelLanded={offset=type(landed)=="number"and landed or target,
+		sign=delta<0 and 1 or-1,at=type(GetTime)=="function"and GetTime()or nil}
+	if not traced then
+		rowSurface.countWheel(scroller)
+		return
+	end
+	local after=type(landed)=="number"
+		and A.rowEdges(scroller.rows,landed,visible,wholeBase,scroller.pinHeight)or{}
+	local okExtent,extent=pcall(self.GetDerivedExtent,self)
+	rowSurface.traceWheel(scroller,{
+		delta=delta,offset=A.unitFigure(offset),target=A.unitFigure(target),
+		landed=A.unitFigure(landed),first=beforeFirst,firstAfter=after.first,
+		content=A.unitFigure(beforeContent),extent=okExtent and A.unitFigure(extent)or nil,
+		range=A.unitFigure(beforeRange),
+	})
+end
+
 function A.holdWholeRows(scroller,base,pin)
 	local box=scroller and scroller.box
 	if not box or type(box.RegisterCallback)~="function"then
@@ -5148,34 +5209,7 @@ function A.holdWholeRows(scroller,base,pin)
 		pcall(box.RegisterCallback,box,event,reapply,scroller)
 	end
 	pcall(box.SetScript,box,"OnMouseWheel",function(self,delta)
-		local stepped=pcall(function()
-			if type(self.IsScrollAllowed)=="function"and not self:IsScrollAllowed()then
-				return
-			end
-			local offset=self:GetDerivedScrollOffset()
-			local visible=scroller.composedExtent
-			if type(visible)~="number"or visible<=0 then
-				visible=self:GetVisibleExtent()
-			end
-			local wholeBase=scroller.wholeBase or base
-			local before=A.rowEdges(scroller.rows,offset,visible,wholeBase,scroller.pinHeight)
-			local target=A.rowStep(scroller.rows,offset,visible,wholeBase,
-				delta<0 and 2 or-2,scroller.pinHeight)
-			self:ScrollToOffset(target,true)
-			local okAfter,landed=pcall(self.GetDerivedScrollOffset,self)
-			landed=okAfter and landed or nil
-			scroller.wheelLanded={offset=type(landed)=="number"and landed or target,
-				sign=delta<0 and 1 or-1,at=type(GetTime)=="function"and GetTime()or nil}
-			local after=type(landed)=="number"
-				and A.rowEdges(scroller.rows,landed,visible,wholeBase,scroller.pinHeight)or{}
-			local okExtent,extent=pcall(self.GetDerivedExtent,self)
-			rowSurface.traceWheel(scroller,{
-				delta=delta,offset=A.unitFigure(offset),target=A.unitFigure(target),
-				landed=A.unitFigure(landed),first=before.first,firstAfter=after.first,
-				content=A.unitFigure(before.content),extent=okExtent and A.unitFigure(extent)or nil,
-				range=A.unitFigure(before.range),
-			})
-		end)
+		local stepped=pcall(rowSurface.stepWheel,self,delta,scroller,base)
 		if not stepped and type(self.OnMouseWheel)=="function"then
 			pcall(self.OnMouseWheel,self,delta)
 		end
@@ -5240,7 +5274,11 @@ function A.checkListExpansion()
 		return false
 	end
 	local reserved=data.height-A.metric("rowListRow")-A.metric("rowExpandPad")
-	local over=A.unitFigure(drawn)-A.unitFigure(reserved)
+	local drawnAt,reservedAt=A.unitFigure(drawn),A.unitFigure(reserved)
+	if drawnAt==nil or reservedAt==nil then
+		return false
+	end
+	local over=drawnAt-reservedAt
 	local corrected=over>0.5
 	if corrected then
 		data.height=data.height+over
@@ -6465,7 +6503,7 @@ function A.scopeYielded(format)
 	if not(okScoped and okAll and type(scoped)=="table"and type(all)=="table")then
 		return false
 	end
-	return scoped.matches==0 and all.matches>0
+	return scoped.matches==0 and type(all.matches)=="number"and all.matches>0
 end
 
 function A.holdScope(held)
@@ -6515,11 +6553,11 @@ local function inSeason(record,season)
 	if season==nil then
 		return true
 	end
-	if type(A.recordSeason)~="function"then
+	if type(A.recordInSeason)~="function"then
 		return true
 	end
-	local ok,resolved=pcall(A.recordSeason,record)
-	return ok and resolved==season
+	local ok,held=pcall(A.recordInSeason,record,season)
+	return ok and held
 end
 
 local function scopePicked(value,body)
@@ -6889,7 +6927,7 @@ local function paintEditStrip(frame,record,isLeft)
 
 	local manual=record and type(record.manual)=="table"and record.manual or nil
 	frame.editNotePaint=frame.editNotePaint or{}
-	pcall(A.paintNoteBox,frame.editNote,frame.editNotePaint,record,(manual and manual.note)or"")
+	A.containedPaint("match/note-box",A.paintNoteBox,frame.editNote,frame.editNotePaint,record,(manual and manual.note)or"")
 	pcall(frame.editNote.SetEnabled,frame.editNote,record~=nil)
 
 	if frame.roster then
@@ -6929,7 +6967,11 @@ local function paintEditStrip(frame,record,isLeft)
 	frame.editNote:SetPoint("BOTTOMRIGHT",frame.editRow,"BOTTOMRIGHT",-4-run,2)
 
 	frame.editRun=run
-	paintEditCount(frame,(manual and manual.note)or"",run)
+	local readOk,boxText=pcall(frame.editNote.GetText,frame.editNote)
+	if not(readOk and type(boxText)=="string")then
+		boxText=(manual and manual.note)or""
+	end
+	paintEditCount(frame,boxText,run)
 end
 
 local function authoredSize()
@@ -8041,7 +8083,7 @@ function darkList.recordRow(entry,columns,room,scale)
 		if not(type(subject.map)=="table"and type(subject.map.name)=="string"and subject.map.name~="")then
 			style.where={tone="dim"}
 		end
-		tally=kills~=nil and{kills=kills,deaths=deaths}or nil
+		tally=(kills~=nil and deaths~=nil)and{kills=kills,deaths=deaths}or nil
 	end
 	style.how={tone="dim"}
 	style.time={tone="dim"}
@@ -8863,9 +8905,9 @@ local function paintSearchedList(reuse)
 	end
 	local world=activeFormat=="world"and activeBody~="stats"
 	filterBand.walk=world and{}or nil
-	local painted,listed=pcall(A.withPaintScope,function()
+	local painted,listed=pcall(A.withScopeClock,A.withPaintScope,function()
 		if world then
-			local okStrip,stripped=pcall(filterBand.paintWorldStrip)
+			local okStrip,stripped=A.containedPaint("window/world-strip",filterBand.paintWorldStrip)
 			if not(okStrip and stripped)then
 				return"refresh"
 			end
@@ -9227,7 +9269,7 @@ local function paintAsk()
 
 	local matches,_,undated=A.askPopulation(activeFormat,season,character,bound)
 	local nouns=filterBand.nouns()
-	local count=("%d %s"):format(matches,matches==1 and nouns[1]or nouns[2])
+	local count=matches~=nil and("%d %s"):format(matches,matches==1 and nouns[1]or nouns[2])or""
 	if(undated or 0)>0 then
 		count=("%s, %d undated"):format(count,undated)
 	end
@@ -9245,7 +9287,9 @@ local function paintAsk()
 
 	local overviewDraws=A.askAcross()and not mapsMode
 	local countHidden=nil
-	if overviewDraws then
+	if matches==nil then
+		countHidden="unread"
+	elseif overviewDraws then
 		countHidden="overview"
 	elseif headRow>headLimit then
 		countHidden="room"
@@ -9695,7 +9739,7 @@ local function paintAsk()
 	local bandRows={}
 	if bandRoom>0 and metLook then
 		for i=1,#bandLines do
-			local line=bandLines[i]
+			local line=type(bandLines[i])=="table"and bandLines[i]or{}
 			if line.kind=="specMetNames"then
 				bandRows[#bandRows+1]=line
 			elseif line.kind=="specMet"and line.id~=nil and type(line.look)=="table"then
@@ -9730,7 +9774,8 @@ local function paintAsk()
 			end
 		end
 	end
-	window.askBandCount:SetText(bandLines[1]and(bandLines[1].text
+	window.askBandCount:SetText((type(bandLines[1])=="table"and type(bandLines[1].text)=="string")
+		and(bandLines[1].text
 		..(picked and picked.name and(", "..tostring(picked.name))or""))or"")
 	if metLook then
 		for i=1,#window.askBandHeadNames do
@@ -10498,7 +10543,7 @@ local function paintMatchWindow(frame)
 		end
 	end)
 
-	pcall(paintEditStrip,frame,record,isLeft)
+	A.containedPaint("match/edit-strip",paintEditStrip,frame,record,isLeft)
 	if record and not isLeft then
 		pcall(A.traceMatchHead,record.id,rows,frame.fittedHeight)
 		pcall(A.traceTeamMmr,record)
@@ -10510,7 +10555,7 @@ local function paintMatchWindows()
 	for i=1,#matchOrder do
 		local frame=matchWindows[matchOrder[i]]
 		if frame and frame:IsShown()then
-			pcall(paintMatchWindow,frame)
+			A.containedPaint("match/window",paintMatchWindow,frame)
 		end
 	end
 	return true
@@ -10737,12 +10782,13 @@ local function forgetMatchWindow(frame)
 	frame.recordKey=nil
 	frame.record=nil
 	frame.editing=nil
+	frame.editNotePaint=nil
 	if type(A.forgetViewport)=="function"and frame.viewportName then
 		pcall(A.forgetViewport,frame.viewportName)
 	end
 
 	if window and window:IsShown()and repaintEverything then
-		pcall(repaintEverything)
+		A.containedPaint("window/repaint",repaintEverything)
 	end
 end
 
@@ -10828,7 +10874,7 @@ local function buildMatchWindow(index)
 			end,
 			repaint=function(self)
 				if self.recordKey then
-					pcall(paintMatchWindow,self)
+					A.containedPaint("match/window",paintMatchWindow,self)
 				end
 			end,
 		})

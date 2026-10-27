@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.27
+-- WowPvpHistory 0.70.33
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -243,10 +243,13 @@ local function onState(event)
 			if A.perfDiscard then
 				A.perfDiscard()
 			end
-		elseif record then
-			A.trace("transition",{state="Inactive",reason="harvesting",source=event,
-				rounds=A.roundList(record)and#record.rounds or nil})
 		end
+		local why="no-record"
+		if record then
+			why=record.harvesting and"harvesting"or"left"
+		end
+		A.trace("transition",{state="Inactive",reason=why,source=event,
+			rounds=record and A.roundList(record)and#record.rounds or nil})
 		return
 	end
 
@@ -283,6 +286,7 @@ local function onState(event)
 	end
 
 	if name==record.state then
+		A.trace("transition",{state=name,reason="same-state",source=event})
 		return
 	end
 	record.state=name
@@ -332,10 +336,12 @@ local function resume()
 		return
 	end
 	if not db.active then
+		A.trace("resume",{state="skipped",reason="nothing-open"})
 		return
 	end
 	if type(db.active)~="table"then
 		abandon(db)
+		A.trace("resume",{state="abandoned",reason="damaged"})
 		return
 	end
 
@@ -347,11 +353,13 @@ local function resume()
 
 	if name==nil or name=="Inactive"then
 		abandon(db)
+		A.trace("resume",{state="abandoned",reason="inactive"})
 		return
 	end
 
 	if name=="Complete"then
 		if not claimHarvest(db.active,"resume")then
+			A.trace("resume",{state=name,reason="claimed"})
 			return
 		end
 
@@ -365,6 +373,7 @@ local function resume()
 
 	if db.active.harvesting and not scheduled[db.active]then
 		abandon(db)
+		A.trace("resume",{state=name,reason="harvest-left"})
 		return
 	end
 

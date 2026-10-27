@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.27
+-- WowPvpHistory 0.70.33
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -1181,7 +1181,7 @@ local function buildDossier(frame)
 	frame.tagRow:SetPoint("RIGHT",frame.dossier,"RIGHT",0,0)
 	frame.tagRow.box:HookScript("OnTextChanged",function(_,userInput)
 		if userInput then
-			pcall(paintTagSuggestions)
+			A.containedPaint("notes/tag-suggestions",paintTagSuggestions)
 		end
 	end)
 end

@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.27
+-- WowPvpHistory 0.70.33
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -40,6 +40,7 @@ end
 local FIELDS={
 	"state","restriction","rounds","rows",
 	"kept",
+	"duplicate",
 	"keptIn",
 	"skipped",
 	"charsKept","charsTaken","charsBoth",
@@ -303,7 +304,7 @@ end
 
 typed("number",{
 	"alpha","level","gripX","gripY",
-	"restriction","rounds","rows","kept","skipped","charsKept","charsTaken","charsBoth","attempt","off","bracket","n","season",
+	"restriction","rounds","rows","kept","duplicate","skipped","charsKept","charsTaken","charsBoth","attempt","off","bracket","n","season",
 	"arena","winner","winnerOdd","out","from","gap","mmr","noRow","noGuid","secretGuid",
 	"left","seg","total","strip","plot","reading","lines","players","notes","incomplete",
 	"drops","stored","shown","tagLines","tagCut","noteMarks","readAgainst","readWith",
@@ -598,7 +599,7 @@ function A.debugEntries()
 	end
 
 	table.sort(out,function(a,b)
-		return(a.seq or 0)<(b.seq or 0)
+		return(tonumber(a.seq)or 0)<(tonumber(b.seq)or 0)
 	end)
 	return out
 end
@@ -719,7 +720,7 @@ function A.trace(ev,fields,cat)
 			category=A.debugCategory(cat)and cat or BAD_CATEGORY
 		end
 
-		held.seq=(held.seq or 0)+1
+		held.seq=(tonumber(held.seq)or 0)+1
 		local entry={seq=held.seq,cat=category,ev=tostring(ev)}
 
 		local stamped,at=pcall(A.stamp)
@@ -756,9 +757,9 @@ function A.trace(ev,fields,cat)
 		local list=ring.current
 
 		local last=list[#list]
-		if last and same(last,entry)then
+		if type(last)=="table"and same(last,entry)then
 			held.seq=held.seq-1
-			last.rep=(last.rep or 1)+1
+			last.rep=(tonumber(last.rep)or 1)+1
 			last.lastAt=entry.at
 			return
 		end

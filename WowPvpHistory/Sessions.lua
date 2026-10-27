@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.27
+-- WowPvpHistory 0.70.33
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -398,7 +398,17 @@ function A.seasonPart(newer,older,crossed)
 		return newer.gameSeason~=older.gameSeason and"season"or nil
 	end
 	if type(newer.season)=="number"and type(older.season)=="number"then
-		return newer.season~=older.season and"season"or nil
+		if newer.season~=older.season then
+			return"season"
+		end
+		local measured,other=newer,older
+		if type(measured.gameSeason)~="number"then
+			measured,other=older,newer
+		end
+		if type(measured.gameSeason)=="number"then
+			return A.outsideGameSeason(other,measured.season,measured.gameSeason)and"season"or nil
+		end
+		return nil
 	end
 	local newerSeason=type(A.recordSeason)=="function"and A.recordSeason(newer)or nil
 	local olderSeason=type(A.recordSeason)=="function"and A.recordSeason(older)or nil
@@ -858,7 +868,7 @@ function A.worldSessionTally(listed)
 	local out={kills=0,deaths=0,tallied=0}
 	for _,entry in ipairs(type(listed)=="table"and listed or{})do
 		local kills,deaths=A.worldCounts(entry.kind~="incomplete"and entry.subject or nil)
-		if kills~=nil then
+		if kills~=nil and deaths~=nil then
 			out.kills,out.deaths,out.tallied=out.kills+kills,out.deaths+deaths,out.tallied+1
 		end
 	end
@@ -972,8 +982,8 @@ local function walkScoped(format,season,character,bound)
 		local record=list[i]
 		local held=season==nil
 		if not held then
-			local ok,resolved=pcall(A.recordSeason,record)
-			held=ok and resolved==season
+			local ok,inSeason=pcall(A.recordInSeason,record,season)
+			held=ok and inSeason
 		end
 		if held and A.recordSince(record,bound)then
 			out[#out+1]=record
@@ -1155,7 +1165,7 @@ function A.worldReading(records)
 	for i=1,#records do
 		local record=records[i]
 		local kills,deaths=A.worldCounts(record)
-		if kills~=nil then
+		if kills~=nil and deaths~=nil then
 			hero.kills,hero.deaths,hero.tallied=hero.kills+kills,hero.deaths+deaths,hero.tallied+1
 			local margin=kills-deaths
 			if best==nil or margin>best.margin or(margin==best.margin and kills>best.kills)then
@@ -1171,7 +1181,7 @@ function A.worldReading(records)
 			break
 		end
 		local kills,deaths=A.worldCounts(records[i])
-		if kills~=nil then
+		if kills~=nil and deaths~=nil then
 			table.insert(hero.bars,1,{kills=kills,deaths=deaths})
 		end
 	end
@@ -1419,8 +1429,8 @@ function A.standingReading(format,season,character,bound,summary,_,listed)
 			for _,entry in ipairs(ok and type(held)=="table"and held or{})do
 				local inScope=season==nil
 				if not inScope then
-					local okSeason,resolved=pcall(A.recordSeason,entry)
-					inScope=okSeason and resolved==season
+					local okSeason,inSeason=pcall(A.recordInSeason,entry,season)
+					inScope=okSeason and inSeason
 				end
 				if inScope and A.recordSince(entry,bound)then
 					left[#left+1]=entry

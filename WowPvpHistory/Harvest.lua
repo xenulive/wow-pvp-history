@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.27
+-- WowPvpHistory 0.70.33
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -164,7 +164,7 @@ end
 
 local function readMap()
 	local map={}
-	local located,named=pcall(function()
+	local located,named,instanceType=pcall(function()
 		local name,instanceType,_,_,_,_,_,instanceId=GetInstanceInfo()
 		if A.canRead(name)then
 			map.name=name
@@ -175,12 +175,12 @@ local function readMap()
 		if A.canRead(instanceId)then
 			map.instanceId=instanceId
 		end
-		return map.name~=nil and map.name~=false
+		return map.name~=nil and map.name~=false,map.instanceType
 	end)
 	if located and named then
-		return map
+		return map,instanceType
 	end
-	return nil
+	return nil,instanceType
 end
 
 local function ratedArenaFormat()
@@ -263,8 +263,8 @@ local function surfaceSample()
 		return nil,"unpopulated",bracket
 	end
 	local rated=ratedFlag()
-	local map=readMap()
-	return{bracket=bracket,rated=rated,format=classify(rated,map and map.instanceType)},
+	local _,instanceType=readMap()
+	return{bracket=bracket,rated=rated,format=classify(rated,instanceType)},
 		nil,bracket
 end
 
@@ -346,16 +346,18 @@ local function sweep()
 
 	local ok,rows=pcall(GetNumBattlefieldScores)
 	if not ok or not A.canRead(rows)or type(rows)~="number"then
-		return nil,0,nil,{}
+		return nil,0,nil,{},0
 	end
 
-	local participants,kept={},0
+	local participants,kept,duplicates={},0,0
 	local refused={}
 	for i=1,rows do
 		local guid,participant,why=readRow(i)
 		if guid then
 			if participants[guid]==nil then
 				kept=kept+1
+			else
+				duplicates=duplicates+1
 			end
 			participants[guid]=participant
 		elseif why then
@@ -363,7 +365,7 @@ local function sweep()
 		end
 	end
 
-	return participants,kept,rows,refused
+	return participants,kept,rows,refused,duplicates
 end
 
 local function readOwnRating()
@@ -834,7 +836,10 @@ local function store(record,participants,kept,rows,attempt,readSeconds,readAt,st
 	db.nextMatchId=db.nextMatchId+1
 	db.matches[#db.matches+1]=record
 	if announce then
-		A.say(announce)
+		local announced,announceError=pcall(A.say,announce)
+		if not announced then
+			A.noteError(announceError,"harvest.announce")
+		end
 	end
 	release(record)
 
@@ -892,7 +897,10 @@ local function store(record,participants,kept,rows,attempt,readSeconds,readAt,st
 		A.noteError(why2,"harvest-merge")
 	end
 
-	pcall(A.noteCanary)
+	local noted,notedError=pcall(A.noteCanary)
+	if not noted then
+		A.noteError(notedError,"harvest-canary")
+	end
 
 	A.recordStored("harvest")
 
@@ -902,8 +910,13 @@ local function store(record,participants,kept,rows,attempt,readSeconds,readAt,st
 		bestsSet,bestsEarlier,bestsState={},nil,"error"
 	end
 	local setKeys={}
-	for i=1,(type(bestsSet)=="table"and#bestsSet or 0)do
-		setKeys[i]=bestsSet[i].key
+	local keysOk,keysError=pcall(function()
+		for i=1,(type(bestsSet)=="table"and#bestsSet or 0)do
+			setKeys[i]=bestsSet[i].key
+		end
+	end)
+	if not keysOk then
+		A.noteError(keysError,"harvest.bests-keys")
 	end
 	A.trace("bests",{id=record.id,state=bestsState,earlier=bestsEarlier,
 		bestsSet=#setKeys>0 and table.concat(setKeys,",")or nil})
@@ -1008,12 +1021,13 @@ local function runHarvest(record,attempt)
 	end
 
 	local startedAt=precise()
-	local participants,kept,rows,refused=sweep()
+	local participants,kept,rows,refused,duplicates=sweep()
 	local finishedAt=precise()
 
 	local readSeconds,readAt=sweepTimes(record,startedAt,finishedAt)
 
-	A.trace("harvest",{attempt=attempt,rows=rows,kept=kept,off=A.unitFigure(readAt)})
+	A.trace("harvest",{attempt=attempt,rows=rows,kept=kept,off=A.unitFigure(readAt),
+		duplicate=duplicates>0 and duplicates or nil})
 
 	if type(rows)=="number"and kept<rows and next(refused)~=nil then
 		A.trace("refused",{
@@ -1056,7 +1070,7 @@ end
 
 function A.stashRoster(record)
 	local startedAt=precise()
-	local participants,kept,rows=sweep()
+	local participants,kept,rows,_,duplicates=sweep()
 	local finishedAt=precise()
 
 	local readSeconds,readAt=sweepTimes(record,startedAt,finishedAt)
@@ -1070,7 +1084,8 @@ function A.stashRoster(record)
 		end
 	end
 
-	A.trace("sweep",{rows=rows,kept=kept,off=A.unitFigure(readAt),winner=winner})
+	A.trace("sweep",{rows=rows,kept=kept,off=A.unitFigure(readAt),winner=winner,
+		duplicate=duplicates>0 and duplicates or nil})
 
 	if kept==0 then
 		return

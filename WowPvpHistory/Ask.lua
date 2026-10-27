@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.27
+-- WowPvpHistory 0.70.33
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -88,11 +88,13 @@ local ASK_SORT_DEFAULT={
 
 function A.askPopulation(format,season,character,bound)
 	if type(A.summarize)~="function"then
-		return 0,0,0
+		return nil,nil,nil
 	end
 	local ok,summary=pcall(A.paintWalk,"summarize",format,season,character,bound)
 	if not ok or type(summary)~="table"then
-		return 0,0,0
+		pcall(A.trace,"error",{err=("the ask population was not read: %s"):format(ok
+			and"the walk gave no summary"or tostring(summary)),source="ask/population"},"error")
+		return nil,nil,nil
 	end
 	return summary.matches or 0,summary.decided or 0,summary.undated or 0
 end
@@ -579,9 +581,13 @@ function A.askLines(format,season,character,bound)
 	local matches,decided,undated=A.askPopulation(format,season,character,bound)
 
 	local label=type(A.formatLabel)=="function"and A.formatLabel(format)or tostring(format)
-	lines[#lines+1]=("over %s: %d match%s, %d decided"):format(
-		format==nil and"all formats"or tostring(label),matches,
-		matches==1 and""or"es",decided)
+	local over=format==nil and"all formats"or tostring(label)
+	if matches==nil then
+		lines[#lines+1]=("over %s: the matches could not be read"):format(over)
+	else
+		lines[#lines+1]=("over %s: %d match%s, %d decided"):format(over,matches,
+			matches==1 and""or"es",decided)
+	end
 	if(undated or 0)>0 then
 		lines[#lines+1]=("  %d record%s carried no date, so a range left %s out"):format(
 			undated,undated==1 and""or"s",undated==1 and"it"or"them")

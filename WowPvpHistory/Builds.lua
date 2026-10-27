@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.27
+-- WowPvpHistory 0.70.33
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -254,7 +254,7 @@ function A.buildTally(format,season,character,bound)
 		local record=db.matches[i]
 		local admitted=type(record)=="table"and(format==nil or record.format==format)
 			and A.buildsViewOffered(record.format)
-			and(season==nil or A.recordSeason(record)==season)
+			and(season==nil or A.recordInSeason(record,season))
 			and A.recordedBy(record,character)and A.recordSince(record,bound)
 		if admitted then
 			considered=considered+1

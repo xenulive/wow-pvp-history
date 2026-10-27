@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.27
+-- WowPvpHistory 0.70.33
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -123,6 +123,14 @@ function A.setPlayerNote(guid,text)
 	if not usable then
 		traceNote("note","refused",why)
 		return false,nil,why
+	end
+
+	if text~=nil and type(text)~="string"then
+		traceNote("note","refused","not-text")
+		return false,nil,"not-text"
+	end
+	if text~=nil then
+		text=text:gsub("^%s+",""):gsub("%s+$","")
 	end
 
 	if text==nil or text==""then
@@ -298,7 +306,13 @@ local function addWanted(guid,wanted)
 		return false,nil,"no-database"
 	end
 
-	local held=entry.tags or{}
+	local held=entry.tags
+	if type(held)~="table"then
+		if held~=nil then
+			A.trace("repair",{field="notes.tags",foundType=type(held)})
+		end
+		held={}
+	end
 	local seen={}
 	for i=1,#held do
 		seen[held[i]]=true
@@ -431,14 +445,13 @@ function A.addPlayerComment(guid,text)
 		return false,nil,"too-long",#body,A.PLAYER_COMMENT_MAX
 	end
 
-	local entry,notes=entryFor(guid,true)
+	local entry=entryFor(guid,true)
 	if not entry then
 		traceNote("comment","refused","no-database")
 		return false,nil,"no-database"
 	end
 	local held=type(entry.comments)=="table"and entry.comments or{}
 	if#held>=A.PLAYER_MAX_COMMENTS then
-		prune(notes,guid,entry)
 		traceNote("comment","refused","too-many")
 		return false,nil,"too-many",#held,A.PLAYER_MAX_COMMENTS
 	end
@@ -471,7 +484,7 @@ function A.removePlayerComment(guid,index,text)
 		traceNote("uncomment","refused","absent")
 		return false,nil,"absent"
 	end
-	if text~=nil and held[index].text~=text then
+	if text~=nil and(type(held[index])~="table"or held[index].text~=text)then
 		traceNote("uncomment","refused","moved")
 		return false,nil,"moved"
 	end
@@ -642,7 +655,9 @@ function A.rosterTagCounts(record)
 		if entry and type(entry.tags)=="table"then
 			for j=1,#entry.tags do
 				local tag=entry.tags[j]
-				counts[tag]=(counts[tag]or 0)+1
+				if type(tag)=="string"then
+					counts[tag]=(counts[tag]or 0)+1
+				end
 			end
 		end
 	end
@@ -663,7 +678,9 @@ local function countedTags(notes)
 		if type(entry)=="table"and type(entry.tags)=="table"then
 			for i=1,#entry.tags do
 				local tag=entry.tags[i]
-				counts[tag]=(counts[tag]or 0)+1
+				if type(tag)=="string"then
+					counts[tag]=(counts[tag]or 0)+1
+				end
 			end
 		end
 	end

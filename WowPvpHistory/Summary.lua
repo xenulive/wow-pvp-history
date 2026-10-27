@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.27
+-- WowPvpHistory 0.70.33
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -249,6 +249,10 @@ end
 local UNLISTED_RANK=#ORDER
 local UNKNOWN_RANK=#ORDER+1
 
+function A.recordInFormat(record,format)
+	return format==nil or(record.format or"unknown")==format
+end
+
 function A.recordedBy(record,character)
 	if character==nil then
 		return true
@@ -265,7 +269,7 @@ function A.formatCounts(character)
 
 	for i=1,#db.matches do
 		local record=db.matches[i]
-		local format=type(record)=="table"and record.format or nil
+		local format=type(record)=="table"and(record.format or"unknown")or nil
 		if format~=nil and A.recordedBy(record,character)then
 			counts[format]=(counts[format]or 0)+1
 		end
@@ -313,7 +317,7 @@ local function characterListWalk()
 		if type(record)=="table"and type(record.character)=="string"and record.character~=""then
 			local held=entry(record.character)
 			held.matches=held.matches+1
-			if record[A.FIXTURE_KEY]==true then
+			if A.isFixtureRecord(record)then
 				held.generated=held.generated+1
 			end
 		end
@@ -525,8 +529,8 @@ function A.mapTally(format,season,character,bound,comp)
 
 	for i=1,#db.matches do
 		local record=db.matches[i]
-		local admitted=type(record)=="table"and(format==nil or record.format==format)
-			and(season==nil or A.recordSeason(record)==season)
+		local admitted=type(record)=="table"and A.recordInFormat(record,format)
+			and(season==nil or A.recordInSeason(record,season))
 			and A.recordedBy(record,character)and A.recordSince(record,bound)
 		if admitted and comp~=nil then
 			local name=type(record.map)=="table"and record.map.name or nil
@@ -593,9 +597,9 @@ function A.lastMatch(format,season,character,bound,outcome)
 	local held,heldAt,heldClass,heldNumber=nil,nil,-1,0
 	for i=1,#db.matches do
 		local record=db.matches[i]
-		if type(record)=="table"and(format==nil or record.format==format)
+		if type(record)=="table"and A.recordInFormat(record,format)
 			and not(outcome and not A.formatHasOutcome(record.format))
-			and(season==nil or A.recordSeason(record)==season)
+			and(season==nil or A.recordInSeason(record,season))
 			and A.recordedBy(record,character)and A.recordSince(record,bound)then
 			local at=A.recordEpoch(record)
 			local class,number=A.matchIdRank(record.id)
@@ -674,8 +678,8 @@ function A.cardTrend(key,format,season,character,bound)
 	local held={}
 	for i=1,#db.matches do
 		local record=db.matches[i]
-		if type(record)=="table"and(format==nil or record.format==format)
-			and(season==nil or A.recordSeason(record)==season)
+		if type(record)=="table"and A.recordInFormat(record,format)
+			and(season==nil or A.recordInSeason(record,season))
 			and A.recordedBy(record,character)and A.recordSince(record,bound)then
 			local at=A.recordEpoch(record)
 			if at~=nil then
@@ -798,7 +802,8 @@ function A.summarize(format,season,character,bound)
 	local factionWins,factionDraws=0,0
 	local shortest,longest
 
-	local chainOut,chainSeason=nil,nil
+	local chainOuts,chainSeasons={},{}
+	local chainOut,chainSeason
 
 	local mmrFrom,mmrDropped=nil,nil
 
@@ -806,18 +811,19 @@ function A.summarize(format,season,character,bound)
 
 	for i=1,#db.matches do
 		local record=db.matches[i]
-		local held=(season==nil or(A.recordSeason(record)==season))
+		local held=(season==nil or(A.recordInSeason(record,season)))
 			and A.recordedBy(record,character)
-		if held and bound~=nil and(format==nil or record.format==format)
+		if held and bound~=nil and A.recordInFormat(record,format)
 			and A.recordEpoch(record)==nil then
 			summary.undated=summary.undated+1
 		end
 		held=held and A.recordSince(record,bound)
-		if held and(format==nil or record.format==format)then
+		if held and A.recordInFormat(record,format)then
 			summary.matches=summary.matches+1
-			if format==nil and record.format~=nil then
+			if format==nil then
+				local stored=record.format or"unknown"
 				summary.formatMatches=summary.formatMatches or{}
-				summary.formatMatches[record.format]=(summary.formatMatches[record.format]or 0)+1
+				summary.formatMatches[stored]=(summary.formatMatches[stored]or 0)+1
 			end
 			local at=A.recordEpoch(record)
 			if at~=nil then
@@ -913,7 +919,10 @@ function A.summarize(format,season,character,bound)
 
 				local mmr=mmrAfter~=0 and mmrAfter or nil
 
-				local pointSeason=A.recordSeason(record)
+				local pointGame=A.recordGameSeason(record)
+				local pointSeason=pointGame~=nil and("game"..pointGame)or A.recordSeason(record)
+				local chainKey=type(record.character)=="string"and record.character or""
+				chainOut,chainSeason=chainOuts[chainKey],chainSeasons[chainKey]
 				local gap=nil
 				if chainOut~=nil and pointSeason==chainSeason and rating~=0 then
 					gap=math.abs(rating-chainOut)
@@ -934,7 +943,7 @@ function A.summarize(format,season,character,bound)
 						reason="zero-rating",
 					},"data")
 
-					chainOut,chainSeason=out,pointSeason
+					chainOuts[chainKey],chainSeasons[chainKey]=out,pointSeason
 				elseif gap~=nil and gap>LADDER_CONTINUITY then
 					summary.skipped=summary.skipped+1
 					summary.rejected=summary.rejected+1
@@ -951,7 +960,7 @@ function A.summarize(format,season,character,bound)
 						reason="departure",
 					},"data")
 				else
-					chainOut,chainSeason=out,pointSeason
+					chainOuts[chainKey],chainSeasons[chainKey]=out,pointSeason
 
 					summary.lastFrom=rating
 					local measured=change
@@ -1451,9 +1460,9 @@ function A.opponentTally(format,character,season,bound)
 	local byName={}
 	for i=1,#db.matches do
 		local record=db.matches[i]
-		if type(record)=="table"and(format==nil or record.format==format)
+		if type(record)=="table"and A.recordInFormat(record,format)
 			and A.recordedBy(record,character)
-			and(season==nil or A.recordSeason(record)==season)and A.recordSince(record,bound)then
+			and(season==nil or A.recordInSeason(record,season))and A.recordSince(record,bound)then
 			local name=record.opponentName
 			if type(name)=="string"and name~=""then
 				local row=byName[name]
@@ -1586,7 +1595,7 @@ function A.duelClassTally(season,character,bound)
 	for i=1,#db.matches do
 		local record=db.matches[i]
 		if type(record)=="table"and record.format=="duel"
-			and(season==nil or A.recordSeason(record)==season)
+			and(season==nil or A.recordInSeason(record,season))
 			and A.recordedBy(record,character)and A.recordSince(record,bound)then
 			local outcome=A.recordVerdict(record)
 			if outcome=="win"or outcome=="loss"then
@@ -1660,7 +1669,7 @@ function A.zoneTally(season,character,bound)
 	for i=1,#db.matches do
 		local record=db.matches[i]
 		if type(record)=="table"and record.format=="world"
-			and(season==nil or A.recordSeason(record)==season)
+			and(season==nil or A.recordInSeason(record,season))
 			and A.recordedBy(record,character)and A.recordSince(record,bound)then
 			read=read+1
 			local zone=type(record.map)=="table"and record.map.name or nil
@@ -1676,7 +1685,7 @@ function A.zoneTally(season,character,bound)
 				end
 				row.outings=row.outings+1
 				local kills,deaths=A.worldCounts(record)
-				if kills~=nil then
+				if kills~=nil and deaths~=nil then
 					row.kills,row.deaths,row.tallied=row.kills+kills,row.deaths+deaths,row.tallied+1
 				end
 				if record.id~=nil then
@@ -1756,7 +1765,7 @@ local function enemyComp(record)
 	local members={}
 	for i=1,#split.enemy do
 		local p=split.enemy[i].p
-		local spec=type(p.spec)=="string"and p.spec~=""and p.spec or nil
+		local spec=type(p)=="table"and type(p.spec)=="string"and p.spec~=""and p.spec or nil
 		if spec==nil then
 			return nil
 		end
@@ -2049,7 +2058,7 @@ local function tallyComps(format,season,character,bound,byPair)
 	for i=1,#db.matches do
 		local record=db.matches[i]
 		local held=type(record)=="table"
-			and(season==nil or A.recordSeason(record)==season)
+			and(season==nil or A.recordInSeason(record,season))
 			and A.recordedBy(record,character)
 			and A.recordSince(record,bound)
 		if held and record.format==format and roundFormat then
@@ -2347,7 +2356,7 @@ function A.specTally(format,season,character,bound,comp)
 	for i=1,#db.matches do
 		local record=db.matches[i]
 		local held=type(record)=="table"
-			and(season==nil or A.recordSeason(record)==season)
+			and(season==nil or A.recordInSeason(record,season))
 			and A.recordedBy(record,character)
 			and A.recordSince(record,bound)
 		if held and record.format==format and type(record.rounds)=="table"then
@@ -2486,7 +2495,7 @@ function A.specMatchTally(format,season,character,bound)
 	for i=1,#db.matches do
 		local record=db.matches[i]
 		local held=type(record)=="table"and record.format==format
-			and(season==nil or A.recordSeason(record)==season)
+			and(season==nil or A.recordInSeason(record,season))
 			and A.recordedBy(record,character)
 			and A.recordSince(record,bound)
 		if held then
@@ -2603,7 +2612,7 @@ function A.compRoundRows(format,key,season,character,bound)
 	for i=1,#db.matches do
 		local record=db.matches[i]
 		if type(record)=="table"and record.format==format and type(record.rounds)=="table"
-			and(season==nil or A.recordSeason(record)==season)
+			and(season==nil or A.recordInSeason(record,season))
 			and A.recordedBy(record,character)and A.recordSince(record,bound)then
 			local outcomes=solvedOutcomes(record)
 
@@ -4295,7 +4304,7 @@ function A.shortDayText(stamp)
 end
 
 function A.figureText(n)
-	if type(n)~="number"or n<0 then
+	if type(n)~="number"or n~=n or n<0 or n==math.huge then
 		return nil
 	end
 	if n<1000 then
@@ -4588,9 +4597,9 @@ function A.readingLines(summary,notRated,pane)
 		local left=0
 		for _,entry in ipairs(ok and type(held)=="table"and held or{})do
 			local inSeason=true
-			if summary.season~=nil and type(A.recordSeason)=="function"then
-				local seasonOk,resolved=pcall(A.recordSeason,entry)
-				inSeason=seasonOk and resolved==summary.season
+			if summary.season~=nil and type(A.recordInSeason)=="function"then
+				local seasonOk,inScope=pcall(A.recordInSeason,entry,summary.season)
+				inSeason=seasonOk and inScope
 			end
 			if inSeason and(summary.bound==nil or A.recordSince(entry,summary.bound))then
 				left=left+1

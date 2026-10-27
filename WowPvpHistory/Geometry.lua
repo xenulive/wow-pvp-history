@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.27
+-- WowPvpHistory 0.70.33
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -835,10 +835,11 @@ function A.noteRoomRead(name,branch,room,region,host,less)
 	if type(name)~="string"or name==""then
 		return false
 	end
+	local stampOk,stamped=pcall(A.stamp)
 	roomReads[name]={
 		branch=A.roomBranchKnown(branch)and branch or"absent",
 		room=type(room)=="number"and room or nil,
-		at=select(2,pcall(A.stamp)),
+		at=stampOk and stamped or nil,
 		region=type(region)=="table"and region or nil,
 		host=type(host)=="table"and host or nil,
 		less=type(less)=="number"and less or 0,
@@ -1182,6 +1183,9 @@ boundResize=function(frame,kind)
 	if type(maxW)=="number"and maxW<floorW then
 		maxW=floorW
 	end
+	if type(screenH)=="number"and type(floorH)=="number"and screenH<floorH then
+		screenH=floorH
+	end
 	local ok=pcall(frame.SetResizable,frame,true)
 	if ok then
 		pcall(frame.SetResizeBounds,frame,floorW,floorH,maxW,screenH)
@@ -1357,6 +1361,12 @@ function A.attachPooledResize(frame,kind,hooks)
 	if not pcall(frame.SetResizable,frame,true)then
 		return false
 	end
+	if type(screenW)=="number"and screenW<floorW then
+		screenW=floorW
+	end
+	if type(screenH)=="number"and type(floorH)=="number"and screenH<floorH then
+		screenH=floorH
+	end
 	pcall(frame.SetResizeBounds,frame,floorW,floorH,screenW,screenH)
 
 	local pressed,steps,resized,before=false,0,false,nil
@@ -1492,7 +1502,7 @@ function A.clearPooledPoints()
 end
 
 local function sizeFigure(kind,word,axis,current,frame)
-	local number=tonumber(word)
+	local number=type(word)=="string"and(word:match("^%-?%d+%.?%d*$")or word:match("^%-?%.%d+$"))and tonumber(word)or nil
 	if number then
 		if number~=number or number==math.huge or number==-math.huge then
 			return nil

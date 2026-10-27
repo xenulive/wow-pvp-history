@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.27
+-- WowPvpHistory 0.70.33
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -2051,12 +2051,20 @@ function A.recordRows(record)
 	if type(participants)~="table"then
 		return rows,nil
 	end
-	for _,p in pairs(participants)do
+	local keys={}
+	for guid,p in pairs(participants)do
 		if type(p)=="table"and type(p.name)=="string"and p.name~=""then
-			rows[#rows+1]={name=p.name,classToken=p.classToken,faction=p.faction}
+			local row={name=p.name,classToken=p.classToken,faction=p.faction}
+			keys[row]=tostring(guid)
+			rows[#rows+1]=row
 		end
 	end
-	table.sort(rows,function(a,b)return a.name<b.name end)
+	table.sort(rows,function(a,b)
+		if a.name~=b.name then
+			return a.name<b.name
+		end
+		return keys[a]<keys[b]
+	end)
 	local own=record.character and participants[record.character]
 	return rows,type(own)=="table"and own.name or nil
 end

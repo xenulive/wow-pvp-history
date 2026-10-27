@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.27
+-- WowPvpHistory 0.70.33
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -393,6 +393,42 @@ function A.pinBackup()
 	}
 end
 
+function A.largerRotationCopy()
+	local held=A.backupStore()
+	local pinned=held and held.pinned
+	if type(held)~="table"or type(pinned)~="table"or type(pinned.matches)~="number"then
+		return nil
+	end
+
+	local best,bestSlot,bestReal
+	for _,slot in ipairs({"current","previous"})do
+		local copy=held[slot]
+		if type(copy)=="table"and type(copy.matches)=="number"and type(copy.blob)=="string"then
+			local heldReal,copyReal=gatePair(pinned.matches,pinned.generated,copy.matches,
+				copy.generated)
+			if copyReal>heldReal and(bestReal==nil or copyReal>bestReal)then
+				best,bestSlot,bestReal=copy,slot,copyReal
+			end
+		end
+	end
+	return best,bestSlot
+end
+
+function A.pinLargerRotationCopy()
+	local copy=A.largerRotationCopy()
+	if not copy then
+		return nil
+	end
+
+	local held=store()
+	local pinned={}
+	for key,value in pairs(copy)do
+		pinned[key]=value
+	end
+	held.pinned=pinned
+	return pinned.matches
+end
+
 function A.clearBackupGenerations()
 	local held=A.backupStore()
 	if not held then
@@ -521,7 +557,10 @@ local function refill(db,value,keep,mergeRegistry)
 			:format(tostring(rebuildError)))
 	end
 
-	pcall(A.noteCanary)
+	local noted,notedError=pcall(A.noteCanary)
+	if not noted then
+		A.noteError(notedError,"restore-canary")
+	end
 	return charsKept,charsTaken,charsBoth,rebuilt
 end
 
@@ -597,7 +636,10 @@ function A.applyRestore(which)
 			held.previous,held.current,held.refused=current,nil,nil
 		end
 	end
-	pcall(A.notePrune,"restore",before)
+	local pruned,pruneError=pcall(A.notePrune,"restore",before)
+	if not pruned then
+		A.noteError(pruneError,"restore-prune")
+	end
 	A.storeReplaced()
 
 	A.trace("restore",{
@@ -697,7 +739,10 @@ function A.applyImport(text)
 	if type(db.ui)=="table"then
 		db.ui.sessionFolds=nil
 	end
-	pcall(A.notePrune,"import",before)
+	local pruned,pruneError=pcall(A.notePrune,"import",before)
+	if not pruned then
+		A.noteError(pruneError,"import-prune")
+	end
 	A.storeReplaced()
 
 	traceBackup("import","applied",nil,#db.matches)
@@ -1095,12 +1140,17 @@ function A.openImport()
 end
 
 A.on("PLAYER_LOGOUT",function()
+	local worldState="unavailable"
 	if type(A.closeWorldSession)=="function"then
-		local closed,why=pcall(A.closeWorldSession,"logout")
-		if not closed then
-			A.noteError(why,"backup-world-close")
+		local ran,result=pcall(A.closeWorldSession,"logout")
+		if not ran then
+			worldState="threw"
+			A.noteError(result,"backup-world-close")
+		else
+			worldState=result and"closed"or"none-open"
 		end
 	end
+	A.trace("logout",{state="reached",source="backup",reason=worldState})
 
 	local ok,err=pcall(A.takeBackup)
 	if not ok then

@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.27
+-- WowPvpHistory 0.70.33
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -85,7 +85,11 @@ local function stampOf(text)
 	if trimmed:match("^%d%d%d%d%-%d%d%-%d%d$")then
 		return trimmed.." 00:00:00"
 	end
-	if trimmed:match("^%d%d%d%d%-%d%d%-%d%d %d%d:%d%d:%d%d$")then
+	local hour,minute,second=trimmed:match("^%d%d%d%d%-%d%d%-%d%d (%d%d):(%d%d):(%d%d)$")
+	if hour~=nil then
+		if tonumber(hour)>23 or tonumber(minute)>59 or tonumber(second)>59 then
+			return nil
+		end
 		return trimmed
 	end
 	return nil
@@ -180,6 +184,57 @@ function A.recordGameSeason(record)
 	return record.gameSeason,"client"
 end
 
+function A.recordInSeason(record,season)
+	if type(record)~="table"or A.recordSeason(record)~=season then
+		return false
+	end
+	if type(record.gameSeason)~="number"then
+		return true
+	end
+	local game,display=A.seasonPairNow()
+	if display==nil or display~=season then
+		return true
+	end
+	return record.gameSeason==game
+end
+
+function A.outsideGameSeason(record,display,game)
+	if type(record)~="table"then
+		return false
+	end
+	local stamp=record.completedAt
+	if type(stamp)~="string"then
+		stamp=record.openedAt
+	end
+	if type(stamp)~="string"then
+		return false
+	end
+	local list=store(false)or{}
+	for i=#list,1,-1 do
+		local entry=list[i]
+		if type(entry)=="table"and entry.season==display and entry.gameSeason==game
+			and type(entry.startedAt)=="string"then
+			local to=type(entry.endedAt)=="string"and entry.endedAt or nil
+			return stamp<entry.startedAt or(to~=nil and stamp>=to)
+		end
+	end
+	return false
+end
+
+local function expansionOffset(list)
+	local game,display=A.seasonPairNow()
+	if game~=nil then
+		return game-display
+	end
+	for i=#list,1,-1 do
+		local held=list[i]
+		if type(held)=="table"and type(held.gameSeason)=="number"and type(held.season)=="number"then
+			return held.gameSeason-held.season
+		end
+	end
+	return nil
+end
+
 local function traceTyped(n,reason)
 	A.trace("season",{source="typed",n=type(n)=="number"and n or nil,reason=reason},"data")
 end
@@ -221,10 +276,11 @@ function A.seasonOpen(number,when,source,game,db)
 			end
 		end
 	else
-		local current=A.gameSeasonNow()
+		local offset=expansionOffset(list)
 		for i=1,#list do
 			local held=list[i]
-			if held.season==number and(current==nil or held.gameSeason==nil or held.gameSeason==current)then
+			if held.season==number and(offset==nil or type(held.gameSeason)~="number"
+				or held.gameSeason-held.season==offset)then
 				taken=true
 			end
 		end
@@ -448,7 +504,7 @@ function A.backfillGameSeason()
 
 	local entry=A.seasonEntry(display)
 	local from,to=nil,nil
-	if type(entry)=="table"then
+	if type(entry)=="table"and(type(entry.gameSeason)~="number"or entry.gameSeason==game)then
 		from=type(entry.startedAt)=="string"and entry.startedAt or nil
 		to=type(entry.endedAt)=="string"and entry.endedAt or nil
 	end

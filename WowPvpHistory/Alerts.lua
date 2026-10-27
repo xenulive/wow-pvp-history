@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.27
+-- WowPvpHistory 0.70.33
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -321,6 +321,7 @@ local function onRoster()
 		return
 	end
 
+	A.trace("alert",{reason="scheduled",n=#guids,source="roster"})
 	schedule()
 end
 
@@ -500,10 +501,12 @@ function A.reportAfterMatch(word)
 	end
 end
 
-local function onLift()
+local function onLift(event)
 	if pendingId==nil then
+		A.trace("after-match",{state="lift",source=event,reason="nothing-pending"},"ui")
 		return
 	end
+	A.trace("after-match",{state="lift",source=event,id=pendingId},"ui")
 	local ok,err=pcall(attempt)
 	if not ok then
 		A.noteError(err,"after-match")
