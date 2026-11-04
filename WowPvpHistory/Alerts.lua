@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.33
+-- WowPvpHistory 0.75.26
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -91,6 +91,105 @@ function A.setOpenAfterMatch(enabled)
 		A.notifyOpenAfterMatchSetting()
 	end
 	return true
+end
+
+local NUDGE_MIN,NUDGE_MAX=2,10
+
+function A.lossNudge()
+	local db=A.db()
+	if not db or type(db.ui)~="table"then
+		return nil
+	end
+	local held=db.ui.lossNudge
+	if type(held)~="number"or held~=math.floor(held)or held<NUDGE_MIN or held>NUDGE_MAX then
+		return nil
+	end
+	return held
+end
+
+function A.lossNudgeRange()
+	return NUDGE_MIN,NUDGE_MAX,1
+end
+
+function A.setLossNudge(value)
+	local db=A.db()
+	if not db then
+		return false
+	end
+	if value~=nil and(type(value)~="number"or value~=math.floor(value)
+		or value<NUDGE_MIN or value>NUDGE_MAX)
+	then
+		return false
+	end
+	db.ui=db.ui or{}
+	db.ui.lossNudge=value
+	if A.notifyLossNudgeSetting then
+		A.notifyLossNudgeSetting()
+	end
+	return true
+end
+
+function A.lossNudgeChoice()
+	local held=A.lossNudge()
+	return held and tostring(held)or"off"
+end
+
+function A.setLossNudgeChoice(value)
+	if value=="off"then
+		return A.setLossNudge(nil)
+	end
+	return A.setLossNudge(tonumber(value))
+end
+
+function A.streakClause(streak)
+	if type(streak)~="table"or type(streak.count)~="number"or streak.count<2 then
+		return nil
+	end
+	if streak.result=="loss"then
+		return("%d losses in a row"):format(streak.count)
+	end
+	return streak.word
+end
+
+function A.nudgeLine(streak)
+	local at=A.lossNudge()
+	if at==nil or type(streak)~="table"or streak.result~="loss"or type(streak.count)~="number"then
+		return nil,nil
+	end
+	if streak.count==at then
+		return("%d in a row. A break is a setting away."):format(at),"said"
+	end
+	if streak.count>at then
+		return nil,"repeat"
+	end
+	return nil,nil
+end
+
+function A.reportLossNudge(word)
+	if word==nil then
+		local held=A.lossNudge()
+		A.say(held and("the line after %d losses in a row is on"):format(held)
+			or"the line after losses in a row is off")
+		return
+	end
+	if word=="off"then
+		if not A.setLossNudge(nil)then
+			A.say("no database, so the setting could not be stored")
+			return
+		end
+		A.say("the line after losses in a row is off")
+		return
+	end
+	local figure=word:match("^%d+$")and tonumber(word)or nil
+	if figure==nil or figure~=math.floor(figure)or figure<NUDGE_MIN or figure>NUDGE_MAX then
+		A.say(("unknown nudge figure %q. %d to %d, or off"):format(word,NUDGE_MIN,NUDGE_MAX))
+		return
+	end
+	if not A.setLossNudge(figure)then
+		A.say("no database, so the setting could not be stored")
+		return
+	end
+	A.say(("the line after %d losses in a row is on"):format(figure))
 end
 
 function A.groupNotesEnabled()
@@ -190,7 +289,7 @@ end
 
 local function surfaces()
 	local banner=type(A.announceEnabled)=="function"and type(A.announceGroupRoster)=="function"
-		and A.announceEnabled()
+		and(A.announceEnabled()or(type(A.soundEnabled)=="function"and A.soundEnabled("badArrival")))
 	return A.alertsEnabled(),banner
 end
 
@@ -252,7 +351,9 @@ local function announce()
 	local known,noted
 	if chatDue then
 		announcedChat=true
-		known,noted=A.sayGroupLines(guids,selfGuid,A.groupNotesEnabled())
+		local withNotes=A.groupNotesEnabled()
+		known,noted=A.sayGroupLines(guids,selfGuid,withNotes)
+		noted=withNotes and noted or nil
 	else
 		known=A.knownPlayers(guids,selfGuid)
 	end
@@ -265,6 +366,18 @@ local function announce()
 	traceAlert("announced",#guids,nil,noted,known and known.found or 0)
 end
 
+local function sayNotes(guids,selfGuid)
+	local noted=0
+	contained(function()
+		local found=A.authoredInGroup(guids,selfGuid)
+		noted=#found
+		for _,written in ipairs(A.authoredGroupLines(found))do
+			A.say(written)
+		end
+	end)
+	return noted
+end
+
 function A.sayGroupLines(guids,selfGuid,withNotes)
 	local known=A.knownPlayers(guids,selfGuid)
 	local line=A.knownLine(known,"group")
@@ -272,16 +385,7 @@ function A.sayGroupLines(guids,selfGuid,withNotes)
 		A.say(line)
 	end
 
-	local noted=0
-	if withNotes then
-		contained(function()
-			local found=A.authoredInGroup(guids,selfGuid)
-			noted=#found
-			for _,written in ipairs(A.authoredGroupLines(found))do
-				A.say(written)
-			end
-		end)
-	end
+	local noted=withNotes and sayNotes(guids,selfGuid)or 0
 	return known,noted,line~=nil
 end
 
@@ -363,16 +467,7 @@ function A.sayGatesLines(rows,selfName,selfQualified,nameIndex,withNotes)
 		A.say(line)
 	end
 
-	local noted=0
-	if withNotes then
-		contained(function()
-			local found=A.authoredInGroup(resolved,nil)
-			noted=#found
-			for _,written in ipairs(A.authoredGroupLines(found))do
-				A.say(written)
-			end
-		end)
-	end
+	local noted=withNotes and sayNotes(resolved,nil)or 0
 	return known,resolved,noted,line~=nil
 end
 
@@ -405,42 +500,43 @@ function A.matchLinkLine(record)
 	if type(record)~="table"or type(record.id)~="number"or not A.linksAvailable()then
 		return nil
 	end
-	return A.matchLink(record.id,
-		("Open match #%s to rate and note players"):format(A.matchIdText(record.id)))
+	local id=record.id
+	return("%s %s to rate and note players"):format(A.matchLink(id,"Open match #"..A.matchIdText(id)),
+		A.rosterLink(id,"Rate players"))
 end
 
 local pendingId
 local waitedOn
 
-local function traceAfterMatch(state,id,reason)
-	A.trace("after-match",{state=state,id=id,reason=reason},"ui")
+local function traceAfterMatch(state,id,reason,source)
+	A.trace("after-match",{state=state,id=id,reason=reason,source=source},"capture")
 end
 
-local function inPvpInstance()
-	if type(IsInInstance)~="function"then
-		return false
+function A.afterMatchHeld(source,waited)
+	if A.inPvpInstance()then
+		return"instance"
 	end
-	local ok,_,kind=pcall(IsInInstance)
-	return ok and A.canRead(kind)and(kind=="pvp"or kind=="arena")
+	if A.inCombatLockdown()then
+		return"combat"
+	end
+	if source=="PLAYER_REGEN_ENABLED"and(waited=="instance"or waited=="loading")then
+		return"loading"
+	end
+	return nil
 end
 
-local function attempt()
+local function attempt(source)
 	local id=pendingId
 	if id==nil then
 		return nil
 	end
 	if not A.openAfterMatchEnabled()then
 		pendingId,waitedOn=nil,nil
-		traceAfterMatch("off",id)
+		traceAfterMatch("off",id,nil,source)
 		return"off"
 	end
 
-	local held
-	if inPvpInstance()then
-		held="instance"
-	elseif A.inCombatLockdown()then
-		held="combat"
-	end
+	local held=A.afterMatchHeld(source,waitedOn)
 	if held then
 		if waitedOn~=held then
 			waitedOn=held
@@ -451,6 +547,7 @@ local function attempt()
 
 	pendingId,waitedOn=nil,nil
 	local _,outcome=A.raiseMatchWindow("match",id,"aftermatch")
+	traceAfterMatch(outcome or"refused",id,outcome==nil and"no-outcome"or nil,source)
 	return outcome
 end
 
@@ -458,9 +555,12 @@ function A.holdAfterMatch(id)
 	if type(id)~="number"then
 		return nil
 	end
+	if pendingId~=nil and pendingId~=id then
+		traceAfterMatch("dropped",pendingId,"newer-store")
+	end
 	pendingId,waitedOn=id,nil
 	traceAfterMatch("pending",id)
-	return attempt()
+	return attempt("store")
 end
 
 function A.afterMatchPending()
@@ -503,11 +603,11 @@ end
 
 local function onLift(event)
 	if pendingId==nil then
-		A.trace("after-match",{state="lift",source=event,reason="nothing-pending"},"ui")
+		A.trace("after-match",{state="lift",source=event,reason="nothing-pending"},"capture")
 		return
 	end
-	A.trace("after-match",{state="lift",source=event,id=pendingId},"ui")
-	local ok,err=pcall(attempt)
+	A.trace("after-match",{state="lift",source=event,id=pendingId},"capture")
+	local ok,err=pcall(attempt,event)
 	if not ok then
 		A.noteError(err,"after-match")
 	end

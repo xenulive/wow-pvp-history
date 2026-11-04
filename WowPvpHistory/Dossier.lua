@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.33
+-- WowPvpHistory 0.75.26
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -10,11 +10,13 @@ local SUGGEST_SLOTS=4
 local ROUND_MARKS=6
 
 function A.repLabelColumn()
-	return A.headerFloor("REP")+A.metric("paneGap")
+	return math.max(A.headerFloor(A.scaleLabel("skill")),A.headerFloor(A.scaleLabel("attitude")))
+		+A.metric("paneGap")
 end
 
-function A.buildRepControl(parent,onPick)
+function A.buildRepControl(parent,onPick,scale)
 	local control=CreateFrame("Frame",nil,parent)
+	control.scale=scale or"skill"
 	control:SetHeight(A.metric("controlHeight"))
 	control.label=control:CreateFontString(nil,"ARTWORK","GameFontDisableSmall")
 	control.label:SetPoint("LEFT",control,"LEFT",0,0)
@@ -22,7 +24,7 @@ function A.buildRepControl(parent,onPick)
 	control.label:SetWordWrap(false)
 
 	control.steps={}
-	for i,step in ipairs(A.ratingRamp())do
+	for i,step in ipairs(A.ratingRamp(control.scale))do
 		local button=CreateFrame("Button",nil,control)
 		button:SetHeight(A.metric("controlHeight"))
 		button:RegisterForClicks("LeftButtonUp")
@@ -53,7 +55,7 @@ function A.paintRepControl(control,rating,width,enabled)
 		return false
 	end
 	A.style(control.label,"label","dim")
-	control.label:SetText("REP")
+	control.label:SetText(A.scaleLabel(control.scale))
 	local column=A.repLabelColumn()
 	local count=#control.steps
 	local gap=A.metric("repStepGap")
@@ -72,24 +74,36 @@ function A.paintRepControl(control,rating,width,enabled)
 		button.ground:SetColorTexture(A.color(chosen and button.ratingMark or"panelDeep"))
 		button.hover:SetColorTexture(A.color("hover"))
 		A.style(button.word,"bodyText",chosen and"menuGround"or button.ratingMark)
-		button.word:SetText((A.repLabel(button.ratingValue)))
+		button.word:SetText((A.repLabel(button.ratingValue,control.scale)))
 		button.repChosen=chosen
 		pcall(button.SetEnabled,button,enabled~=false)
 	end
 	return true
 end
 
-function A.repControlFloor()
+function A.repControlFloor(scale)
+	if scale==nil then
+		return math.max(A.repControlFloor("skill"),A.repControlFloor("attitude"))
+	end
 	local widest=0
-	local ramp=A.ratingRamp()
+	local ramp=A.ratingRamp(scale)
 	for _,step in ipairs(ramp)do
-		local room=A.headerFloor((A.repLabel(step.rating)))+A.metric("pillGap")
+		local room=A.headerFloor((A.repLabel(step.rating,scale)))+A.metric("pillGap")
 		if room>widest then
 			widest=room
 		end
 	end
 	local count=#ramp
 	return A.repLabelColumn()+count*widest+(count-1)*A.metric("repStepGap")
+end
+
+function A.buildUndoPill(parent)
+	local pill=A.pill(parent,"Undo",function()
+		A.reportUndo()
+	end,A.metric("actionMin"))
+	A.setControlTone(pill,"accent")
+	pill:Hide()
+	return pill
 end
 
 function A.sideCardHeight()
@@ -124,6 +138,15 @@ function A.buildSideCards(parent)
 		card.sub:SetPoint("TOPRIGHT",card.figure,"BOTTOMRIGHT",0,-2)
 		card.sub:SetJustifyH("LEFT")
 		card.sub:SetWordWrap(false)
+		card:EnableMouse(false)
+		card:SetScript("OnEnter",function(self)
+			if self.hoverLines~=nil then
+				A.keyedTooltip(self,self.hoverLines,"ANCHOR_TOP","sidecard")
+			end
+		end)
+		card:SetScript("OnLeave",function(self)
+			A.hideOwnedTooltip(self)
+		end)
 		row.cards[i]=card
 	end
 	return row
@@ -172,9 +195,32 @@ function A.paintSideCards(row,dossier,width)
 		card.figure:SetText(said[i][2])
 		A.style(card.sub,"note","dim")
 		card.sub:SetText(said[i][4]or"")
+		card.hoverLines=i==1 and A.sideHoverLines(dossier and dossier.with,false)
+			or i==2 and A.sideHoverLines(dossier and dossier.against,true)or nil
+		card:EnableMouse(card.hoverLines~=nil)
+	end
+	local trend=dossier and dossier.trend
+	local trendForm
+	if type(trend)=="table"then
+		local pad=A.metric("sideCardPad")
+		local sub=row.cards[3].sub
+		local forms=A.trendWords(trend)
+		local text,at=A.fittedForm(sub,each-pad*2-2,forms)
+		trendForm=at or#forms
+		sub:SetText(text or forms[#forms])
 	end
 	return{with=withFigure,withWords=withWords,against=againstFigure,
-		againstWords=againstWords,met=metFigure}
+		againstWords=againstWords,met=metFigure,trendForm=trendForm}
+end
+
+function A.trendWords(trend)
+	local format=tostring(A.formatLabel(trend.format)or trend.format)
+	local span=("%d to %d"):format(trend.from,trend.to)
+	return{
+		("%s rating %s since you first met"):format(format,span),
+		("%s %s"):format(format,span),
+		span,
+	}
 end
 
 function A.buildNoteRow(parent)
@@ -205,7 +251,7 @@ function A.paintNoteRow(row,held)
 	row.count:SetText(A.noteCountText(held,A.PLAYER_NOTE_MAX)or"")
 end
 
-function A.buildTagRow(parent,onRemove,onSuggest,onCommit)
+function A.buildTagRow(parent,onRemove,onSuggest,onCommit,onTemplate)
 	local row=CreateFrame("Frame",nil,parent)
 	row:SetHeight(A.metric("tagRow"))
 	row.tagButtons={}
@@ -222,6 +268,14 @@ function A.buildTagRow(parent,onRemove,onSuggest,onCommit)
 		A.setControlTone(button,"dim")
 		button:Hide()
 		row.suggestButtons[i]=button
+	end
+	row.templateButtons={}
+	for i=1,A.NOTE_TEMPLATE_SLOTS do
+		local button=A.pill(row,nil,onTemplate)
+		button:SetHeight(A.metric("tagButton"))
+		A.setControlTone(button,"noteWord")
+		button:Hide()
+		row.templateButtons[i]=button
 	end
 	row.box=A.entry(row)
 	row.box:SetHeight(A.metric("tagButton"))
@@ -305,6 +359,18 @@ function A.paintTagRow(row,note,width)
 		else
 			place(button,"+ "..tag)
 			offered=offered+1
+		end
+	end
+
+	local templates=A.noteTemplateList()
+	for i=1,#row.templateButtons do
+		local button=row.templateButtons[i]
+		local text=templates[i]
+		button.templateValue=text
+		if text==nil then
+			button:Hide()
+		else
+			place(button,"+ "..text)
 		end
 	end
 
@@ -493,9 +559,8 @@ function A.buildEncounterLine(row)
 end
 
 function A.paintEncounterLine(row,line,widths,highlighted)
-	local regions={row.id,row.day,row.clock,row.map,row.format,row.side,row.result,row.change}
 	if type(line)~="table"or type(widths)~="table"then
-		for _,region in ipairs(regions)do
+		for _,region in ipairs({row.id,row.day,row.clock,row.map,row.format,row.side,row.result,row.change})do
 			region:Hide()
 		end
 		for i=1,#row.marks do

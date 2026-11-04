@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.33
+-- WowPvpHistory 0.75.26
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -71,7 +71,7 @@ function A.tooltipBlock(tooltip,guid)
 
 	local hr,hg,hb=A.color("accent")
 	local rr,rg,rb=A.color(facts.rated and(facts.repMark or"dim")or"dimmer")
-	tooltip:AddDoubleLine(A.displayName(),facts.rated and facts.rep or"Not rated",hr,hg,hb,rr,rg,rb)
+	tooltip:AddDoubleLine(A.displayName(),facts.rated and(facts.tipWord or facts.rep)or"Not rated",hr,hg,hb,rr,rg,rb)
 
 	local drew={header=facts.rated and"rated"or"unrated",pairs=0,noteLine=false,
 		tagLine=false,lastSeen=false}

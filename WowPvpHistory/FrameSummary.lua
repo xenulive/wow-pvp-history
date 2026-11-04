@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.33
+-- WowPvpHistory 0.75.26
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -10,7 +10,7 @@ local OPPONENT_ROWS=4
 
 local HEADING_ROLE="section"
 
-local READING_ROWS=7
+local READING_ROWS=11
 
 local paintedHeadline={}
 
@@ -35,6 +35,14 @@ local PLOT_SHARE=0.25
 
 local lastGrowth=0
 
+local function atLeastNought(value)
+	local held=type(value)=="number"and value or 0
+	if held<0 then
+		held=0
+	end
+	return held
+end
+
 function A.summaryGrowth(frameHeight)
 	if type(frameHeight)~="number"or frameHeight<=0 then
 		return 0
@@ -57,10 +65,7 @@ end
 
 function A.plotGain(share,reading)
 	local grow=type(share)=="number"and share or 0
-	local read=type(reading)=="number"and reading or 0
-	if read<0 then
-		read=0
-	end
+	local read=atLeastNought(reading)
 	local authored=A.readingReserve()+A.metric("plotHeight")-read
 	if authored<0 then
 		authored=0
@@ -97,31 +102,19 @@ function A.lastSummaryGrowth()
 end
 
 function A.summaryHeightNoPlot(headline,reading,note)
-	local read=type(reading)=="number"and reading or 0
-	if read<0 then
-		read=0
-	end
+	local read=atLeastNought(reading)
 	local row=note==false and 0 or A.noteRowHeight()
 	return A.stripHeight(headline)+A.metric("stripGap")+read+row
 end
 
 function A.summaryHeightFolded(headline,reading)
-	local read=type(reading)=="number"and reading or 0
-	if read<0 then
-		read=0
-	end
+	local read=atLeastNought(reading)
 	return A.stripHeight(headline)+A.metric("stripGap")+read+A.plotFoldHeight()
 end
 
 function A.summaryHeightFought(rows,note,headline,reading)
-	local count=type(rows)=="number"and rows or 0
-	if count<0 then
-		count=0
-	end
-	local read=type(reading)=="number"and reading or 0
-	if read<0 then
-		read=0
-	end
+	local count=atLeastNought(rows)
+	local read=atLeastNought(reading)
 	local body=A.noteRowHeight()+A.metric("plotLabelDrop")+count*A.metric("opponentRow")
 	if note then
 		body=body+A.noteRowHeight()
@@ -146,10 +139,7 @@ function A.summaryHeightFought(rows,note,headline,reading)
 end
 
 function A.plotRoom(headline,reading,grow)
-	local read=type(reading)=="number"and reading or 0
-	if read<0 then
-		read=0
-	end
+	local read=atLeastNought(reading)
 	local gain=A.plotGain(grow,read)
 	local room=A.summaryHeight(headline)+gain-A.stripHeight(headline)-A.metric("stripGap")
 		-read
@@ -244,6 +234,11 @@ local VIEW_PILLS={
 	{"details","details","control","details control"},
 }
 
+local SWITCH_PILLS={
+	{"follow","followToggle","follow","follow control"},
+	{"mmr","mmrToggle","mmr","mmr control"},
+}
+
 function A.viewRowBlocks(opts)
 	opts=type(opts)=="table"and opts or{}
 	local function figure(name)
@@ -265,16 +260,18 @@ function A.viewRowBlocks(opts)
 			from=edge-track,to=edge}
 		edge=edge-track-A.metric("pillGap")
 	end
-	for i=#VIEW_PILLS,1,-1 do
-		local held=figure(VIEW_PILLS[i][3])
-		if held>0 then
-			blocks[#blocks+1]={kind="control",name=VIEW_PILLS[i][4],from=edge-held,to=edge}
-			edge=edge-held-A.metric("pillGap")
+	for _,list in ipairs({VIEW_PILLS,SWITCH_PILLS})do
+		for i=#list,1,-1 do
+			local held=figure(list[i][3])
+			if held>0 then
+				blocks[#blocks+1]={kind="control",name=list[i][4],from=edge-held,to=edge}
+				edge=edge-held-A.metric("pillGap")
+			end
 		end
 	end
 
 	return blocks,A.stripCluster(track,figure("control"),figure("toggle"),figure("specs"),
-		figure("maps"),figure("builds"),figure("bests"))
+		figure("maps"),figure("builds"),figure("bests"),figure("mmr"),figure("follow"))
 end
 
 function A.lastStripRow()
@@ -284,7 +281,7 @@ function A.lastStripRow()
 	return lastStrip.blocks,lastStrip.where
 end
 
-function A.stripCluster(track,control,toggle,specs,maps,builds,bests)
+function A.stripCluster(track,control,toggle,specs,maps,builds,bests,mmr,follow)
 	local widths={}
 	local function hold(width)
 		if type(width)=="number"and width>0 then
@@ -298,6 +295,8 @@ function A.stripCluster(track,control,toggle,specs,maps,builds,bests)
 	hold(maps)
 	hold(builds)
 	hold(bests)
+	hold(mmr)
+	hold(follow)
 	if#widths==0 then
 		return 0
 	end
@@ -338,11 +337,25 @@ standing.TILES=4
 standing.FIGURES=3
 standing.BESIDE=8
 
+function standing.keep(owner,fontString,role,tone)
+	A.style(fontString,role,tone)
+	fontString.faceRole=role
+	owner.faces=owner.faces or{}
+	owner.faces[#owner.faces+1]=fontString
+	return fontString
+end
+
+function standing.restyle(owner)
+	for _,text in ipairs(owner.faces or{})do
+		A.style(text,text.faceRole)
+	end
+end
+
 function standing.text(parent,role,tone,justify)
 	local text=parent:CreateFontString(nil,"ARTWORK","GameFontDisableSmall")
 	text:SetJustifyH(justify or"LEFT")
 	text:SetWordWrap(false)
-	A.style(text,role,tone)
+	standing.keep(parent,text,role,tone)
 	text:Hide()
 	return text
 end
@@ -414,8 +427,28 @@ function standing.build(region)
 			sub=standing.text(strip,"stripTier","dim"),
 		}
 	end
+	strip.extra={}
+	for i=1,2 do
+		strip.extra[i]={
+			label=standing.text(strip,"stripLabel","label"),
+			value=standing.text(strip,"stripFigure","bright"),
+			sub=standing.text(strip,"stripTier","dim"),
+		}
+	end
+	strip.goal={
+		label=standing.text(strip,"stripLabel","label"),
+		reset=standing.text(strip,"stripTier","dimmer"),
+		lines={},
+	}
+	for i=1,2 do
+		local track=strip:CreateTexture(nil,"ARTWORK")
+		track:Hide()
+		local fill=strip:CreateTexture(nil,"OVERLAY")
+		fill:Hide()
+		strip.goal.lines[i]={text=standing.text(strip,"stripTier","accent"),track=track,fill=fill}
+	end
 	strip.rules={}
-	for i=1,standing.TILES+1 do
+	for i=1,standing.TILES+4 do
 		local rule=strip:CreateTexture(nil,"ARTWORK")
 		rule:Hide()
 		strip.rules[i]=rule
@@ -429,6 +462,12 @@ function standing.build(region)
 	return strip
 end
 
+function standing.hideCell(cell)
+	cell.label:Hide()
+	cell.value:Hide()
+	cell.sub:Hide()
+end
+
 function standing.hideAll(strip)
 	for _,key in ipairs({"rating","change","rule","edge"})do
 		strip[key]:Hide()
@@ -436,22 +475,27 @@ function standing.hideAll(strip)
 	for i=1,#strip.rules do
 		strip.rules[i]:Hide()
 	end
-	strip.rate.label:Hide()
-	strip.rate.value:Hide()
-	strip.rate.sub:Hide()
+	standing.hideCell(strip.rate)
 	for i=1,#strip.stats do
-		strip.stats[i].label:Hide()
-		strip.stats[i].value:Hide()
-		strip.stats[i].sub:Hide()
+		standing.hideCell(strip.stats[i])
+	end
+	for i=1,#strip.extra do
+		standing.hideCell(strip.extra[i])
+	end
+	strip.goal.label:Hide()
+	strip.goal.reset:Hide()
+	for i=1,#strip.goal.lines do
+		local line=strip.goal.lines[i]
+		line.text:Hide()
+		line.track:Hide()
+		line.fill:Hide()
 	end
 	for i=1,#strip.bars do
 		strip.bars[i]:Hide()
 		strip.days[i]:Hide()
 	end
 	for i=1,#strip.figures do
-		strip.figures[i].label:Hide()
-		strip.figures[i].value:Hide()
-		strip.figures[i].sub:Hide()
+		standing.hideCell(strip.figures[i])
 	end
 	for i=1,#strip.tiles do
 		local tile=strip.tiles[i]
@@ -599,7 +643,7 @@ function standing.blocks(strip,bars,from,to)
 		local room=(labels[n+1]and labels[n+1].x or to)-label.x
 		label.room=room
 		A.style(strip.days[label.at],"rowClock","dimmer")
-		if label.text==nil or A.textRoom(strip.days[label.at],label.text)>room then
+		if label.text==nil or A.textRoom(strip.days[label.at],label.text)>(A.unitFigure(room)or room)then
 			fits=false
 		end
 	end
@@ -734,13 +778,16 @@ function standing.placeCell(strip,held,cell,m,x,width)
 	return(top+block/2)-height/2
 end
 
-function standing.ruleAt(strip,index,x)
-	local rule=strip.rules[index]
+function standing.placeRule(strip,rule,x)
 	rule:ClearAllPoints()
 	rule:SetPoint("TOPLEFT",strip,"TOPLEFT",x,0)
 	rule:SetSize(1,A.metric("standingStrip")-1)
 	rule:SetColorTexture(A.color("insetEdge"))
 	rule:Show()
+end
+
+function standing.ruleAt(strip,index,x)
+	standing.placeRule(strip,strip.rules[index],x)
 end
 
 function standing.fit(cells,naturals,room)
@@ -817,19 +864,100 @@ function standing.fit(cells,naturals,room)
 	end
 end
 
-function standing.ratedFit(natural,count,hasTrend,room)
-	local floor,each=A.metric("standingCellFloor"),A.metric("standingStat")+1
+function standing.ratedFit(natural,fixed,hasTrend,room)
+	local floor=A.metric("standingCellFloor")
 	local need=hasTrend and floor or 0
-	local kept=count
-	while kept>0 and natural+need+each*kept>room do
+	local kept,taken=#fixed,0
+	for i=1,#fixed do
+		taken=taken+fixed[i]+1
+	end
+	while kept>0 and natural+need+taken>room do
+		taken=taken-fixed[kept]-1
 		kept=kept-1
 	end
 	local cell=natural
 	if cell+need>room then
 		cell=math.max(math.min(natural,floor),room-need)
 	end
-	local trend=hasTrend and math.max(0,room-cell-each*kept)or 0
+	local trend=hasTrend and math.max(0,room-cell-taken)or 0
 	return cell,kept,trend
+end
+
+function standing.nextTierCell(reading)
+	local distance,why=A.tierDistance(reading.format,reading.rating)
+	if distance==nil then
+		return nil,why
+	end
+	return{label="NEXT TIER",figure=tostring(distance.points),figureTone="accent",
+		tier="below "..distance.tier,points=distance.points}
+end
+
+function standing.streakCell(reading,summary)
+	local run=A.currentStreak(reading.format,summary and summary.character)
+	if run==nil then
+		return nil
+	end
+	local best=A.bestStreak(reading.format,summary and summary.character,reading.stripSeason or(summary and summary.season),
+		summary and summary.bound)
+	return{label="STREAK",figure=run.word,figureTone=run.result=="win"and"win"or"loss",
+		tier=best and("best "..best.word)or nil,word=run.word}
+end
+
+function standing.goalReading(summary)
+	local goal=A.goalProgress(summary and summary.character)
+	if goal~=nil then
+		goal.label="THIS WEEK'S GOAL"
+	end
+	return goal
+end
+
+function standing.goalWidth(strip,goal)
+	local held=strip.goal
+	local widest=math.max(A.textRoom(held.label,goal.label),goal.reset and A.textRoom(held.reset,goal.reset)or 0)
+	for i,line in ipairs(goal.lines)do
+		widest=math.max(widest,A.textRoom(held.lines[i].text,line.text))
+	end
+	return math.ceil(widest+A.metric("standingPad")*2)
+end
+
+function standing.placeGoal(strip,goal,x,width)
+	local held=strip.goal
+	local pad,gap=A.metric("standingPad"),A.metric("standingLineGap")
+	local left,room=x+pad,math.max(1,width-pad*2)
+	local bar=2
+	local lineHeight=A.fontSize("stripTier")
+	local block=A.fontSize("stripLabel")+(goal.reset and gap+lineHeight or 0)
+		+#goal.lines*(gap+lineHeight+2+bar)
+	local y=math.floor((A.metric("standingStrip")-block)/2+0.5)
+	setColor(held.label,"label")
+	standing.place(strip,held.label,goal.label,left,-y,room)
+	y=y+A.fontSize("stripLabel")
+	if goal.reset then
+		setColor(held.reset,"dimmer")
+		standing.place(strip,held.reset,goal.reset,left,-(y+gap),room)
+		y=y+gap+lineHeight
+	end
+	for i,line in ipairs(goal.lines)do
+		local drawn=held.lines[i]
+		local tone=line.met and"win"or"accent"
+		setColor(drawn.text,tone)
+		standing.place(strip,drawn.text,line.text,left,-(y+gap),room)
+		y=y+gap+lineHeight+2
+		drawn.track:ClearAllPoints()
+		drawn.track:SetPoint("TOPLEFT",strip,"TOPLEFT",left,-y)
+		drawn.track:SetSize(room,bar)
+		drawn.track:SetColorTexture(A.color("faint"))
+		drawn.track:Show()
+		local filled=math.floor(room*line.share)
+		if filled>=1 then
+			drawn.fill:ClearAllPoints()
+			drawn.fill:SetPoint("TOPLEFT",strip,"TOPLEFT",left,-y)
+			drawn.fill:SetSize(filled,bar)
+			drawn.fill:SetColorTexture(A.color(tone))
+			drawn.fill:Show()
+		end
+		y=y+bar
+	end
 end
 
 function A.stripChangeText(change)
@@ -839,7 +967,20 @@ function A.stripChangeText(change)
 	return A.signedText(change)
 end
 
-function standing.paintCells(strip,reading,width)
+function standing.changeTone(change)
+	return(change or 0)>0 and"win"or(change or 0)<0 and"loss"or"dim"
+end
+
+function standing.heldOf(slot)
+	return{label=slot.label,rating=slot.value,tier=slot.sub}
+end
+
+function standing.figureCell(figure)
+	return{label=figure.label,figure=figure.value or"-",
+		figureTone=figure.tone or"bright",tier=figure.sub,subTone=figure.subTone}
+end
+
+function standing.paintCells(strip,reading,width,summary)
 	local cells,reason={},nil
 	if reading.shape=="rated"then
 		local _,_,why=A.ratingColour(reading.format,reading.rating)
@@ -849,7 +990,7 @@ function standing.paintCells(strip,reading,width)
 			format=reading.format,rating=reading.rating,label=reading.label,
 			figure=reading.rating~=nil and tostring(reading.rating)or"-",
 			change=A.stripChangeText(change),
-			changeTone=(change or 0)>0 and"win"or(change or 0)<0 and"loss"or"dim",
+			changeTone=standing.changeTone(change),
 			tier=(A.ratingTierName(reading.format,reading.rating)),high=reading.high,peak=reading.peak,
 			unranked=A.ratingTierEnum(reading.format,reading.rating)==0,
 		}
@@ -862,7 +1003,7 @@ function standing.paintCells(strip,reading,width)
 			cells[i]={
 				format=tile.format,rating=tile.rating,label=tile.label,figure=tostring(tile.rating),
 				change=tile.played and A.stripChangeText(tile.change)or nil,
-				changeTone=(tile.change or 0)>0 and"win"or(tile.change or 0)<0 and"loss"or"dim",
+				changeTone=standing.changeTone(tile.change),
 				tier=tierName,
 				unranked=A.ratingTierEnum(tile.format,tile.rating)==0,
 			}
@@ -872,9 +1013,8 @@ function standing.paintCells(strip,reading,width)
 	local rateFigure=(reading.figures or{})[1]
 	local rateHeld,rateCell,rateMetrics=nil,nil,nil
 	if type(rateFigure)=="table"then
-		rateHeld={label=strip.rate.label,rating=strip.rate.value,tier=strip.rate.sub}
-		rateCell={label=rateFigure.label,figure=rateFigure.value or"-",
-			figureTone=rateFigure.tone or"bright",tier=rateFigure.sub,subTone=rateFigure.subTone}
+		rateHeld=standing.heldOf(strip.rate)
+		rateCell=standing.figureCell(rateFigure)
 		rateMetrics=standing.fill(rateHeld,rateCell)
 	end
 	local rateWidth=standing.rateWidth(rateMetrics,width)
@@ -893,20 +1033,60 @@ function standing.paintCells(strip,reading,width)
 	end
 	local stats,kept,trendRoom={},0,nil
 	local widths,dropped
+	local fixed,extras,goal,ring={},{},nil,{}
+	local statWidth=A.metric("standingStat")
 	if reading.shape=="rated"then
 		for i=2,#(reading.figures or{})do
 			if#stats<#strip.stats and type(reading.figures[i])=="table"then
 				stats[#stats+1]=reading.figures[i]
 			end
 		end
+		local cellsStarted=A.switchClock()
+		local tierCell,tierWhy=standing.nextTierCell(reading)
+		ring.nextTier=tierCell and tierCell.points or tierWhy
+		local streakCell=standing.streakCell(reading,summary)
+		ring.streak=streakCell and streakCell.word or nil
+		goal=standing.goalReading(summary)
+		A.switchPhase("stripCells",cellsStarted)
+		ring.goal=goal and goal.ring or"-"
+		for _,cell in ipairs({tierCell or streakCell,tierCell and streakCell or nil})do
+			local held=standing.heldOf(strip.extra[#extras+1])
+			local m=standing.fill(held,cell)
+			extras[#extras+1]={cell=cell,held=held,m=m,width=m.natural}
+		end
+		if stats[1]~=nil then
+			fixed[#fixed+1]={kind="stat",index=1,width=statWidth}
+		end
+		for k=1,#extras do
+			extras[k].fixed={kind="extra",index=k,width=extras[k].width}
+			fixed[#fixed+1]=extras[k].fixed
+		end
+		for k=2,#stats do
+			fixed[#fixed+1]={kind="stat",index=k,width=statWidth}
+		end
+		if goal~=nil then
+			fixed[#fixed+1]={kind="goal",width=standing.goalWidth(strip,goal)}
+		end
+		local fixedWidths={}
+		for k=1,#fixed do
+			fixedWidths[k]=fixed[k].width
+		end
 		local cellWidth
-		cellWidth,kept,trendRoom=standing.ratedFit(naturals[1],#stats,
+		cellWidth,kept,trendRoom=standing.ratedFit(naturals[1],fixedWidths,
 			#(reading.bars or{})>0,rateX-1)
+		for k=1,#fixed do
+			fixed[k].kept=k<=kept
+		end
 		widths,dropped={cellWidth},{}
 	else
 		widths,dropped=standing.fit(cells,naturals,rateX-1)
 	end
 	local x,rules,centre=0,0,0
+	local function keepCentre(off)
+		if math.abs(off)>math.abs(centre)then
+			centre=off
+		end
+	end
 	local labels,drawnWidths={},{}
 	for i,cell in ipairs(cells)do
 		local held=strip.tiles[i]
@@ -916,11 +1096,8 @@ function standing.paintCells(strip,reading,width)
 				standing.ruleAt(strip,rules,x)
 				x=x+1
 			end
-			local off=standing.placeCell(strip,held,cell,metrics[i],x,widths[i])
+			keepCentre(standing.placeCell(strip,held,cell,metrics[i],x,widths[i]))
 			keepPlaced(held)
-			if math.abs(off)>math.abs(centre)then
-				centre=off
-			end
 			labels[#labels+1]=cell.label or"?"
 			drawnWidths[#drawnWidths+1]=tostring(widths[i])
 			x=x+widths[i]
@@ -931,32 +1108,69 @@ function standing.paintCells(strip,reading,width)
 		shed[#shed+1]=cells[i].label or"?"
 	end
 
-	local statWidth=A.metric("standingStat")
 	local trendTo=rateX-1
 	if reading.shape=="rated"then
-		trendTo=rateX-1-(statWidth+1)*kept
-		for k=1,#stats do
-			local figure=stats[k]
-			figure.shed=k>kept
-			if k<=kept then
-				local ruleX=trendTo+(k-1)*(statWidth+1)
+		for k=1,#extras do
+			local entry=extras[k]
+			if entry.fixed.kept then
 				rules=rules+1
-				standing.ruleAt(strip,rules,ruleX)
-				local held={label=strip.stats[k].label,rating=strip.stats[k].value,tier=strip.stats[k].sub}
-				local cell={label=figure.label,figure=figure.value or"-",
-					figureTone=figure.tone or"bright",tier=figure.sub,subTone=figure.subTone}
-				local off=standing.placeCell(strip,held,cell,standing.fill(held,cell),ruleX+1,statWidth)
-				keepPlaced(held)
-				if math.abs(off)>math.abs(centre)then
-					centre=off
-				end
-				figure.drawn=cell.figure
-				labels[#labels+1]=figure.label or"?"
-				drawnWidths[#drawnWidths+1]=tostring(statWidth)
+				standing.ruleAt(strip,rules,x)
+				x=x+1
+				keepCentre(standing.placeCell(strip,entry.held,entry.cell,entry.m,x,entry.width))
+				keepPlaced(entry.held)
+				labels[#labels+1]=entry.cell.label
+				drawnWidths[#drawnWidths+1]=tostring(entry.width)
+				x=x+entry.width
 			end
 		end
-		for k=#stats,kept+1,-1 do
-			shed[#shed+1]=stats[k].label or"?"
+		local right,goalEntry={},nil
+		for _,entry in ipairs(fixed)do
+			if entry.kind=="stat"then
+				right[entry.index]=entry
+			elseif entry.kind=="goal"then
+				goalEntry=entry
+			end
+		end
+		right[#right+1]=goalEntry
+		for _,entry in ipairs(right)do
+			if entry.kept then
+				trendTo=trendTo-entry.width-1
+			end
+		end
+		local ruleX=trendTo
+		for _,entry in ipairs(right)do
+			if entry.kind=="stat"then
+				stats[entry.index].shed=not entry.kept
+			end
+			if entry.kept then
+				rules=rules+1
+				standing.ruleAt(strip,rules,ruleX)
+				if entry.kind=="goal"and goal~=nil then
+					standing.placeGoal(strip,goal,ruleX+1,entry.width)
+					placed[#placed+1]=strip.goal.label
+					placed[#placed+1]=strip.goal.reset
+					for i=1,#goal.lines do
+						placed[#placed+1]=strip.goal.lines[i].text
+					end
+					labels[#labels+1]=goal.label
+				else
+					local figure=stats[entry.index]
+					local held=standing.heldOf(strip.stats[entry.index])
+					local cell=standing.figureCell(figure)
+					keepCentre(standing.placeCell(strip,held,cell,standing.fill(held,cell),ruleX+1,entry.width))
+					keepPlaced(held)
+					figure.drawn=cell.figure
+					labels[#labels+1]=figure.label or"?"
+				end
+				drawnWidths[#drawnWidths+1]=tostring(entry.width)
+				ruleX=ruleX+entry.width+1
+			end
+		end
+		for k=#fixed,kept+1,-1 do
+			local entry=fixed[k]
+			shed[#shed+1]=entry.kind=="goal"and goal~=nil and goal.label
+				or entry.kind=="extra"and extras[entry.index].cell.label
+				or stats[entry.index].label or"?"
 		end
 	end
 
@@ -966,11 +1180,8 @@ function standing.paintCells(strip,reading,width)
 			rules=rules+1
 			standing.ruleAt(strip,rules,rateX-1)
 		end
-		local off=standing.placeCell(strip,rateHeld,rateCell,rateMetrics,rateX,rateWidth)
+		keepCentre(standing.placeCell(strip,rateHeld,rateCell,rateMetrics,rateX,rateWidth))
 		keepPlaced(rateHeld)
-		if math.abs(off)>math.abs(centre)then
-			centre=off
-		end
 		rateFigure.drawn=rateCell.figure
 		rate=rateWidth
 	end
@@ -998,6 +1209,7 @@ function standing.paintCells(strip,reading,width)
 		barWidth=barWidth,
 		barsShed=barsShed,
 		stripCut=(A.cutTexts(placed)),
+		nextTier=ring.nextTier,streak=ring.streak,goal=ring.goal,
 	}
 end
 
@@ -1009,12 +1221,13 @@ function standing.rateWidth(m,width)
 	return math.max(least,math.min(m.natural,math.floor(width/3)))
 end
 
-function standing.paint(region,reading)
+function standing.paint(region,reading,summary)
 	local strip=region.standing
 	if strip==nil or type(reading)~="table"then
 		return nil
 	end
 	standing.hideAll(strip)
+	standing.restyle(strip)
 	strip:SetHeight(A.metric("standingStrip"))
 	local r,g,b,a=A.color("inset")
 	strip.ground:SetColorTexture(r,g,b,a or 1)
@@ -1028,7 +1241,7 @@ function standing.paint(region,reading)
 	local gap=A.metric("standingGap")
 	local reason,drawn,layout
 	if reading.shape=="rated"or reading.shape=="all"then
-		drawn,reason,layout=standing.paintCells(strip,reading,width)
+		drawn,reason,layout=standing.paintCells(strip,reading,width,summary)
 	elseif type(reading.hero)=="table"and reading.hero.kind=="world"and strip.hero then
 		drawn,layout=standing.paintWorld(strip,strip.hero,reading.hero,width)
 	elseif type(reading.hero)=="table"then
@@ -1082,7 +1295,8 @@ function standing.traceStrip(summary,reading,drew,height,body)
 		inset=layout.inset,barWidth=layout.barWidth,
 		cells=layout.cells,outings=layout.outings,trendSlot=layout.trendSlot,
 		stripCut=layout.stripCut,stripBody=body,barsShed=layout.barsShed,
-		chipFill=layout.chipFill,chipEdge=layout.chipEdge},"ui")
+		chipFill=layout.chipFill,chipEdge=layout.chipEdge,
+		nextTier=layout.nextTier,streak=layout.streak,goal=layout.goal},"ui")
 end
 
 standing.CHIPS=6
@@ -1122,7 +1336,7 @@ function standing.buildHero(strip)
 	hero.lastLabel=text("label","dim")
 	hero.lastWhen=text("numberSmall","dim","RIGHT")
 	hero.lastResult=text("number","bright")
-	hero.lastName=text("bodyMedium","text")
+	hero.lastName=text("nameMedium","text")
 	hero.lastRealm=text("note","dim")
 	hero.lastHow=text("note","dim")
 	hero.tiles={}
@@ -1160,12 +1374,7 @@ end
 standing.WORLD_TREND=20
 
 function standing.worldRule(strip,held,index,x)
-	local rule=held.worldRules[index]
-	rule:ClearAllPoints()
-	rule:SetPoint("TOPLEFT",strip,"TOPLEFT",x,0)
-	rule:SetSize(1,A.metric("standingStrip")-1)
-	rule:SetColorTexture(A.color("insetEdge"))
-	rule:Show()
+	standing.placeRule(strip,held.worldRules[index],x)
 end
 
 function standing.worldTrend(strip,held,bars,from,to)
@@ -1463,7 +1672,8 @@ function standing.paintHero(strip,data,width)
 		held.lastGround:SetColorTexture(A.color("panel"))
 		held.lastGround:Show()
 		standing.place(strip,held.lastLabel,"LAST DUEL",boxX+pad,-2-pad)
-		standing.place(strip,held.lastWhen,last.when,boxX+boxWidth/2,-2-pad,boxWidth/2-pad)
+		local whenX=boxX+pad+(standing.width(held.lastLabel)or 60)+pad
+		standing.place(strip,held.lastWhen,last.when,whenX,-2-pad,boxX+boxWidth-pad-whenX)
 		local resultTop=-2-pad-A.fontSize("label")-4
 		standing.place(strip,held.lastResult,last.result,boxX+pad,resultTop)
 		setColor(held.lastResult,last.tone or"bright")
@@ -1508,15 +1718,7 @@ function A.duelPanelRate(row)
 	return A.percentText(rate),A.winRateTone(rate)
 end
 
-function A.duelPanelClick(guid,via)
-	if type(guid)~="string"or type(A.openPlayer)~="function"then
-		return"none"
-	end
-	local _,outcome=A.openPlayer(guid,false,via or"duel-panel")
-	return outcome or"refused"
-end
-
-function A.buildDuelPanel(parent)
+local function sidePanel(parent)
 	local panel=CreateFrame("Frame",nil,parent)
 	panel:Hide()
 	panel.ground=panel:CreateTexture(nil,"BACKGROUND")
@@ -1527,15 +1729,30 @@ function A.buildDuelPanel(parent)
 	panel.rule:SetWidth(1)
 	panel.title=standing.text(panel,HEADING_ROLE,"dim")
 	panel.title:SetPoint("TOPLEFT",panel,"TOPLEFT",10,-8)
+	return panel
+end
+
+function standing.face(owner,role,tone,justify)
+	local made=owner:CreateFontString(nil,"ARTWORK","GameFontHighlightSmall")
+	made:SetJustifyH(justify or"LEFT")
+	made:SetWordWrap(false)
+	standing.keep(owner,made,role,tone)
+	return made
+end
+
+function A.duelPanelClick(guid,via)
+	if type(guid)~="string"or type(A.openPlayer)~="function"then
+		return"none"
+	end
+	local _,outcome=A.openPlayer(guid,false,via or"duel-panel")
+	return outcome or"refused"
+end
+
+function A.buildDuelPanel(parent)
+	local panel=sidePanel(parent)
 	local head=A.metric("rowHeadRow")
 	local tall=A.metric("duelPanelRow")
-	local function face(row,role,tone,justify)
-		local made=row:CreateFontString(nil,"ARTWORK","GameFontHighlightSmall")
-		made:SetJustifyH(justify or"LEFT")
-		made:SetWordWrap(false)
-		A.style(made,role,tone)
-		return made
-	end
+	local face=standing.face
 	panel.rows={}
 	for i=1,DUEL_PANEL_ROWS do
 		local row=CreateFrame("Button",nil,panel)
@@ -1551,7 +1768,7 @@ function A.buildDuelPanel(parent)
 		row.met=face(row,"numberSmall","dim","RIGHT")
 		row.met:SetPoint("RIGHT",row.pair,"LEFT",-6,0)
 		row.met:SetWidth(30)
-		row.name=face(row,"bodyMedium","text")
+		row.name=face(row,"nameMedium","text")
 		row.name:SetPoint("TOPLEFT",row,"TOPLEFT",10,-4)
 		row.name:SetPoint("RIGHT",row.met,"LEFT",-6,0)
 		row.sub=face(row,"note","dim")
@@ -1576,6 +1793,7 @@ function A.paintDuelPanel(panel,hero,shown)
 	end
 	panel.ground:SetColorTexture(A.color("inset"))
 	panel.rule:SetColorTexture(A.color("insetEdge"))
+	standing.restyle(panel)
 	panel.title:SetText("WHO YOU DUEL")
 	panel.title:Show()
 	local tally=hero.opponents or{}
@@ -1583,13 +1801,14 @@ function A.paintDuelPanel(panel,hero,shown)
 	for i,row in ipairs(panel.rows)do
 		local entry=tally[i]
 		row.guid=entry and entry.key or nil
+		standing.restyle(row)
 		if entry then
 			row.name:SetText(entry.bare or entry.name)
 			local token=entry.key and type(hero.classes)=="table"and hero.classes[entry.key]or nil
 			if token then
 				row.name:SetTextColor(A.classColor(token))
 			else
-				A.style(row.name,"bodyMedium","text")
+				A.style(row.name,"nameMedium","text")
 			end
 			local last=entry.lastAt and A.shortDay(entry.lastAt)or nil
 			local sub={}
@@ -1610,6 +1829,195 @@ function A.paintDuelPanel(panel,hero,shown)
 	end
 	panel:Show()
 	return drawn
+end
+
+local PARTNER_PANEL_ROWS=10
+
+function A.partnerPanelRows()
+	return PARTNER_PANEL_ROWS
+end
+
+function A.partnerReading(format,windowTab)
+	local choice,season,bound
+	if windowTab then
+		choice,season,bound=A.windowScope()
+	else
+		local _
+		choice,season,_,bound=A.formatScope(format)
+	end
+	local started=A.switchClock()
+	local rows,why=A.partnerTally(format,season,A.windowCharacter(),bound)
+	A.switchPhase("partnerTally",started)
+	return rows,why,A.scopeLabel(choice)
+end
+
+local function partnerHeadSpan()
+	local titleBottom=math.max(8+A.fontSize(HEADING_ROLE),10+A.fontSize("label"))
+	return math.max(A.metric("rowHeadRow"),titleBottom+2),titleBottom
+end
+
+local function placePartnerHeads(panel)
+	local headTop,titleBottom=partnerHeadSpan()
+	local top=headTop+A.fontSize("label")+6
+	local tall=A.metric("duelPanelRow")
+	local heads=panel.heads
+	heads.last:ClearAllPoints()
+	heads.last:SetPoint("TOPRIGHT",panel,"TOPRIGHT",-10,-headTop)
+	heads.with:ClearAllPoints()
+	heads.with:SetPoint("TOPLEFT",panel,"TOPLEFT",10,-headTop)
+	heads.with:SetPoint("RIGHT",heads.wl,"LEFT",-6,0)
+	for i,row in ipairs(panel.rows)do
+		row:ClearAllPoints()
+		row:SetPoint("TOPLEFT",panel,"TOPLEFT",0,-(top+(i-1)*tall))
+		row:SetPoint("TOPRIGHT",panel,"TOPRIGHT",0,-(top+(i-1)*tall))
+	end
+	panel.footTop=top
+	return headTop,titleBottom
+end
+
+function A.buildPartnerPanel(parent)
+	local panel=sidePanel(parent)
+	panel.range=standing.text(panel,"label","dim")
+	panel.range:SetJustifyH("RIGHT")
+	panel.range:SetPoint("TOPRIGHT",panel,"TOPRIGHT",-10,-10)
+	local face=standing.face
+	local tall=A.metric("duelPanelRow")
+	local wl,rating,last=A.metric("partnerWl"),A.metric("partnerRating"),A.metric("partnerLast")
+	panel.heads={
+		last=face(panel,"label","dim","RIGHT"),
+		rating=face(panel,"label","dim","RIGHT"),
+		wl=face(panel,"label","dim","RIGHT"),
+		with=face(panel,"label","dim"),
+	}
+	panel.heads.last:SetWidth(last)
+	panel.heads.rating:SetPoint("RIGHT",panel.heads.last,"LEFT",-6,0)
+	panel.heads.rating:SetWidth(rating)
+	panel.heads.wl:SetPoint("RIGHT",panel.heads.rating,"LEFT",-6,0)
+	panel.heads.wl:SetWidth(wl)
+	panel.rows={}
+	for i=1,PARTNER_PANEL_ROWS do
+		local row=CreateFrame("Button",nil,panel)
+		row:SetHeight(tall)
+		row.last=face(row,"numberSmall","dim","RIGHT")
+		row.last:SetPoint("RIGHT",row,"RIGHT",-10,0)
+		row.last:SetWidth(last)
+		row.rating=face(row,"numberSmall","text","RIGHT")
+		row.rating:SetPoint("RIGHT",row.last,"LEFT",-6,0)
+		row.rating:SetWidth(rating)
+		row.wl=face(row,"numberSmall","text","RIGHT")
+		row.wl:SetPoint("RIGHT",row.rating,"LEFT",-6,0)
+		row.wl:SetWidth(wl)
+		row.name=face(row,"nameMedium","text")
+		row.name:SetPoint("TOPLEFT",row,"TOPLEFT",10,-4)
+		row.name:SetPoint("RIGHT",row.wl,"LEFT",-6,0)
+		row.sub=face(row,"note","dim")
+		row.sub:SetPoint("TOPLEFT",row.name,"BOTTOMLEFT",0,-2)
+		row.sub:SetPoint("RIGHT",row.wl,"LEFT",-6,0)
+		row:SetScript("OnClick",function(self)
+			A.duelPanelClick(self.guid,"partner-panel")
+		end)
+		row:Hide()
+		panel.rows[i]=row
+	end
+	panel.foot=face(panel,"note","dim")
+	panel.foot:Hide()
+	placePartnerHeads(panel)
+	return panel
+end
+
+function A.paintPartnerPanel(panel,format,shown,reason)
+	if not panel then
+		return 0,0
+	end
+	local rows,why,rangeWord
+	if shown then
+		rows,why,rangeWord=A.partnerReading(format,true)
+		if rows==nil then
+			shown,reason=false,why or"no-format"
+		end
+	end
+	if not shown then
+		panel:Hide()
+		if reason~=nil then
+			A.trace("partners",{format=tostring(format or"all"),rows=0,rest=0,reason=reason},"ui")
+		end
+		return 0,0
+	end
+
+	panel.ground:SetColorTexture(A.color("inset"))
+	panel.rule:SetColorTexture(A.color("insetEdge"))
+	standing.restyle(panel)
+	local headTop,titleBottom=placePartnerHeads(panel)
+	panel.title:SetText("PARTNERS")
+	panel.title:Show()
+	panel.range:SetText(rangeWord or"")
+	panel.range:Show()
+	local heads=panel.heads
+	local labels={with="WITH",wl="W-L",rating="RATING",last="LAST"}
+	for key,head in pairs(heads)do
+		head:SetText(labels[key])
+		head:Show()
+	end
+	local widths={
+		wl=math.max(A.metric("partnerWl"),A.headerFloor(labels.wl)),
+		rating=math.max(A.metric("partnerRating"),A.headerFloor(labels.rating)),
+		last=math.max(A.metric("partnerLast"),A.headerFloor(labels.last)),
+	}
+	local drawn=0
+	for i,row in ipairs(panel.rows)do
+		local entry=rows[i]
+		row.guid=entry and entry.key or nil
+		standing.restyle(row)
+		if entry then
+			row.name:SetText(entry.bare or entry.name or"")
+			if entry.classToken then
+				row.name:SetTextColor(A.classColor(entry.classToken))
+			else
+				setColor(row.name,"text")
+			end
+			row.sub:SetText(A.partnerSpecText(entry)or"")
+			local pair,pairTone=A.partnerRecordText(entry)
+			row.wl:SetText(pair)
+			setColor(row.wl,pairTone or"text")
+			local change,changeTone=A.partnerRatingText(entry)
+			row.rating:SetText(change or"")
+			setColor(row.rating,changeTone or"text")
+			local day=entry.lastAt and A.shortDay(entry.lastAt)or""
+			row.last:SetText(day)
+			widths.wl=math.max(widths.wl,A.textRoom(row.wl,pair))
+			widths.rating=math.max(widths.rating,A.textRoom(row.rating,change))
+			widths.last=math.max(widths.last,A.textRoom(row.last,day))
+			row:Show()
+			drawn=drawn+1
+		else
+			row:Hide()
+		end
+	end
+	local cut=0
+	for key,width in pairs(widths)do
+		heads[key]:SetWidth(width)
+		if A.textRoom(heads[key],labels[key])>(A.unitFigure(width)or width)then
+			cut=cut+1
+		end
+		for _,row in ipairs(panel.rows)do
+			row[key]:SetWidth(width)
+		end
+	end
+	panel.cut=cut
+	local rest=math.max(0,#rows-drawn)
+	if drawn==0 then
+		panel.foot:SetText("no partners yet")
+	elseif rest>0 then
+		panel.foot:SetText(("%d more %s"):format(rest,rest==1 and"partner"or"partners"))
+	end
+	panel.foot:ClearAllPoints()
+	panel.foot:SetPoint("TOPLEFT",panel,"TOPLEFT",10,
+		-(panel.footTop+drawn*A.metric("duelPanelRow")+4))
+	panel.foot:SetShown(drawn==0 or rest>0)
+	panel:Show()
+	A.trace("partners",{format=tostring(format),rows=drawn,rest=rest,reason="none",cut=cut,
+		headTop=headTop,titleBottom=titleBottom},"ui")
+	return drawn,rest
 end
 
 function A.traceHeroTab(format,hero,rows,panelRows)
@@ -1658,25 +2066,25 @@ local function buildTile(parent)
 	tile.label:SetPoint("TOPLEFT",tile,"TOPLEFT",pad,-pad)
 	tile.label:SetJustifyH("LEFT")
 	tile.label:SetWordWrap(false)
-	A.style(tile.label,"label","dim")
+	standing.keep(tile,tile.label,"label","dim")
 
 	tile.value=tile:CreateFontString(nil,"ARTWORK","GameFontNormal")
 	tile.value:SetPoint("TOPLEFT",tile.label,"BOTTOMLEFT",0,-A.metric("tileLabelGap"))
 	tile.value:SetJustifyH("LEFT")
 	tile.value:SetWordWrap(false)
-	A.style(tile.value,"number","bright")
+	standing.keep(tile,tile.value,"number","bright")
 
 	tile.note=tile:CreateFontString(nil,"ARTWORK","GameFontDisableSmall")
 	tile.note:SetPoint("TOPLEFT",tile.value,"BOTTOMLEFT",0,-A.metric("tileValueGap"))
 	tile.note:SetJustifyH("LEFT")
 	tile.note:SetWordWrap(false)
-	A.style(tile.note,"note","dim")
+	standing.keep(tile,tile.note,"note","dim")
 
 	tile.beside=tile:CreateFontString(nil,"ARTWORK","GameFontDisableSmall")
 	tile.beside:SetPoint("BOTTOMRIGHT",tile,"BOTTOMRIGHT",-pad,pad)
 	tile.beside:SetJustifyH("RIGHT")
 	tile.beside:SetWordWrap(false)
-	A.style(tile.beside,"rowNote","dim")
+	standing.keep(tile,tile.beside,"rowNote","dim")
 	tile.beside:Hide()
 
 	tile.moment=tile:CreateFontString(nil,"ARTWORK","GameFontDisableSmall")
@@ -1684,7 +2092,7 @@ local function buildTile(parent)
 		-pad-A.metric("tileDoorMark")-pad,-pad)
 	tile.moment:SetJustifyH("RIGHT")
 	tile.moment:SetWordWrap(false)
-	A.style(tile.moment,"label","dimmer")
+	standing.keep(tile,tile.moment,"label","dimmer")
 	tile.moment:Hide()
 
 	tile.lane=tile:CreateTexture(nil,"OVERLAY")
@@ -1857,6 +2265,7 @@ local function setTile(tile,label,value,note,valueColor,noteColor,width,extra)
 		return false
 	end
 	extra=type(extra)=="table"and extra or{}
+	standing.restyle(tile)
 
 	tile.label:SetText(label)
 	tile.value:SetText(value)
@@ -2330,6 +2739,13 @@ function A.panelMmr(series,first,last)
 	return out
 end
 
+function A.seriesAdjacent(from,to)
+	if type(from)~="table"or type(to)~="table"then
+		return false
+	end
+	return from.step==nil or to.step==nil or to.step==from.step+1
+end
+
 local function drawSeries(plot,series,showMmr,note)
 	if not seriesDrawable(series)then
 		hideLinesFrom(plot,1)
@@ -2384,6 +2800,14 @@ local function drawSeries(plot,series,showMmr,note)
 		if not panels[p].joined then
 			for i=panels[p].first,panels[p].last do
 				loose[#loose+1]=i
+			end
+		else
+			for i=panels[p].first,panels[p].last do
+				local before=i>panels[p].first and A.seriesAdjacent(series[i-1],series[i])
+				local after=i<panels[p].last and A.seriesAdjacent(series[i],series[i+1])
+				if not before and not after then
+					loose[#loose+1]=i
+				end
 			end
 		end
 	end
@@ -2494,7 +2918,7 @@ local function drawSeries(plot,series,showMmr,note)
 			mark:SetEndPoint("BOTTOMLEFT",plot,x,foot+height)
 		end
 
-		if from.season==to.season and(panelOf[i]or panels[1]).joined then
+		if from.season==to.season and(panelOf[i]or panels[1]).joined and A.seriesAdjacent(from,to)then
 			local x1,y1=place(i-1,from.rating)
 			local x2,y2=place(i,to.rating)
 			if showMmr and type(from.mmr)=="number"and type(to.mmr)=="number"
@@ -2554,12 +2978,12 @@ local function buildOpponentRow(parent,index)
 	row.name:SetPoint("LEFT",row,"LEFT",0,0)
 	row.name:SetJustifyH("LEFT")
 	row.name:SetWordWrap(false)
-	A.style(row.name,"bodyText","text")
+	standing.keep(row,row.name,"bodyText","text")
 
 	row.record=row:CreateFontString(nil,"ARTWORK","GameFontHighlightSmall")
 	row.record:SetPoint("LEFT",row,"LEFT",210,0)
 	row.record:SetJustifyH("LEFT")
-	A.style(row.record,"numberSmall")
+	standing.keep(row,row.record,"numberSmall")
 
 	return row
 end
@@ -2577,6 +3001,7 @@ local function paintOpponents(region,rows)
 	for i=1,OPPONENT_ROWS do
 		local row=region.opponents[i]
 		local entry=i<=shown and rows[i]or nil
+		standing.restyle(row)
 		if entry then
 			local bare,realm=A.nameParts(entry.name)
 			local token=entry.key~=nil and classes[entry.key]or nil
@@ -2611,24 +3036,25 @@ function A.buildSummaryRegion(parent,controlHost,scopeChoices,onScopePick,onDeta
 
 	local host=controlHost or region
 
+	region.headline={}
 	region.fromValue=region:CreateFontString(nil,"ARTWORK","GameFontNormalLarge")
 	region.fromValue:SetPoint("TOPLEFT",region,"TOPLEFT",0,-2)
 	region.fromValue:SetJustifyH("LEFT")
-	A.style(region.fromValue,"numberHuge","dim")
+	standing.keep(region.headline,region.fromValue,"numberHuge","dim")
 
 	region.link=region:CreateFontString(nil,"ARTWORK","GameFontNormal")
 	region.link:SetPoint("LEFT",region.fromValue,"RIGHT",A.metric("headlineJoin"),-1)
-	A.style(region.link,"bodyMedium","dim")
+	standing.keep(region.headline,region.link,"bodyMedium","dim")
 
 	region.toValue=region:CreateFontString(nil,"ARTWORK","GameFontNormalLarge")
 	region.toValue:SetPoint("LEFT",region.link,"RIGHT",A.metric("headlineJoin"),1)
 	region.toValue:SetJustifyH("LEFT")
-	A.style(region.toValue,"numberHuge","bright")
+	standing.keep(region.headline,region.toValue,"numberHuge","bright")
 
 	region.delta=region:CreateFontString(nil,"ARTWORK","GameFontHighlightSmall")
 	region.delta:SetPoint("TOPLEFT",region.fromValue,"BOTTOMLEFT",0,-4)
 	region.delta:SetJustifyH("LEFT")
-	A.style(region.delta,"numberSmall","dim")
+	standing.keep(region.headline,region.delta,"numberSmall","dim")
 
 	region.tiles={}
 	for i=1,TILE_COUNT do
@@ -2641,56 +3067,52 @@ function A.buildSummaryRegion(parent,controlHost,scopeChoices,onScopePick,onDeta
 	end
 
 	if type(A.pill)=="function"then
-		region.details=A.pill(host,"Details",onDetailsToggle)
-		region.details:SetHeight(A.metric("segmentHeight"))
-		region.details.controlRole="label"
-		A.setControlTone(region.details,"dim")
-	end
-
-	if type(A.pill)=="function"then
-		region.graphToggle=A.pill(host,"Graph",onGraphFold)
-		region.graphToggle:SetHeight(A.metric("segmentHeight"))
-		region.graphToggle.controlRole="label"
-		A.setControlTone(region.graphToggle,"dim")
-	end
-
-	if type(A.pill)=="function"then
-		region.specsToggle=A.pill(host,"Specs",function()
-			if type(A.clickSpecsView)=="function"then
-				A.clickSpecsView()
-			end
-		end)
-		region.specsToggle:SetHeight(A.metric("segmentHeight"))
-		region.specsToggle.controlRole="label"
-		A.setControlTone(region.specsToggle,"dim")
-		region.specsToggle:Hide()
-	end
-
-	if type(A.pill)=="function"then
-		region.mapsToggle=A.pill(host,"Maps",function()
-			if type(A.clickMapsView)=="function"then
-				A.clickMapsView()
-			end
-		end)
-		region.mapsToggle:SetHeight(A.metric("segmentHeight"))
-		region.mapsToggle.controlRole="label"
-		A.setControlTone(region.mapsToggle,"dim")
-		region.mapsToggle:Hide()
-	end
-
-	if type(A.pill)=="function"then
-		for _,pair in ipairs({{"bestsToggle","Bests","bests"},{"buildsToggle","Builds","builds"}})do
-			local view=pair[3]
-			local pill=A.pill(host,pair[2],function()
-				if type(A.clickTableView)=="function"then
-					A.clickTableView(view)
-				end
-			end)
+		local function dress(pill)
 			pill:SetHeight(A.metric("segmentHeight"))
 			pill.controlRole="label"
 			A.setControlTone(pill,"dim")
+			return pill
+		end
+
+		region.details=dress(A.pill(host,"Details",onDetailsToggle))
+
+		region.graphToggle=dress(A.pill(host,"Graph",onGraphFold))
+
+		region.specsToggle=dress(A.pill(host,"Specs",function()
+			if type(A.clickSpecsView)=="function"then
+				A.clickSpecsView()
+			end
+		end))
+		region.specsToggle:Hide()
+
+		region.mapsToggle=dress(A.pill(host,"Maps",function()
+			if type(A.clickMapsView)=="function"then
+				A.clickMapsView()
+			end
+		end))
+		region.mapsToggle:Hide()
+
+		for _,pair in ipairs({{"bestsToggle","Bests","bests"},{"buildsToggle","Builds","builds"}})do
+			local view=pair[3]
+			local pill=dress(A.pill(host,pair[2],function()
+				if type(A.clickTableView)=="function"then
+					A.clickTableView(view)
+				end
+			end))
 			pill:Hide()
 			region[pair[1]]=pill
+		end
+
+		region.mmrToggle=A.pill(host,"MMR line",function()
+			A.setMmrLine(not A.mmrLineEnabled())
+		end)
+		region.followToggle=A.pill(host,"figures follow",function()
+			if type(A.setFiguresFollow)=="function"then
+				A.setFiguresFollow(not A.figuresFollow())
+			end
+		end)
+		for _,pill in ipairs({region.mmrToggle,region.followToggle})do
+			dress(pill):Hide()
 		end
 	end
 
@@ -2698,6 +3120,15 @@ function A.buildSummaryRegion(parent,controlHost,scopeChoices,onScopePick,onDeta
 	region.reading.bg=region.reading:CreateTexture(nil,"BACKGROUND")
 	region.reading.bg:SetAllPoints(region.reading)
 	region.reading.rows={}
+	region.reading.thumb=region.reading:CreateTexture(nil,"OVERLAY")
+	region.reading.thumb:Hide()
+	region.reading:EnableMouseWheel(true)
+	region.reading:SetScript("OnMouseWheel",function(_,delta)
+		if type(delta)=="number"and delta~=0 and region.reading.height~=nil then
+			region.readingOffset=math.max(0,(region.readingOffset or 0)-(delta>0 and 1 or-1))
+			A.layoutReading(region,region.reading.height)
+		end
+	end)
 	for i=1,READING_ROWS do
 		local row=CreateFrame("Frame",nil,region.reading)
 		row:SetHeight(A.metric("readingRow"))
@@ -2806,6 +3237,7 @@ function A.buildSummaryRegion(parent,controlHost,scopeChoices,onScopePick,onDeta
 end
 
 local function paintHeadline(region,summary)
+	standing.restyle(region.headline)
 	if summary.rating~=nil then
 		local oneLadder=type(A.seriesSeasons)~="function"
 		or select(2,pcall(A.seriesSeasons,summary.series))==1
@@ -2995,6 +3427,8 @@ local function viewRowWidths(region,head)
 		maps=controlWidth(region.mapsToggle),
 		builds=controlWidth(region.buildsToggle),
 		bests=controlWidth(region.bestsToggle),
+		mmr=controlWidth(region.mmrToggle),
+		follow=controlWidth(region.followToggle),
 	}
 end
 
@@ -3219,13 +3653,59 @@ function A.statsPillView(open)
 	return nil
 end
 
+function A.mmrLineEnabled()
+	local db=A.db()
+	return not(db and type(db.ui)=="table"and db.ui.mmrLine==false)
+end
+
+function A.setMmrLine(on)
+	local db=A.db and A.db()
+	if not(db and type(db.ui)=="table")then
+		return false
+	end
+	if on==false then
+		db.ui.mmrLine=false
+	else
+		db.ui.mmrLine=nil
+	end
+	if type(A.notifyMmrLineSetting)=="function"then
+		A.notifyMmrLineSetting()
+	end
+	if type(A.refreshWindow)=="function"then
+		local ok,err=pcall(A.refreshWindow)
+		if not ok then
+			A.noteError(err,"mmr-line-setting")
+		end
+	end
+	return true
+end
+
+function A.mmrLineState(summary)
+	if A.mmrLineOffered(summary)~=true then
+		return"no-coverage"
+	end
+	return A.mmrLineEnabled()and"drawn"or"off"
+end
+
+local function paintMmrToggle(region,summary,graphFolded)
+	if not region.mmrToggle then
+		return false
+	end
+	local offered=not graphFolded and A.mmrLineOffered(summary)==true
+	region.mmrToggle:SetShown(offered)
+	if offered then
+		A.setPillSelected(region.mmrToggle,A.mmrLineEnabled())
+	end
+	return offered
+end
+
 local function paintGraphToggle(region,summary,folded)
 	if not region.graphToggle then
 		return false
 	end
 
 	local foldable=seriesDrawable(summary.series)and summary.rating~=nil or barsDrawable(summary)
-	region.graphToggle:SetShown(foldable and true or false)
+	region.graphToggle:SetShown(foldable)
 	if not foldable then
 		return false
 	end
@@ -3297,11 +3777,177 @@ function A.statsFolds(summary,lines,season,bound,collapsed,graphFolded,region)
 	return collapsed,graphFolded,sole
 end
 
+local SEASON_CARD_CELLS=8
+local SEASON_CARD_PATH=18
+local SEASON_CARD_BARS=60
+
+function A.seasonCardHeight(cells)
+	local count=type(cells)=="number"and cells or 0
+	if count<1 then
+		return 0
+	end
+	return A.metric("readingPad")*2+A.metric("segmentHeight")+count*A.metric("readingRow")
+		+SEASON_CARD_PATH+A.metric("stripGap")
+end
+
+local function buildSeasonCard(region)
+	local card=CreateFrame("Frame",nil,region)
+	card.bg=card:CreateTexture(nil,"BACKGROUND")
+	card.bg:SetAllPoints(card)
+	card.title=card:CreateFontString(nil,"ARTWORK","GameFontHighlightSmall")
+	card.title:SetJustifyH("LEFT")
+	card.title:SetWordWrap(false)
+	card.cells={}
+	for i=1,SEASON_CARD_CELLS do
+		local key=card:CreateFontString(nil,"ARTWORK","GameFontHighlightSmall")
+		key:SetJustifyH("LEFT")
+		key:SetWordWrap(false)
+		local text=card:CreateFontString(nil,"ARTWORK","GameFontHighlightSmall")
+		text:SetJustifyH("LEFT")
+		text:SetWordWrap(false)
+		card.cells[i]={key=key,text=text}
+	end
+	card.bars={}
+	for i=1,SEASON_CARD_BARS do
+		card.bars[i]=card:CreateTexture(nil,"ARTWORK")
+		card.bars[i]:Hide()
+	end
+	if type(A.pill)=="function"then
+		card.copy=A.pill(card,"Copy as text",function()
+			local held=card.drawn
+			if type(held)~="table"or type(A.showCopyBox)~="function"then
+				return
+			end
+			A.showCopyBox(nil,"YOUR SEASON",held.title..", "..held.label,
+				table.concat(A.seasonCardText(held),"\n"),"season-card")
+		end)
+		card.copy:SetHeight(A.metric("segmentHeight"))
+		card.copy.controlRole="label"
+		A.setControlTone(card.copy,"dim")
+	end
+	card:Hide()
+	return card
+end
+
+local function paintSeasonCard(region,held)
+	if region.seasonCard==nil and type(held)=="table"then
+		region.seasonCard=buildSeasonCard(region)
+	end
+	local card=region.seasonCard
+	if not card then
+		return 0
+	end
+	if type(held)~="table"then
+		card.drawn=nil
+		card:Hide()
+		return 0
+	end
+	card.drawn=held
+	local pad=A.metric("readingPad")
+	local height=A.seasonCardHeight(#held.cells)-A.metric("stripGap")
+	card:SetHeight(height)
+	card.bg:SetColorTexture(A.color("panelDeep"))
+
+	local about={held.title,held.label}
+	about[#about+1]=held.character
+	about[#about+1]=held.span
+	about[#about+1]=held.hours and(held.hours.." played")or nil
+	A.style(card.title,"label","text")
+	card.title:SetText("YOUR SEASON  "..table.concat(about,", "))
+	card.title:ClearAllPoints()
+	card.title:SetPoint("TOPLEFT",card,"TOPLEFT",pad,-pad)
+	if card.copy then
+		card.copy:ClearAllPoints()
+		card.copy:SetPoint("TOPRIGHT",card,"TOPRIGHT",-pad,-pad)
+		card.copy:Show()
+		card.title:SetPoint("RIGHT",card.copy,"LEFT",-A.metric("pillGap"),0)
+	end
+
+	local keyRoom=0
+	for i=1,#held.cells do
+		keyRoom=math.max(keyRoom,A.headerFloor(held.cells[i].key))
+	end
+	for i=1,SEASON_CARD_CELLS do
+		local row,cell=card.cells[i],held.cells[i]
+		if cell~=nil then
+			local y=-pad-A.metric("segmentHeight")-(i-1)*A.metric("readingRow")
+			A.style(row.key,"label","dim")
+			A.style(row.text,"note","text")
+			row.key:SetText(cell.key)
+			row.key:SetWidth(keyRoom)
+			row.key:ClearAllPoints()
+			row.key:SetPoint("TOPLEFT",card,"TOPLEFT",pad,y)
+			row.text:SetText(cell.text)
+			row.text:ClearAllPoints()
+			row.text:SetPoint("TOPLEFT",card,"TOPLEFT",pad+keyRoom+A.metric("pillGap"),y)
+			row.text:SetPoint("RIGHT",card,"RIGHT",-pad,0)
+			row.key:Show()
+			row.text:Show()
+		else
+			row.key:Hide()
+			row.text:Hide()
+		end
+	end
+
+	local lo,hi
+	for _,step in ipairs(held.path or{})do
+		if step.rating~=nil then
+			lo=(lo==nil or step.rating<lo)and step.rating or lo
+			hi=(hi==nil or step.rating>hi)and step.rating or hi
+		end
+	end
+	local width=A.listHostWidth(false)-pad*2
+	local weeks=math.min(#(held.path or{}),SEASON_CARD_BARS)
+	local slot=weeks>0 and width/weeks or 0
+	local drawn=0
+	for i=1,SEASON_CARD_BARS do
+		local bar,step=card.bars[i],held.path and held.path[i]
+		if i<=weeks and step and step.rating~=nil then
+			local share=(hi~=nil and hi>lo)and(step.rating-lo)/(hi-lo)or 1
+			bar:SetColorTexture(tierTone(held.format,step.rating))
+			bar:ClearAllPoints()
+			bar:SetPoint("BOTTOMLEFT",card,"BOTTOMLEFT",pad+(i-1)*slot,pad)
+			bar:SetSize(math.max(1,math.floor(slot*0.6)),math.max(2,SEASON_CARD_PATH*(0.25+0.75*share)-pad))
+			bar:Show()
+			drawn=drawn+1
+		else
+			bar:Hide()
+		end
+	end
+	card.barsDrawn=drawn
+	card:Show()
+	return height+A.metric("stripGap")
+end
+
+local keyFace
+
+function A.readingKeyColumn(keys)
+	local width=A.metric("readingKeyWidth")
+	if type(keys)~="table"or#keys==0 then
+		return width
+	end
+	if keyFace==nil then
+		local holder=CreateFrame("Frame",nil,UIParent)
+		holder:Hide()
+		keyFace=holder:CreateFontString(nil,"ARTWORK")
+	end
+	A.style(keyFace,"label","dim")
+	for _,key in ipairs(keys)do
+		width=math.max(width,A.textRoom(keyFace,key))
+	end
+	return width
+end
+
 local function paintReading(region,lines,collapsed,headline)
 	local shown=#lines
 	if shown>READING_ROWS then
 		shown=READING_ROWS
 	end
+	local keys={}
+	for i=1,shown do
+		keys[i]=lines[i].key
+	end
+	local column=A.readingKeyColumn(keys)
 
 	local bands=A.summaryBands({
 		lines=#lines,
@@ -3309,6 +3955,7 @@ local function paintReading(region,lines,collapsed,headline)
 		collapsed=collapsed,
 	})
 	local draws=A.bandShown(bands[1])
+	local cut=0
 
 	for i=1,READING_ROWS do
 		local row=region.reading.rows[i]
@@ -3322,14 +3969,59 @@ local function paintReading(region,lines,collapsed,headline)
 			row.text:SetText(lines[i].text)
 			A.style(row.key,"label","dim")
 			A.style(row.text,"note","text")
+			row.key:SetWidth(column)
+			row.text:ClearAllPoints()
+			row.text:SetPoint("TOPLEFT",row,"TOPLEFT",column+A.metric("readingKeyGap"),0)
+			row.text:SetPoint("TOPRIGHT",row,"TOPRIGHT",0,0)
 			row:Show()
+			if A.textRoom(row.key,lines[i].key)>(A.unitFigure(row.key:GetWidth())or column)then
+				cut=cut+1
+			end
 		else
 			row:Hide()
 		end
 	end
 
 	region.reading.bg:SetColorTexture(A.color("panelDeep"))
-	return A.readingHeight(draws and shown or 0,collapsed),#lines
+	region.readingShown=(draws and not collapsed)and shown or 0
+	return A.readingHeight(draws and shown or 0,collapsed),#lines,column,cut
+end
+
+function A.layoutReading(region,height)
+	local reading=region.reading
+	local count=region.readingShown or 0
+	local pad,step=A.metric("readingPad"),A.metric("readingRow")
+	local visible=math.max(1,math.floor((height-pad*2)/step+0.01))
+	local scrolls=count>visible
+	local offset=scrolls and math.max(0,math.min(region.readingOffset or 0,count-visible))or 0
+	region.readingOffset=offset
+	reading.height=height
+	for i=1,READING_ROWS do
+		local row=reading.rows[i]
+		local slot=i-offset
+		if i<=count and slot>=1 and slot<=visible then
+			row:ClearAllPoints()
+			row:SetPoint("TOPLEFT",reading,"TOPLEFT",0,-pad-(slot-1)*step)
+			row:SetPoint("TOPRIGHT",reading,"TOPRIGHT",0,-pad-(slot-1)*step)
+			row:Show()
+		else
+			row:Hide()
+		end
+	end
+	local thumb=reading.thumb
+	if scrolls then
+		local track=height-pad*2
+		local size=math.max(4,math.floor(track*visible/count))
+		thumb:ClearAllPoints()
+		thumb:SetPoint("TOPRIGHT",reading,"TOPRIGHT",0,
+			-pad-math.floor((track-size)*offset/(count-visible)))
+		thumb:SetSize(3,size)
+		thumb:SetColorTexture(A.color("insetEdge"))
+		thumb:Show()
+	else
+		thumb:Hide()
+	end
+	return scrolls,math.min(count,visible)
 end
 
 local BAR_WIDTH_CAP=12
@@ -3346,25 +4038,35 @@ local lastBarPlotWidth=nil
 local function setRegionPlot(region,branch,height,format,headline,reading,lines,grow,note)
 	local drawing,legend=A.plotShape(branch)
 	local noteRow=note==false and 0 or A.noteRowHeight()
-	local want=type(reading)=="number"and reading or 0
-	if want<0 then
-		want=0
+	local want=atLeastNought(reading)
+	local wanted=want
+	if drawing and legend and want>A.readingReserve()then
+		want=A.readingReserve()
 	end
 	local ceiling=A.readingRoom(headline)
+	local over=0
 	if want>ceiling then
-		want=ceiling
+		over=want-ceiling
 	end
 	local gain=legend and A.plotGain(grow,want)or 0
 	local folded=branch=="folded"
-	local total=height
-		or(legend and(A.summaryHeight(headline)+gain)
+	local card=type(region.cardRoom)=="number"and region.cardRoom or 0
+	local strip=A.stripHeight(headline)
+	local base=height
+		or(legend and(A.summaryHeight(headline)+gain+over)
 			or(folded and A.summaryHeightFolded(headline,want))
 			or A.summaryHeightNoPlot(headline,want,note))
-	local strip=A.stripHeight(headline)
+	local give=0
+	if drawing and card>0 then
+		local held=want<base-strip-A.metric("stripGap")-noteRow and want
+			or math.max(0,base-strip-A.metric("stripGap")-noteRow)
+		give=math.max(0,math.min(card,base-strip-A.metric("stripGap")-held-A.plotFloor()))
+	end
+	local total=base+card-give
 	region:SetHeight(total)
 
 	local read=want
-	local most=total-strip-A.metric("stripGap")-noteRow
+	local most=total-card-strip-A.metric("stripGap")-noteRow
 	if most<0 then
 		most=0
 	end
@@ -3372,10 +4074,16 @@ local function setRegionPlot(region,branch,height,format,headline,reading,lines,
 		read=most
 	end
 
-	local plot=total-strip-A.metric("stripGap")-read
+	local plot=total-card-strip-A.metric("stripGap")-read
 
-	local top=strip+A.metric("stripGap")
+	local top=strip+A.metric("stripGap")+card
+	if region.seasonCard and card>0 then
+		region.seasonCard:ClearAllPoints()
+		region.seasonCard:SetPoint("TOPLEFT",region,"TOPLEFT",0,-(strip+A.metric("stripGap")))
+		region.seasonCard:SetPoint("TOPRIGHT",region,"TOPRIGHT",0,-(strip+A.metric("stripGap")))
+	end
 	local plotTop,readTop=top+read,top
+	local readScroll=false
 	if drawing then
 		plotTop,readTop=top,top+plot+A.metric("readingGap")
 	end
@@ -3389,13 +4097,14 @@ local function setRegionPlot(region,branch,height,format,headline,reading,lines,
 		region.reading:SetPoint("TOPRIGHT",region,"TOPRIGHT",0,-readTop)
 		region.reading:SetHeight(read-A.metric("readingGap"))
 		region.reading:Show()
+		readScroll=A.layoutReading(region,read-A.metric("readingGap"))
 	else
 		region.reading:Hide()
 	end
-	region.plotLabel:SetShown(drawing and true or false)
+	region.plotLabel:SetShown(drawing)
 
 	if region.plotSpan then
-		region.plotSpan:SetShown(folded and true or false)
+		region.plotSpan:SetShown(folded)
 	end
 
 	local noteAt,noteJustify,ownLine=plotNoteAnchor(drawing,legend)
@@ -3422,10 +4131,14 @@ local function setRegionPlot(region,branch,height,format,headline,reading,lines,
 		pcall(A.trace,"summary/region",{
 			format=format,
 			reason=branch,
+			graphFoldBy=region.graphFoldBy or"none",
 			total=total,
 			strip=strip,
 			plot=plot,
 			reading=read,
+			over=wanted-read,
+			readScroll=readScroll,
+			heightRoom=A.summaryHeight(headline)+gain,
 			lines=type(lines)=="number"and lines or 0,
 			head=headline~=false and headline~="standing",
 			tiles=A.tileHeight(),
@@ -3492,8 +4205,8 @@ local function paintBarKeys(region,shown)
 			key.swatch:SetColorTexture(r,g,b,1)
 			A.style(key.label,"note","dimmer")
 		end
-		key.swatch:SetShown(shown and true or false)
-		key.label:SetShown(shown and true or false)
+		key.swatch:SetShown(shown)
+		key.label:SetShown(shown)
 	end
 end
 
@@ -3732,10 +4445,27 @@ function A.paintStandingStrip(region,summary,reading)
 	end
 	local height=A.metric("standingStrip")
 	region:SetHeight(height)
-	local drew=standing.paint(region,reading)
+	local drew=standing.paint(region,reading,summary)
 	standing.traceStrip(summary,reading,drew,height,"history")
 	region.standingShape=type(drew)=="table"and drew.shape or nil
 	return drew
+end
+
+local function placePills(region,pills,outside,order,clusterHost)
+	for i=#pills,1,-1 do
+		local pill=region[pills[i][2]]
+		if pill and pill:IsShown()then
+			pill:ClearAllPoints()
+			if outside~=nil then
+				pill:SetPoint("RIGHT",outside,"LEFT",-A.metric("pillGap"),0)
+			else
+				pill:SetPoint("TOPRIGHT",clusterHost,"TOPRIGHT",0,-A.metric("segmentTrackPad"))
+			end
+			outside=pill
+			table.insert(order,1,pills[i][1])
+		end
+	end
+	return outside
 end
 
 function A.paintSummaryRegion(region,summary,scope,reading)
@@ -3758,6 +4488,22 @@ function A.paintSummaryRegion(region,summary,scope,reading)
 		end
 	end
 
+	if type(reading)=="table"and reading.stripOnly==true and type(reading.standing)=="table"then
+		region.fromValue:Hide()
+		region.link:Hide()
+		region.toValue:Hide()
+		region.delta:Hide()
+		for i=1,#region.tiles do
+			stowTile(region.tiles[i])
+		end
+		region.reading:Hide()
+		region.plot:Hide()
+		region.cardRoom=paintSeasonCard(region,nil)
+		region.stripShort,region.stripBare=nil,nil
+		A.paintStandingStrip(region,summary,reading.standing)
+		return true
+	end
+
 	local stripHead=type(reading)=="table"and reading.stripOnly~=true
 		and type(reading.standing)=="table"
 	local headline=stripHead and"standing"or(summary.rating~=nil)
@@ -3775,13 +4521,43 @@ function A.paintSummaryRegion(region,summary,scope,reading)
 	end
 
 	local lines=A.readingLines(summary,notRated,true)
-	paintDetails(region,#lines,headline,collapsed)
 
-	local graphFolded=type(reading)=="table"and reading.graphFolded==true
-		and(seriesDrawable(summary.series)and summary.rating~=nil or barsDrawable(summary))or false
+	local cardHeld=nil
+	if not(type(reading)=="table"and reading.stripOnly==true)then
+		local cardSeason=type(reading)=="table"and reading.season or nil
+		local cardStarted=A.switchClock()
+		local okCard,held=pcall(A.seasonCard,summary.format,cardSeason,summary.character)
+		A.switchPhase("seasonFigures",cardStarted)
+		if not okCard then
+			A.noteError(held,"season-card")
+		end
+		cardHeld=okCard and type(held)=="table"and held or nil
+	end
+	region.cardRoom=paintSeasonCard(region,cardHeld)
+	local cardFoldsDetails=region.cardRoom>A.plotCeiling()-A.plotFloor()
+	collapsed=collapsed or cardFoldsDetails
+	paintDetails(region,#lines,headline,collapsed)
+	if cardFoldsDetails and region.details then
+		region.details:Hide()
+	end
+
+	local foldable=seriesDrawable(summary.series)and summary.rating~=nil or barsDrawable(summary)
+	local graphFolded=(type(reading)=="table"and reading.graphFolded==true)and foldable or false
+	local foldBy="none"
+	if foldable and type(A.graphFoldSource)=="function"then
+		foldBy=A.graphFoldSource()
+	end
 	paintGraphToggle(region,summary,graphFolded)
 
-	local showMmr=A.mmrLineOffered(summary)==true
+	local mmrState=A.mmrLineState(summary)
+	local showMmr=mmrState=="drawn"
+	paintMmrToggle(region,summary,graphFolded)
+	if region.followToggle then
+		local follow=type(A.figuresFollow)=="function"and A.figuresFollow()
+		local narrowing=type(A.listNarrowed)=="function"and A.listNarrowed()
+		region.followToggle:SetShown((follow or narrowing)and true or false)
+		A.setPillSelected(region.followToggle,follow and true or false)
+	end
 
 	local clusterHost=region.controlHost or region
 	if region.specsToggle then
@@ -3803,6 +4579,7 @@ function A.paintSummaryRegion(region,summary,scope,reading)
 	local sole
 	collapsed,graphFolded,sole=A.statsFolds(summary,#lines,nil,nil,collapsed,graphFolded,region)
 	region.soleView=sole
+	region.graphFoldBy=sole=="graph"and foldable and"sole"or foldBy
 	if sole=="graph"and region.graphToggle then
 		region.graphToggle:Hide()
 	elseif sole=="details"and region.details then
@@ -3811,19 +4588,8 @@ function A.paintSummaryRegion(region,summary,scope,reading)
 
 	local outside=region.scope and region.scope:IsShown()and region.scope or nil
 	local order={}
-	for i=#VIEW_PILLS,1,-1 do
-		local pill=region[VIEW_PILLS[i][2]]
-		if pill and pill:IsShown()then
-			pill:ClearAllPoints()
-			if outside~=nil then
-				pill:SetPoint("RIGHT",outside,"LEFT",-A.metric("pillGap"),0)
-			else
-				pill:SetPoint("TOPRIGHT",clusterHost,"TOPRIGHT",0,-A.metric("segmentTrackPad"))
-			end
-			outside=pill
-			table.insert(order,1,VIEW_PILLS[i][1])
-		end
-	end
+	outside=placePills(region,VIEW_PILLS,outside,order,clusterHost)
+	placePills(region,SWITCH_PILLS,outside,order,clusterHost)
 	region.pillOrder=#order>0 and table.concat(order,",")or"none"
 
 	local tableHeld=type(A.tableViewShown)=="function"and A.tableViewShown()or nil
@@ -3857,7 +4623,7 @@ function A.paintSummaryRegion(region,summary,scope,reading)
 		for i=1,#region.tiles do
 			stowTile(region.tiles[i])
 		end
-		stripDrew=standing.paint(region,reading.standing)
+		stripDrew=standing.paint(region,reading.standing,summary)
 		standing.traceStrip(summary,reading.standing,stripDrew,A.metric("standingStrip"),"stats")
 	else
 		short=paintTiles(region,summary,
@@ -3870,19 +4636,6 @@ function A.paintSummaryRegion(region,summary,scope,reading)
 
 	region.stripBare=nil
 
-	if type(reading)=="table"and reading.stripOnly==true and type(reading.standing)=="table"then
-		region.fromValue:Hide()
-		region.link:Hide()
-		region.toValue:Hide()
-		region.delta:Hide()
-		for i=1,#region.tiles do
-			stowTile(region.tiles[i])
-		end
-		region.reading:Hide()
-		region.plot:Hide()
-		A.paintStandingStrip(region,summary,reading.standing)
-		return true
-	end
 	if stripHead then
 		region.standingShape=type(stripDrew)=="table"and stripDrew.shape or nil
 	else
@@ -3894,6 +4647,7 @@ function A.paintSummaryRegion(region,summary,scope,reading)
 		local strip=A.stripHeight(headline)
 		region.reading:Hide()
 		region.plot:Hide()
+		region.cardRoom=paintSeasonCard(region,nil)
 		region:SetHeight(strip)
 		if type(A.trace)=="function"then
 			pcall(A.trace,"summary/region",{
@@ -3919,7 +4673,19 @@ function A.paintSummaryRegion(region,summary,scope,reading)
 	end
 	region.plot:Show()
 
-	local readingHeight,readingCount=paintReading(region,lines,collapsed,headline)
+	pcall(A.trace,"summary",{format=summary.format,follow=summary.followed==true,
+		bound=summary.matches,seasonCard=cardHeld~=nil,
+		cells=cardHeld and#cardHeld.cells or 0,
+		cardFold=cardFoldsDetails and"details"or"none"},"ui")
+
+	local readingHeight,readingCount,keyWidth,keyCut=paintReading(region,lines,collapsed,headline)
+	local drawnKeys={}
+	for i=1,math.min(#lines,READING_ROWS)do
+		drawnKeys[i]=lines[i].key
+	end
+	pcall(A.trace,"details",{format=summary.format,state=collapsed and"folded"or"open",
+		readingKeys=#drawnKeys>0 and table.concat(drawnKeys,",")or"none",
+		keyWidth=keyWidth,keyCut=keyCut},"ui")
 
 	setPlotNote(region,nil)
 
@@ -4002,6 +4768,8 @@ function A.paintSummaryRegion(region,summary,scope,reading)
 
 	region.plot.format=summary.format
 	local drawn,mmrDrawn=drawSeries(region.plot,summary.series,showMmr,nil)
+	A.trace("plot",{format=summary.format,mmrLine=mmrState,segments=mmrDrawn,
+		marks=drawn},"ui")
 	local tier=region.plot.tierReading
 	if type(tier)=="table"then
 		A.trace("stats-header",{format=summary.format,tiers=tier.tiers,seg=tier.seg,
@@ -4134,9 +4902,8 @@ local function regionLinesPinned(format)
 			body=total-strip-gap-reading
 			block="fought"
 		else
-			local noted=false
-			total=A.summaryHeightNoPlot(headline,reading,noted)
-			body=noted and A.noteRowHeight()or 0
+			total=A.summaryHeightNoPlot(headline,reading,false)
+			body=0
 		end
 
 		local boundWords=""
@@ -4458,8 +5225,12 @@ local function regionFaultsPinned()
 				fault(said.what,said.where,said.why)
 			end
 
+			local keys={}
+			for l=1,#lines do
+				keys[l]=lines[l].key
+			end
 			local room=A.windowWidth()-A.metric("margin")*2
-				-A.metric("readingKeyWidth")-A.metric("readingKeyGap")
+				-A.readingKeyColumn(keys)-A.metric("readingKeyGap")
 			for l=1,#lines do
 				local wide,roomAt=A.unitFigure(A.labelRoom(lines[l].text)),A.unitFigure(room)
 				if wide~=nil and roomAt~=nil and wide>roomAt then
@@ -4641,6 +5412,13 @@ function A.regionFaults()
 		end))
 	end
 	return regionFaultsPinned()
+end
+
+function A.overviewRateText(held)
+	if type(held)~="table"or held.rate==nil then
+		return""
+	end
+	return("%s %d-%d"):format(A.percentText(held.rate)or"-",held.wins or 0,held.losses or 0)
 end
 
 local OVERVIEW_PLAYED=50
@@ -4830,6 +5608,8 @@ function A.paintStatsOverview(frame,overview,season,bound,settled,choice)
 		return nil
 	end
 	local scroll=host.scroll
+	host.paintGeneration=(host.paintGeneration or 0)+1
+	local generation=host.paintGeneration
 	scroll:Show()
 	host:Show()
 	if type(overview)~="table"then
@@ -4877,7 +5657,7 @@ function A.paintStatsOverview(frame,overview,season,bound,settled,choice)
 	local legendTop=rowsTop-#days*(cellHeight+2)-4
 	local contentHeight=note-legendTop+paneGap
 
-	local viewHeight=scroll:GetHeight()
+	local viewHeight=A.unitFigure(scroll:GetHeight())
 	local measured=type(viewHeight)=="number"and viewHeight>0
 	if not measured then
 		viewHeight=400
@@ -4907,20 +5687,22 @@ function A.paintStatsOverview(frame,overview,season,bound,settled,choice)
 	host.record:SetText(A.overviewRecordText(overview.record))
 	A.style(host.record,"note","text")
 
-	local seasonWidth=OVERVIEW_SEASON
+	local seasonWidth,rateWidth=OVERVIEW_SEASON,OVERVIEW_RATE
 	for i=1,#(overview.formats or{})do
 		local row=overviewRow(host,i)
 		A.style(row.season,"note","dim")
 		seasonWidth=math.max(seasonWidth,A.textRoom(row.season,A.overviewSeasonText(overview.formats[i])))
+		A.style(row.rate,"numberSmall","text")
+		rateWidth=math.max(rateWidth,A.textRoom(row.rate,A.overviewRateText(overview.formats[i])))
 	end
-	local fixed=OVERVIEW_PLAYED+OVERVIEW_BAR+OVERVIEW_RATE+OVERVIEW_RATING+seasonWidth
+	local fixed=OVERVIEW_PLAYED+OVERVIEW_BAR+rateWidth+OVERVIEW_RATING+seasonWidth
 	local runRoom=OVERVIEW_RUN*(OVERVIEW_BLOCK+OVERVIEW_BLOCK_GAP)
 	local gap=A.metric("rowCellGap")
 	local nameWidth=math.max(60,width-pad*2-fixed-runRoom-gap*6)
 	local at={pad}
 	at[2]=pad+nameWidth+gap+OVERVIEW_PLAYED
 	at[3]=at[2]+gap
-	at[4]=at[3]+OVERVIEW_BAR+OVERVIEW_RATE+gap*2
+	at[4]=at[3]+OVERVIEW_BAR+rateWidth+gap*2
 	at[5]=at[4]+OVERVIEW_RATING+gap
 	at[6]=at[5]+seasonWidth+gap
 	for i=1,#host.head do
@@ -4943,7 +5725,7 @@ function A.paintStatsOverview(frame,overview,season,bound,settled,choice)
 		local held=formats[i]
 		local row=overviewRow(host,i)
 		A.style(row.name,"bodyMedium","text")
-		if A.textRoom(row.name,held.label or tostring(held.format))>nameWidth then
+		if A.textRoom(row.name,held.label or tostring(held.format))>(A.unitFigure(nameWidth)or nameWidth)then
 			namesFit=false
 		end
 		A.style(row.rating,"numberSmall","text")
@@ -5001,8 +5783,8 @@ function A.paintStatsOverview(frame,overview,season,bound,settled,choice)
 		row.mid:SetShown(not none)
 		row.rate:ClearAllPoints()
 		row.rate:SetPoint("LEFT",row,"LEFT",at[3]+track+A.metric("rowCellGap"),0)
-		row.rate:SetText(held.rate~=nil
-			and("%s %d-%d"):format(A.percentText(held.rate)or"-",held.wins,held.losses)or"")
+		row.rate:SetWidth(rateWidth)
+		row.rate:SetText(A.overviewRateText(held))
 		A.style(row.rate,"numberSmall",tone)
 
 		row.rating:ClearAllPoints()
@@ -5182,7 +5964,7 @@ function A.paintStatsOverview(frame,overview,season,bound,settled,choice)
 			local won=type(held)=="table"and held.won or 0
 			local lost=type(held)=="table"and held.lost or 0
 			local rated=rate~=nil
-			if rate~=nil then
+			if rated then
 				drawn=drawn+1
 				cell.ground:SetColorTexture(A.heatColour(rate))
 				cell.ground:Show()
@@ -5255,8 +6037,9 @@ function A.paintStatsOverview(frame,overview,season,bound,settled,choice)
 	host.paintedHeight=measured and viewHeight or nil
 	if not settled and type(C_Timer)=="table"and type(C_Timer.After)=="function"then
 		C_Timer.After(0,function()
-			local now=scroll:GetHeight()
-			if host:IsShown()and type(now)=="number"and now>0 and now~=host.paintedHeight then
+			local now=A.unitFigure(scroll:GetHeight())
+			if host.paintGeneration==generation and host:IsShown()and type(now)=="number"and now>0
+				and now~=host.paintedHeight then
 				A.paintStatsOverview(frame,overview,season,bound,true,choice)
 			end
 		end)

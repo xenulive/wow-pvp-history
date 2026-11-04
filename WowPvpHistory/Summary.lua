@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.33
+-- WowPvpHistory 0.75.26
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -233,6 +233,22 @@ function A.paintHeld(name,compute,...)
 		paintMemo.held[key]=held
 	end
 	return unpack(held,1,held.n)
+end
+
+function A.setPaintFollow(set,format,season,character,bound)
+	if paintMemo==nil then
+		return
+	end
+	paintMemo.follow=set~=nil and{set=set,key=memoKey("follow",format,season,character,bound)}
+		or nil
+end
+
+function A.paintFollowSet(format,season,character,bound)
+	local follow=paintMemo~=nil and paintMemo.follow or nil
+	if follow==nil or follow.key~=memoKey("follow",format,season,character,bound)then
+		return nil
+	end
+	return follow.set
 end
 
 local ORDER={
@@ -527,9 +543,11 @@ function A.mapTally(format,season,character,bound,comp)
 		return row
 	end
 
+	local follow=A.paintFollowSet(format,season,character,bound)
 	for i=1,#db.matches do
 		local record=db.matches[i]
-		local admitted=type(record)=="table"and A.recordInFormat(record,format)
+		local admitted=type(record)=="table"and(follow==nil or follow[record]==true)
+			and A.recordInFormat(record,format)
 			and(season==nil or A.recordInSeason(record,season))
 			and A.recordedBy(record,character)and A.recordSince(record,bound)
 		if admitted and comp~=nil then
@@ -588,7 +606,7 @@ function A.mapTally(format,season,character,bound,comp)
 	return order,considered,decided,unplaced
 end
 
-function A.lastMatch(format,season,character,bound,outcome)
+function A.lastMatch(format,season,character,bound,outcome,exclude)
 	local db=A.db()
 	if not(db and type(db.matches)=="table")then
 		return nil
@@ -598,6 +616,7 @@ function A.lastMatch(format,season,character,bound,outcome)
 	for i=1,#db.matches do
 		local record=db.matches[i]
 		if type(record)=="table"and A.recordInFormat(record,format)
+			and(exclude==nil or(record.format or"unknown")~=exclude)
 			and not(outcome and not A.formatHasOutcome(record.format))
 			and(season==nil or A.recordInSeason(record,season))
 			and A.recordedBy(record,character)and A.recordSince(record,bound)then
@@ -665,6 +684,14 @@ local function trendPoints(key,buckets,seed)
 	return points
 end
 
+function A.recordSeconds(record)
+	local seconds=type(record)=="table"and record.duration or nil
+	if type(seconds)=="number"and seconds>=0 then
+		return seconds
+	end
+	return nil
+end
+
 function A.cardTrend(key,format,season,character,bound)
 	if key~=nil and key~="winRate"and key~="matches"and key~="avgLength"then
 		return nil
@@ -675,10 +702,11 @@ function A.cardTrend(key,format,season,character,bound)
 	end
 
 	local newest=nil
-	local held={}
+	local held,undated={},{}
+	local follow=A.paintFollowSet(format,season,character,bound)
 	for i=1,#db.matches do
 		local record=db.matches[i]
-		if type(record)=="table"and A.recordInFormat(record,format)
+		if type(record)=="table"and(follow==nil or follow[record]==true)and A.recordInFormat(record,format)
 			and(season==nil or A.recordInSeason(record,season))
 			and A.recordedBy(record,character)and A.recordSince(record,bound)then
 			local at=A.recordEpoch(record)
@@ -687,6 +715,8 @@ function A.cardTrend(key,format,season,character,bound)
 				if newest==nil or at>newest then
 					newest=at
 				end
+			else
+				undated[#undated+1]=record
 			end
 		end
 	end
@@ -696,6 +726,9 @@ function A.cardTrend(key,format,season,character,bound)
 
 	local buckets={}
 	local running={wins=0,decided=0,draws=0}
+	for i=1,#undated do
+		A.tallyVerdict(running,undated[i])
+	end
 	for i=1,#held do
 		local back=math.floor((newest-held[i].at)/WEEK)
 		local record=held[i].record
@@ -711,8 +744,8 @@ function A.cardTrend(key,format,season,character,bound)
 		end
 		A.tallyVerdict(bucket,record)
 		if back<TREND_WEEKS then
-			local seconds=type(record.duration)=="number"and record.duration or nil
-			if seconds~=nil and seconds>0 then
+			local seconds=A.recordSeconds(record)
+			if seconds~=nil then
 				bucket.seconds=bucket.seconds+seconds
 				bucket.timed=bucket.timed+1
 			end
@@ -762,11 +795,120 @@ function A.winRecordText(held,format)
 	return text
 end
 
-function A.summarize(format,season,character,bound)
+local function streakWord(result,count)
+	return(result=="win"and"W"or"L")..count
+end
+
+local function byTimeThenOrder(a,b)
+	if a.at~=b.at then
+		return a.at<b.at
+	end
+	return a.order<b.order
+end
+
+local function streakRecordInScope(record,format,season,character,bound)
+	return type(record)=="table"and A.recordInFormat(record,format)
+		and(season==nil or A.recordInSeason(record,season)==true)
+		and A.recordedBy(record,character)and A.recordSince(record,bound)
+end
+
+local function streakEntryInScope(entry,format,season,bound)
+	if A.recordEpoch(entry)==nil or not A.recordSince(entry,bound)
+		or(format~=nil and entry.surfaceFormat~=nil and entry.surfaceFormat~=format)then
+		return false
+	end
+	if season==nil then
+		return true
+	end
+	local ok,held=pcall(A.recordInSeason,entry,season)
+	return ok and held==true
+end
+
+local function streakItems(format,character,season,bound)
+	local db=A.db()
+	if not(db and type(db.matches)=="table")then
+		return nil
+	end
+	local items={}
+	local matches=db.matches
+	for i=1,#matches do
+		local record=matches[i]
+		if streakRecordInScope(record,format,season,character,bound)then
+			local at=A.recordEpoch(record)
+			if at~=nil then
+				local outcome,_,derived=A.recordVerdict(record)
+				local result="break"
+				if(outcome=="win"or outcome=="loss")and not A.recordLevel(record,outcome,derived)then
+					result=outcome
+				end
+				items[#items+1]={at=at,order=i,result=result}
+			end
+		end
+	end
+	for i,entry in ipairs(A.incompleteList(character))do
+		if streakEntryInScope(entry,format,season,bound)then
+			items[#items+1]={at=A.recordEpoch(entry),order=#matches+i,result="break"}
+		end
+	end
+	table.sort(items,byTimeThenOrder)
+	return items
+end
+
+local function currentStreakWalk(format,character)
+	local items=streakItems(format,character)
+	if items==nil then
+		return nil,"no-store"
+	end
+	local newest=items[#items]
+	if newest==nil then
+		return nil,"nothing"
+	end
+	if newest.result=="break"then
+		return nil,"ended"
+	end
+	local count=0
+	for i=#items,1,-1 do
+		if items[i].result~=newest.result then
+			break
+		end
+		count=count+1
+	end
+	return{result=newest.result,count=count,word=streakWord(newest.result,count)}
+end
+
+function A.currentStreak(format,character)
+	return A.paintHeld("currentStreak",currentStreakWalk,format,character)
+end
+
+local function bestStreakWalk(format,character,season,bound)
+	local items=streakItems(format,character,season,bound)
+	if items==nil then
+		return nil,"no-store"
+	end
+	local best,run=0,0
+	for i=1,#items do
+		run=items[i].result=="win"and run+1 or 0
+		if run>best then
+			best=run
+		end
+	end
+	if best==0 then
+		return nil,"no-win"
+	end
+	return{count=best,word=streakWord("win",best)}
+end
+
+function A.bestStreak(format,character,season,bound)
+	return A.paintHeld("bestStreak",bestStreakWalk,format,character,season,bound)
+end
+
+function A.summarize(format,season,character,bound,records)
 	local summary={
 		format=format,
 		season=season,
 		bound=bound,
+		followed=records~=nil,
+		records=records,
 		character=character,
 		undated=0,
 		label=A.formatLabel(format),
@@ -809,16 +951,24 @@ function A.summarize(format,season,character,bound)
 
 	local verdicts,heldFirst,heldLast={},nil,nil
 
+	local ladderStep=0
+
 	for i=1,#db.matches do
 		local record=db.matches[i]
-		local held=(season==nil or(A.recordInSeason(record,season)))
+		if records~=nil and summary.ladder and A.recordOnLadder(format,record)
+			and(season==nil or(A.recordInSeason(record,season)))and A.recordedBy(record,character)
+			and A.recordSince(record,bound)then
+			ladderStep=ladderStep+1
+		end
+		local held=(records==nil or records[record]==true)
+			and(season==nil or(A.recordInSeason(record,season)))
 			and A.recordedBy(record,character)
-		if held and bound~=nil and A.recordInFormat(record,format)
-			and A.recordEpoch(record)==nil then
+		local inFormat=held and A.recordInFormat(record,format)
+		if inFormat and bound~=nil and A.recordEpoch(record)==nil then
 			summary.undated=summary.undated+1
 		end
 		held=held and A.recordSince(record,bound)
-		if held and A.recordInFormat(record,format)then
+		if held and inFormat then
 			summary.matches=summary.matches+1
 			if format==nil then
 				local stored=record.format or"unknown"
@@ -831,14 +981,15 @@ function A.summarize(format,season,character,bound)
 				heldLast=(heldLast==nil or at>heldLast)and at or heldLast
 			end
 
-			if type(record.duration)=="number"then
-				durationTotal=durationTotal+record.duration
+			local seconds=A.recordSeconds(record)
+			if seconds~=nil then
+				durationTotal=durationTotal+seconds
 				durationCount=durationCount+1
-				if shortest==nil or record.duration<shortest then
-					shortest=record.duration
+				if shortest==nil or seconds<shortest then
+					shortest=seconds
 				end
-				if longest==nil or record.duration>longest then
-					longest=record.duration
+				if longest==nil or seconds>longest then
+					longest=seconds
 				end
 			end
 
@@ -998,6 +1149,7 @@ function A.summarize(format,season,character,bound)
 						season=pointSeason,
 						at=record.openedAt or record.completedAt,
 						from=rating,
+						step=records~=nil and ladderStep or nil,
 					}
 				end
 			elseif onLadder then
@@ -1277,8 +1429,21 @@ local function resultMark(verdict)
 	return verdict.won and"W"or"L"
 end
 
+local function countResult(held,verdict)
+	if verdict.level then
+		held.draws=held.draws+1
+	elseif verdict.won then
+		held.won=held.won+1
+	else
+		held.lost=held.lost+1
+	end
+end
+
 function A.allOverview(season,character,bound,now)
 	local ok,summary=pcall(A.paintWalk,"summarize",nil,season,character,bound)
+	if not ok then
+		A.noteError(summary,"all-overview")
+	end
 	if not ok or type(summary)~="table"then
 		return nil
 	end
@@ -1374,23 +1539,10 @@ function A.allOverview(season,character,bound,now)
 			out.undated=out.undated+1
 		end
 		if week~=nil then
-			if verdict.level then
-				week.draws=week.draws+1
-			elseif verdict.won then
-				week.won=week.won+1
-			else
-				week.lost=week.lost+1
-			end
+			countResult(week,verdict)
 		end
 		if day~=nil then
-			local cell=out.cells[day][block]
-			if verdict.level then
-				cell.draws=cell.draws+1
-			elseif verdict.won then
-				cell.won=cell.won+1
-			else
-				cell.lost=cell.lost+1
-			end
+			countResult(out.cells[day][block],verdict)
 		end
 	end
 
@@ -1420,6 +1572,9 @@ function A.allOverview(season,character,bound,now)
 		local read,own=false,nil
 		if A.movesRating(row.format)then
 			read,own=pcall(A.paintWalk,"summarize",row.format,season,character,bound)
+			if not read then
+				A.noteError(own,"all-overview/format")
+			end
 		end
 		if read and type(own)=="table"and own.rating~=nil then
 			row.rating=own.rating
@@ -1501,6 +1656,112 @@ function A.opponentTally(format,character,season,bound)
 		return a.order<b.order
 	end)
 	return rows,missing
+end
+
+local PARTNER_FORMATS={arena2=true,arena3=true,arena=true,["arena-unrated"]=true}
+
+function A.partnerFormat(format)
+	return PARTNER_FORMATS[format]==true
+end
+
+function A.partnerTally(format,season,character,bound)
+	if not PARTNER_FORMATS[format]then
+		return nil,"no-format"
+	end
+	local rows={}
+	local db=A.db()
+	if not(db and type(db.matches)=="table")then
+		return rows
+	end
+	local byKey={}
+	for i=1,#db.matches do
+		local record=db.matches[i]
+		if type(record)=="table"and type(record.participants)=="table"and A.recordInFormat(record,format)
+			and A.recordedBy(record,character)
+			and(season==nil or A.recordInSeason(record,season))and A.recordSince(record,bound)then
+			local outcome=A.effectiveResult(record)
+			local own=record.character~=nil and record.participants[record.character]or nil
+			local change=nil
+			if type(own)=="table"and not A.ladderSilent(own)and type(own.ratingChange)=="number"then
+				change=own.ratingChange
+			end
+			local epoch=A.recordEpoch(record)or 0
+			local stamp=record.completedAt or record.openedAt
+			for key,p in pairs(record.participants)do
+				if type(key)=="string"and key~=record.character and type(p)=="table"
+					and not A.isBotGuid(key)and A.playerKey(key)and not A.isSelfPlayer(key)
+					and A.matchSide(record,key)=="with"then
+					local row=byKey[key]
+					if not row then
+						row={key=key,matches=0,wins=0,losses=0,draws=0,rated=0,
+							lastEpoch=-1,order=#rows+1}
+						byKey[key]=row
+						rows[#rows+1]=row
+					end
+					row.matches=row.matches+1
+					if outcome=="win"then
+						row.wins=row.wins+1
+					elseif outcome=="loss"then
+						row.losses=row.losses+1
+					elseif outcome=="draw"then
+						row.draws=row.draws+1
+					end
+					if change~=nil then
+						row.rating=(row.rating or 0)+change
+						row.rated=row.rated+1
+					end
+					if epoch>=row.lastEpoch then
+						row.lastEpoch,row.lastAt=epoch,stamp
+						row.name=type(p.name)=="string"and p.name~=""and p.name or row.name
+						row.spec,row.class,row.classToken=p.spec,p.class,p.classToken
+					end
+				end
+			end
+		end
+	end
+	for i=1,#rows do
+		local row=rows[i]
+		row.bare,row.realm=A.nameParts(row.name)
+	end
+	table.sort(rows,function(a,b)
+		if a.matches~=b.matches then
+			return a.matches>b.matches
+		end
+		if a.wins~=b.wins then
+			return a.wins>b.wins
+		end
+		return a.order<b.order
+	end)
+	return rows
+end
+
+function A.partnerRatingText(row)
+	local sum=type(row)=="table"and row.rating or nil
+	if type(sum)~="number"then
+		return nil
+	end
+	if sum>0 then
+		return("%+d"):format(sum),"win"
+	end
+	if sum<0 then
+		return("%+d"):format(sum),"loss"
+	end
+	return"0",nil
+end
+
+function A.partnerRecordText(row)
+	local wins,losses=row.wins or 0,row.losses or 0
+	local tone=wins>losses and"win"or(losses>wins and"loss"or nil)
+	return("%d-%d"):format(wins,losses),tone
+end
+
+function A.partnerSpecText(row)
+	local spec=type(row.spec)=="string"and row.spec~=""and row.spec or nil
+	local class=type(row.class)=="string"and row.class~=""and row.class or nil
+	if spec and class then
+		return spec.." "..class
+	end
+	return spec or class
 end
 
 function A.duelOpponentKey(record)
@@ -1659,6 +1920,16 @@ local function killDeathRatio(kills,deaths)
 	return kills/deaths
 end
 
+local function betterRateFirst(ar,br)
+	if ar==nil then
+		return false
+	end
+	if br==nil then
+		return true
+	end
+	return ar>br
+end
+
 function A.zoneTally(season,character,bound)
 	local rows,unplaced,read={},0,0
 	local db=A.db()
@@ -1703,13 +1974,7 @@ function A.zoneTally(season,character,bound)
 	end
 	table.sort(rows,function(a,b)
 		if a.ratio~=b.ratio then
-			if a.ratio==nil then
-				return false
-			end
-			if b.ratio==nil then
-				return true
-			end
-			return a.ratio>b.ratio
+			return betterRateFirst(a.ratio,b.ratio)
 		end
 		if a.outings~=b.outings then
 			return a.outings>b.outings
@@ -2039,7 +2304,17 @@ local function tallyRounds(record,byKey,ranked,byPair,counts)
 	return seen,missed,undecided
 end
 
-local function tallyComps(format,season,character,bound,byPair)
+local function worseRateFirst(ar,br)
+	if ar==nil then
+		return false
+	end
+	if br==nil then
+		return true
+	end
+	return ar<br
+end
+
+local function tallyComps(format,season,character,bound,byPair,everyRow)
 	local rows,skipped,belowFloor,considered,undecided,rankedCount={},0,0,0,0,0
 	local allDrawn=0
 	local counts={unreadable=0,short=0,healerless=0}
@@ -2055,9 +2330,10 @@ local function tallyComps(format,season,character,bound,byPair)
 
 	local roundFormat=A.compRounds(format)
 	local byKey,ranked={},{}
+	local follow=A.paintFollowSet(format,season,character,bound)
 	for i=1,#db.matches do
 		local record=db.matches[i]
-		local held=type(record)=="table"
+		local held=type(record)=="table"and(follow==nil or follow[record]==true)
 			and(season==nil or A.recordInSeason(record,season))
 			and A.recordedBy(record,character)
 			and A.recordSince(record,bound)
@@ -2106,8 +2382,9 @@ local function tallyComps(format,season,character,bound,byPair)
 						row.ratingDelta=row.ratingDelta+mine.ratingChange
 						row.ratingCount=row.ratingCount+1
 					end
-					if type(record.duration)=="number"then
-						row.durationTotal=row.durationTotal+record.duration
+					local seconds=A.recordSeconds(record)
+					if seconds~=nil then
+						row.durationTotal=row.durationTotal+seconds
 						row.durationCount=row.durationCount+1
 					end
 				end
@@ -2116,7 +2393,7 @@ local function tallyComps(format,season,character,bound,byPair)
 	end
 
 	local floor=A.rankFloor("comps")
-	local listFloor=A.metric("compListGames")
+	local listFloor=everyRow and 1 or A.metric("compListGames")
 	for i=1,#ranked do
 		local row=ranked[i]
 		local rate=row.games>0 and compWinRate(row)or nil
@@ -2163,13 +2440,7 @@ local function tallyComps(format,season,character,bound,byPair)
 		end
 		local ar,br=a.winRate,b.winRate
 		if ar~=br then
-			if ar==nil then
-				return false
-			end
-			if br==nil then
-				return true
-			end
-			return ar<br
+			return worseRateFirst(ar,br)
 		end
 		if a.games~=b.games then
 			return a.games>b.games
@@ -2189,6 +2460,98 @@ end
 
 function A.compPairTally(format,season,character,bound)
 	return tallyComps(format,season,character,bound,true)
+end
+
+function A.classSignatureFrom(tokens)
+	if type(tokens)~="table"or#tokens==0 then
+		return nil
+	end
+	local sorted={}
+	for i=1,#tokens do
+		local token=tokens[i]
+		if type(token)~="string"or token==""then
+			return nil
+		end
+		sorted[i]=token
+	end
+	table.sort(sorted)
+	return table.concat(sorted,"+")
+end
+
+function A.classSignature(compKey)
+	if type(compKey)~="string"or compKey==""then
+		return nil
+	end
+	local tokens={}
+	for part in(compKey.."+"):gmatch("([^+]*)%+")do
+		local token=part:match("^[^/]+/(.+)$")
+		if token==nil or token=="nil"then
+			return nil
+		end
+		tokens[#tokens+1]=token
+	end
+	return A.classSignatureFrom(tokens)
+end
+
+function A.classCompTally(format,season,character)
+	local formats={}
+	if format==nil then
+		for each in pairs(COMP_FORMATS)do
+			formats[#formats+1]=each
+		end
+		table.sort(formats)
+	elseif A.compFormat(format)then
+		formats[1]=format
+	end
+	local rows,bySignature,folded={},{},0
+	for f=1,#formats do
+		local specRows=tallyComps(formats[f],season,character,nil,false,true)
+		for i=1,#specRows do
+			local spec=specRows[i]
+			local signature=A.classSignature(spec.key)
+			if signature~=nil then
+				local row=bySignature[signature]
+				if row==nil then
+					row={signature=signature,games=0,wins=0,losses=0,draws=0,specs=0}
+					bySignature[signature]=row
+					rows[#rows+1]=row
+				end
+				row.games=row.games+spec.games
+				row.wins=row.wins+spec.wins
+				row.losses=row.losses+spec.losses
+				row.draws=row.draws+(spec.draws or 0)
+				row.specs=row.specs+1
+				folded=folded+1
+			end
+		end
+	end
+	for i=1,#rows do
+		local row=rows[i]
+		row.decided=row.wins+row.losses
+		row.winRate=row.decided>0 and row.wins/row.decided or nil
+	end
+	table.sort(rows,function(a,b)
+		local ar,br=a.winRate,b.winRate
+		if ar~=br then
+			return worseRateFirst(ar,br)
+		end
+		if a.decided~=b.decided then
+			return a.decided>b.decided
+		end
+		return a.signature<b.signature
+	end)
+	return rows,folded
+end
+
+function A.classSignatureNames(signature)
+	if type(signature)~="string"or signature==""then
+		return nil
+	end
+	local names={}
+	for token in signature:gmatch("[^+]+")do
+		names[#names+1]={token=token,name=className(token)}
+	end
+	return names
 end
 
 function A.compPairRowLines(row)
@@ -2353,9 +2716,10 @@ function A.specTally(format,season,character,bound,comp)
 		end
 	end
 
+	local follow=A.paintFollowSet(format,season,character,bound)
 	for i=1,#db.matches do
 		local record=db.matches[i]
-		local held=type(record)=="table"
+		local held=type(record)=="table"and(follow==nil or follow[record]==true)
 			and(season==nil or A.recordInSeason(record,season))
 			and A.recordedBy(record,character)
 			and A.recordSince(record,bound)
@@ -2410,18 +2774,14 @@ function A.specTally(format,season,character,bound,comp)
 
 	table.sort(against,function(a,b)
 		if a.winRate~=b.winRate then
-			if a.winRate==nil then return false end
-			if b.winRate==nil then return true end
-			return a.winRate<b.winRate
+			return worseRateFirst(a.winRate,b.winRate)
 		end
 		if a.rounds~=b.rounds then return a.rounds>b.rounds end
 		return a.order<b.order
 	end)
 	table.sort(alongside,function(a,b)
 		if a.winRate~=b.winRate then
-			if a.winRate==nil then return false end
-			if b.winRate==nil then return true end
-			return a.winRate>b.winRate
+			return betterRateFirst(a.winRate,b.winRate)
 		end
 		if a.rounds~=b.rounds then return a.rounds>b.rounds end
 		return a.order<b.order
@@ -2492,9 +2852,11 @@ function A.specMatchTally(format,season,character,bound)
 		return any
 	end
 
+	local follow=A.paintFollowSet(format,season,character,bound)
 	for i=1,#db.matches do
 		local record=db.matches[i]
 		local held=type(record)=="table"and record.format==format
+			and(follow==nil or follow[record]==true)
 			and(season==nil or A.recordInSeason(record,season))
 			and A.recordedBy(record,character)
 			and A.recordSince(record,bound)
@@ -3395,7 +3757,7 @@ function A.lobbyTally(record)
 		end
 	end
 
-	local read,typed=0,0
+	local read,typed,threw=0,0,0
 	for r=1,#rounds do
 		local round=rounds[r]
 		local key=type(round)=="table"and A.roundCompKey(record,round)or nil
@@ -3409,6 +3771,9 @@ function A.lobbyTally(record)
 					local answered,got,_,hand=pcall(A.roundResult,record,r)
 					if answered then
 						won,byHand=got,hand
+					else
+						threw=threw+1
+						A.noteError(got,"lobby-round")
 					end
 				end
 				if type(won)=="boolean"then
@@ -3430,7 +3795,7 @@ function A.lobbyTally(record)
 		row.swing=A.lobbySwing(row)
 	end
 
-	return rows,read,#rounds,typed
+	return rows,read,#rounds,typed,threw
 end
 
 function A.lobbySwing(row)
@@ -3452,6 +3817,7 @@ local LOBBY_SORTS={
 	damage={cell="damage",column="DAMAGE"},
 	wins={objective=1,column="WINS"},
 	kb={cell="kb",column="KB"},
+	honor={cell="honorLevel",column="HONOR"},
 	dispels={cell="dispels",column="DISP"},
 }
 
@@ -3598,6 +3964,7 @@ LOBBY_CELL.name=joinedCell("name")
 LOBBY_CELL.damage=joinedCell("damage")
 LOBBY_CELL.wins=joinedCell("wins")
 LOBBY_CELL.kb=joinedCell("kb")
+LOBBY_CELL.honor=joinedCell("honor")
 LOBBY_CELL.dispels=joinedCell("dispels")
 
 local LOBBY_ROUND_LANES=6
@@ -3714,7 +4081,7 @@ function A.lobbyFillers(which)
 end
 
 function A.lobbyRows(record,sort,ascending,columns,joined)
-	local tally,read,total,typed=A.lobbyTally(record)
+	local tally,read,total,typed,threw=A.lobbyTally(record)
 	for i=1,type(tally)=="table"and#tally or 0 do
 		local row=tally[i]
 		row.joined=type(joined)=="table"and type(row.guid)=="string"and joined[row.guid]or nil
@@ -3725,7 +4092,7 @@ function A.lobbyRows(record,sort,ascending,columns,joined)
 	end
 	local out={}
 	if type(columns)~="table"then
-		return out,read,total,tally,typed
+		return out,read,total,tally,typed,threw
 	end
 
 	for i=1,#rows do
@@ -3764,7 +4131,7 @@ function A.lobbyRows(record,sort,ascending,columns,joined)
 		}
 	end
 
-	return out,read,total,tally,typed
+	return out,read,total,tally,typed,threw
 end
 
 function A.lobbyDrawn(rows,columns)
@@ -3897,6 +4264,7 @@ local REFUSAL_CLAUSE={
 	difference="a reading moved backwards or by more rounds than were played",
 	["summed-over"]="a round was missed, so the rounds do not sum",
 	["summed-short"]="the scoreboard's rounds won fall short of the rounds played, so the rounds do not sum",
+	["seat-missing"]="a player is missing from the scoreboard, so the rounds do not sum",
 }
 
 function A.lobbyCaption(claim,read,total,opposites,typed,opts)
@@ -3920,14 +4288,22 @@ function A.lobbyCaption(claim,read,total,opposites,typed,opts)
 	elseif type(read)=="number"and type(total)=="number"and total>0 then
 		if read<total then
 			local missing=total-read
+			local unread=math.min(missing,type(opts.threw)=="number"and opts.threw or 0)
+			local blank=missing-unread
+			local head
+			if blank>0 then
+				head=("%d of %d rounds recorded no winner"):format(blank,total)
+					..(unread>0 and(" and %d could not be read"):format(unread)or"")
+			else
+				head=("%d of %d rounds could not be read"):format(unread,total)
+			end
 			local entered=hand and(", %d entered by hand"):format(hand)or""
 			local reason=REFUSAL_CLAUSE[opts.refusal]
 			if reason~=nil then
-				out[#out+1]=("%d of %d rounds recorded no winner%s: %s."):format(missing,total,
-					entered,reason)
+				out[#out+1]=("%s%s: %s."):format(head,entered,reason)
 			else
-				out[#out+1]=("%d of %d rounds recorded no winner%s, so these counts are what was "
-					.."recorded rather than what the format dealt."):format(missing,total,entered)
+				out[#out+1]=("%s%s, so these counts are what was "
+					.."recorded rather than what the format dealt."):format(head,entered)
 			end
 		else
 			out[#out+1]=handSentence(
@@ -4408,7 +4784,7 @@ function A.tileTooltip(summary,key)
 
 	local clause,entry={},{}
 	if type(A.readingLines)=="function"then
-		local ok,lines=pcall(A.readingLines,summary,nil,true)
+		local ok,lines=pcall(A.readingLines,summary,nil,true,true)
 		if ok and type(lines)=="table"then
 			for i=1,#lines do
 				clause[lines[i].key]=lines[i].clause or lines[i].text
@@ -4438,8 +4814,6 @@ function A.tileTooltip(summary,key)
 			end
 			say(split.denominator)
 		end
-	elseif key=="MATCHES"then
-		say(clause["MATCHES"])
 	elseif key=="MMR"then
 		if summary.mmr~=nil then
 			local head=tostring(summary.mmr)
@@ -4484,7 +4858,7 @@ end
 
 local FACTION_JOIN=" \194\183 "
 
-function A.readingLines(summary,notRated,pane)
+function A.readingLines(summary,notRated,pane,lean)
 	local out={}
 	if type(summary)~="table"then
 		return out
@@ -4599,6 +4973,9 @@ function A.readingLines(summary,notRated,pane)
 			local inSeason=true
 			if summary.season~=nil and type(A.recordInSeason)=="function"then
 				local seasonOk,inScope=pcall(A.recordInSeason,entry,summary.season)
+				if not seasonOk then
+					A.noteError(inScope,"season-left-count")
+				end
 				inSeason=seasonOk and inScope
 			end
 			if inSeason and(summary.bound==nil or A.recordSince(entry,summary.bound))then
@@ -4625,6 +5002,13 @@ function A.readingLines(summary,notRated,pane)
 	if not pane and type(notRated)=="number"and notRated>0 then
 		put("NOT RATED",("%d %s named a composition and settled no winner")
 			:format(notRated,notRated==1 and"round"or"rounds"))
+	end
+
+	if not lean then
+		local extra=A.detailReadingLines(summary)
+		for i=1,#extra do
+			out[#out+1]=extra[i]
+		end
 	end
 
 	return out
@@ -4738,5 +5122,552 @@ function A.figureLines(summary)
 			:format(#summary.series,#summary.series==1 and"point"or"points",skips)
 	end
 
+	return lines
+end
+
+local DETAIL_SIDE_FLOOR=3
+
+local LENGTH_SPREAD=1/3
+
+local DETAIL_DASH="-"
+
+local POSITION_FORMATS={shuffle=true,["shuffle-unrated"]=true}
+
+local HEALER_BIT=4
+
+local function inDetailScope(record,summary)
+	if type(record)~="table"or not A.recordInFormat(record,summary.format)then
+		return false
+	end
+	if summary.season~=nil and not A.recordInSeason(record,summary.season)then
+		return false
+	end
+	if type(summary.records)=="table"and summary.records[record]~=true then
+		return false
+	end
+	return A.recordedBy(record,summary.character)and A.recordSince(record,summary.bound)
+end
+
+local function lobbyHealers(record)
+	if type(record.participants)~="table"then
+		return nil
+	end
+	local healers,seen=0,0
+	for guid,participant in pairs(record.participants)do
+		if type(guid)=="string"and A.isBotGuid(guid)then
+			return nil
+		end
+		local mask=type(participant)=="table"and participant.role or nil
+		if type(mask)~="number"then
+			return nil
+		end
+		seen=seen+1
+		if mask%(HEALER_BIT*2)>=HEALER_BIT then
+			healers=healers+1
+		end
+	end
+	return seen>0 and healers or nil
+end
+
+local function tallyText(won,lost,floor)
+	if won+lost<(floor or 1)then
+		return DETAIL_DASH
+	end
+	local rate=won/(won+lost)
+	local tone=A.winRateTone(rate)
+	local percent=A.percentText(rate)
+	if tone~=nil and type(A.colorEscape)=="function"then
+		percent=A.colorEscape(tone)..percent.."|r"
+	end
+	return("%s %d-%d"):format(percent,won,lost)
+end
+
+function A.detailFigures(summary)
+	local out={
+		positions={},
+		healers={[0]={won=0,lost=0},[1]={won=0,lost=0},[2]={won=0,lost=0}},
+		healerLobbies=0,
+		wonSeconds=0,wonCount=0,lostSeconds=0,lostCount=0,
+	}
+	local db=A.db()
+	if type(summary)~="table"or not(db and type(db.matches)=="table")then
+		return out
+	end
+	for i=1,#db.matches do
+		local record=db.matches[i]
+		if inDetailScope(record,summary)then
+			if POSITION_FORMATS[record.format]then
+				local rounds=A.roundList(record)
+				for r=1,rounds and#rounds or 0 do
+					local won=A.roundResult(record,r)
+					if type(won)=="boolean"then
+						local held=out.positions[r]or{won=0,lost=0}
+						out.positions[r]=held
+						if won then
+							held.won=held.won+1
+						else
+							held.lost=held.lost+1
+						end
+					end
+				end
+			end
+			local roundVerdict=A.roundsOutcome(record)
+			local outcome,_,derived=A.recordVerdict(record,roundVerdict)
+			local level=outcome~=nil and A.recordLevel(record,outcome,derived)or false
+			local won=outcome=="win"
+			local lost=outcome~=nil and not won and not level
+			if record.format=="shuffle"and(won or lost)then
+				local healers=lobbyHealers(record)
+				if healers~=nil and out.healers[healers]then
+					out.healerLobbies=out.healerLobbies+1
+					local held=out.healers[healers]
+					held.won=held.won+(won and 1 or 0)
+					held.lost=held.lost+(lost and 1 or 0)
+				end
+			end
+			local seconds=A.recordSeconds(record)
+			if seconds~=nil and won then
+				out.wonSeconds,out.wonCount=out.wonSeconds+seconds,out.wonCount+1
+			elseif seconds~=nil and lost then
+				out.lostSeconds,out.lostCount=out.lostSeconds+seconds,out.lostCount+1
+			end
+		end
+	end
+	return out
+end
+
+function A.positionText(figures,format)
+	if not POSITION_FORMATS[format]or type(figures)~="table"then
+		return nil
+	end
+	local parts,any={},false
+	for r=1,6 do
+		local held=figures.positions[r]
+		if held~=nil and held.won+held.lost>0 then
+			any=true
+			parts[#parts+1]=("R%d %s"):format(r,tallyText(held.won,held.lost))
+		else
+			parts[#parts+1]=("R%d %s"):format(r,DETAIL_DASH)
+		end
+	end
+	return any and table.concat(parts,"  ")or nil
+end
+
+function A.healerText(figures,format)
+	if format~="shuffle"or type(figures)~="table"or figures.healerLobbies<1 then
+		return nil
+	end
+	local parts,any={},false
+	for _,count in ipairs({2,1,0})do
+		local held=figures.healers[count]
+		local word=count==2 and"two"or count==1 and"one"or"none"
+		local text=tallyText(held.won,held.lost,DETAIL_SIDE_FLOOR)
+		any=any or text~=DETAIL_DASH
+		parts[#parts+1]=("%s %s"):format(word,text)
+	end
+	return any and table.concat(parts,"  ")or nil
+end
+
+function A.lengthSplitText(figures)
+	if type(figures)~="table"or figures.wonCount+figures.lostCount<1 then
+		return nil
+	end
+	local won=figures.wonCount>=DETAIL_SIDE_FLOOR and math.floor(figures.wonSeconds/figures.wonCount)or nil
+	local lost=figures.lostCount>=DETAIL_SIDE_FLOOR and math.floor(figures.lostSeconds/figures.lostCount)or nil
+	if won==nil and lost==nil then
+		return nil
+	end
+	local text=("won %s, lost %s"):format(won and A.lengthText(won)or DETAIL_DASH,
+		lost and A.lengthText(lost)or DETAIL_DASH)
+	if won~=nil and lost~=nil then
+		if lost>won and lost-won>=won*LENGTH_SPREAD then
+			text=text..", you win fast and lose long"
+		elseif won>lost and won-lost>=lost*LENGTH_SPREAD then
+			text=text..", you win long and lose fast"
+		end
+	end
+	return text
+end
+
+function A.runningSeason(format)
+	local declared=type(A.seasonNewest)=="function"and A.seasonNewest()or nil
+	if declared~=nil then
+		return declared
+	end
+	local held=type(A.scopeSeasonsFor)=="function"and A.scopeSeasonsFor(format)or nil
+	return type(held)=="table"and held[1]or nil
+end
+
+function A.seasonPace(format,character)
+	if format==nil or not A.movesRating(format)or type(A.scopeSeasonsFor)~="function"then
+		return nil
+	end
+	local current=A.runningSeason(format)
+	local earlier=A.scopeSeasonsFor(format)
+	if current==nil or type(earlier)~="table"then
+		return nil
+	end
+	local previous
+	for i=1,#earlier do
+		if earlier[i]<current and(previous==nil or earlier[i]>previous)then
+			previous=earlier[i]
+		end
+	end
+	if previous==nil then
+		return nil
+	end
+	local now=A.paintWalk("summarize",format,current,character)
+	local last=A.paintWalk("summarize",format,previous,character)
+	local count=#now.series
+	if count<1 or now.rating==nil then
+		return nil
+	end
+	local point=last.series[count]
+	return now.rating,point and point.rating or nil,count,previous
+end
+
+function A.seasonPaceText(format,character)
+	local now,before,count,previous=A.seasonPace(format,character)
+	if now==nil then
+		return nil
+	end
+	local head=("%s after %d %s"):format(A.tierRatingText(format,math.floor(now)),count,
+		count==1 and"match"or"matches")
+	if before==nil then
+		return("%s, season %d %s"):format(head,previous,DETAIL_DASH)
+	end
+	local gap=math.floor(now)-math.floor(before)
+	local signed=A.signedText(gap)or"0"
+	if gap~=0 and type(A.colorEscape)=="function"then
+		signed=A.colorEscape(gap>0 and"win"or"loss")..signed.."|r"
+	end
+	return("%s, season %d %s at that point, %s"):format(head,previous,
+		A.tierRatingText(format,math.floor(before)),signed)
+end
+
+function A.detailReadingLines(summary)
+	local out={}
+	if type(summary)~="table"then
+		return out
+	end
+	local figuresStarted=A.switchClock()
+	local figures=A.paintHeld("detailFigures",A.detailFigures,summary)
+	A.switchPhase("detailFigures",figuresStarted)
+	local function put(key,text)
+		if text~=nil then
+			out[#out+1]={key=key,text=text,clause=text}
+		end
+	end
+	put("ROUNDS BY POSITION",A.positionText(figures,summary.format))
+	put("HEALERS IN THE LOBBY",A.healerText(figures,summary.format))
+	put("HOW LONG",A.lengthSplitText(figures))
+	if summary.season==nil or summary.season==A.runningSeason(summary.format)then
+		local paceStarted=A.switchClock()
+		put("AGAINST LAST SEASON",A.seasonPaceText(summary.format,summary.character))
+		A.switchPhase("seasonPace",paceStarted)
+	end
+	return out
+end
+
+local function inCardScope(record,format,season,character)
+	return type(record)=="table"and(format==nil or record.format==format)
+		and(season==nil or A.recordInSeason(record,season)==true)
+		and A.recordedBy(record,character)
+end
+
+function A.longestWinStreak(format,season,character)
+	local db=A.db()
+	if not(db and type(db.matches)=="table")then
+		return nil,"no-store"
+	end
+	local items={}
+	for i=1,#db.matches do
+		local record=db.matches[i]
+		if type(record)=="table"and record.format~=nil
+			and streakRecordInScope(record,format,season,character)then
+			local at=A.recordEpoch(record)
+			if at~=nil then
+				items[#items+1]={at=at,record=record,order=i}
+			end
+		end
+	end
+	for i,entry in ipairs(A.incompleteList(character))do
+		if streakEntryInScope(entry,format,season)then
+			items[#items+1]={at=A.recordEpoch(entry),entry=entry,order=#db.matches+i}
+		end
+	end
+	table.sort(items,byTimeThenOrder)
+
+	local open,best={},nil
+	local function close(which)
+		local run=open[which]
+		open[which]=nil
+		if run and(best==nil or run.count>best.count or(run.count==best.count and run.at>=best.at))then
+			best=run
+		end
+	end
+	local function closeAll()
+		local formats={}
+		for which in pairs(open)do
+			formats[#formats+1]=which
+		end
+		for _,which in ipairs(formats)do
+			close(which)
+		end
+	end
+	for _,item in ipairs(items)do
+		local record=item.record
+		if record then
+			local which=record.format
+			if A.recordVerdict(record)=="win"then
+				local stamp=record.openedAt or record.completedAt
+				local run=open[which]or{format=which,count=0,firstStamp=stamp}
+				run.count=run.count+1
+				run.at=item.at
+				run.stamp=stamp
+				open[which]=run
+			else
+				close(which)
+			end
+		elseif item.entry.surfaceFormat~=nil then
+			close(item.entry.surfaceFormat)
+		else
+			closeAll()
+		end
+	end
+	closeAll()
+	if best==nil then
+		return nil,"no-win"
+	end
+	return best
+end
+
+function A.mostMet(format,season,character)
+	local index=A.paintHeld("encounterIndex",A.encounterIndex)
+	if format~=nil or season~=nil or character~=nil then
+		local narrowed={}
+		for guid,list in pairs(index)do
+			local kept={}
+			for i=1,#list do
+				if inCardScope(list[i].record,format,season,character)then
+					kept[#kept+1]=list[i]
+				end
+			end
+			if#kept>0 then
+				narrowed[guid]=kept
+			end
+		end
+		index=narrowed
+	end
+	local view=A.playersView({sort="met",index=index})
+	local row=view and view.rows and view.rows[1]
+	if row==nil or(row.met or 0)<1 then
+		return nil,"no-player-met"
+	end
+	return row
+end
+
+local function heatSlots(format,season,character)
+	local db=A.db()
+	local cells={}
+	for _,record in ipairs((db and type(db.matches)=="table")and db.matches or{})do
+		if inCardScope(record,format,season,character)then
+			local outcome,_,derived=A.recordVerdict(record,(A.roundsOutcome(record)))
+			local at=A.recordEpoch(record)
+			local day,block=A.heatCell(at)
+			if day~=nil and outcome~=nil and not A.recordLevel(record,outcome,derived)then
+				local key=day*10+block
+				local held=cells[key]or{day=day,block=block,won=0,lost=0}
+				cells[key]=held
+				if outcome=="win"then
+					held.won=held.won+1
+				else
+					held.lost=held.lost+1
+				end
+			end
+		end
+	end
+	local best,worst
+	local keys={}
+	for key in pairs(cells)do
+		keys[#keys+1]=key
+	end
+	table.sort(keys)
+	for _,key in ipairs(keys)do
+		local held=cells[key]
+		if held.won+held.lost>=DETAIL_SIDE_FLOOR then
+			held.rate=held.won/(held.won+held.lost)
+			if best==nil or held.rate>best.rate then
+				best=held
+			end
+			if worst==nil or held.rate<worst.rate then
+				worst=held
+			end
+		end
+	end
+	return best,worst
+end
+
+local function slotText(slot)
+	if slot==nil then
+		return DETAIL_DASH
+	end
+	return("%s %s, %s %d-%d"):format(A.heatDays()[slot.day],A.heatBlocks()[slot.block],
+		A.percentText(slot.rate),slot.won,slot.lost)
+end
+
+local function weeklyPath(series)
+	local weeks,first,last={},nil,nil
+	for i=1,#series do
+		local at=A.stampEpoch(series[i].at)
+		local week=at~=nil and A.weekOpening(at)or nil
+		if week~=nil then
+			weeks[week]=series[i].rating
+			first=(first==nil or week<first)and week or first
+			last=(last==nil or week>last)and week or last
+		end
+	end
+	local path={}
+	if first==nil then
+		return path,0
+	end
+	local week=first
+	while week~=nil and week<=last and#path<60 do
+		path[#path+1]={week=week,rating=weeks[week]}
+		week=A.weekOpening(week+7*86400+43200)
+	end
+	return path,#path
+end
+
+local function characterWord(character)
+	if character==nil then
+		return nil
+	end
+	for _,held in ipairs(A.characterList())do
+		if held.guid==character then
+			return held.name or held.label
+		end
+	end
+	return nil
+end
+
+function A.seasonCard(format,season,character)
+	if type(season)~="number"then
+		return nil,"current"
+	end
+	if format==nil or not A.movesRating(format)then
+		return nil,"unrated"
+	end
+	local newest=A.runningSeason(format)
+	if newest==nil or season>=newest then
+		return nil,"current"
+	end
+	local summary=A.paintWalk("summarize",format,season,character)
+	if summary.matches<1 then
+		return nil,"empty"
+	end
+	local card={
+		season=season,
+		format=format,
+		title=A.scopeLabel(("season%d"):format(season)),
+		label=A.formatLabel(format),
+		character=characterWord(character),
+		cells={},
+	}
+	local function cell(key,text)
+		card.cells[#card.cells+1]={key=key,text=text or DETAIL_DASH}
+	end
+
+	local seconds=0
+	local firstAt,firstStamp,lastAt,lastStamp
+	local db=A.db()
+	for _,record in ipairs((db and type(db.matches)=="table")and db.matches or{})do
+		if inCardScope(record,format,season,character)then
+			seconds=seconds+(A.recordSeconds(record)or 0)
+			local at=A.recordEpoch(record)
+			if at~=nil and(firstAt==nil or at<firstAt)then
+				firstAt,firstStamp=at,record.openedAt or record.completedAt
+			end
+			if at~=nil and(lastAt==nil or at>lastAt)then
+				lastAt,lastStamp=at,record.openedAt or record.completedAt
+			end
+		end
+	end
+	local from=firstStamp and A.shortDayText(firstStamp)or nil
+	local to=lastStamp and A.shortDayText(lastStamp)or nil
+	card.span=(from and to)and(from==to and from or(from.." to "..to))or nil
+	card.hours=A.totalTimeText(seconds)
+
+	local pair=A.winRecordText(summary,format)
+	cell("MATCHES",("%d, %s%s"):format(summary.matches,pair or DETAIL_DASH,
+		summary.winRate and(", "..A.percentText(summary.winRate))or""))
+
+	local series=summary.series
+	if#series>0 and summary.peak~=nil then
+		local peakAt
+		for i=1,#series do
+			if series[i].rating==summary.peak and peakAt==nil then
+				peakAt=series[i].at
+			end
+		end
+		local tier=A.ratingTierName(format,summary.peak)
+		cell("RATING",("%d to %d, peak %d%s%s"):format(math.floor(series[1].rating),
+			math.floor(series[#series].rating),math.floor(summary.peak),
+			tier and(" "..tier)or"",peakAt and(" on "..(A.shortDayText(peakAt)or""))or""))
+	else
+		cell("RATING",nil)
+	end
+
+	local run=A.longestWinStreak(format,season,character)
+	cell("LONGEST STREAK",run and("%d %s, %s to %s"):format(run.count,run.count==1 and"win"or"wins",
+		A.shortDayText(run.firstStamp)or DETAIL_DASH,A.shortDayText(run.stamp)or DETAIL_DASH)or nil)
+
+	local met=A.mostMet(format,season,character)
+	local against=met and met.against and met.against[1]or nil
+	cell("MET MOST",met and("%s, %d %s%s"):format(tostring(met.identity and met.identity.bare or DETAIL_DASH),
+		met.met,met.met==1 and"time"or"times",
+		(against and against.figure)and(", "..against.figure.." "..against.unit.." against")or"")or nil)
+
+	local rows,_,_,_,_,ranked=A.paintWalk("compTally",format,season,character)
+	ranked=type(ranked)=="number"and ranked or 0
+	local function compCell(row)
+		return row and("%s, %s"):format(A.compText(row.members)or DETAIL_DASH,A.compRecordText(row)or DETAIL_DASH)or nil
+	end
+	cell("BEST COMP",ranked>=2 and compCell(rows[ranked])or nil)
+	cell("WORST COMP",ranked>=1 and compCell(rows[1])or nil)
+
+	local best,worst=heatSlots(format,season,character)
+	cell("WHEN YOU WIN",(best or worst)and("best %s, worst %s"):format(slotText(best),slotText(worst))or nil)
+
+	card.path,card.weeks=weeklyPath(series)
+	return card
+end
+
+function A.seasonCardText(card)
+	if type(card)~="table"then
+		return{}
+	end
+	local function plain(text)
+		return(tostring(text):gsub("|c%x%x%x%x%x%x%x%x",""):gsub("|r",""))
+	end
+	local lines={("%s, %s"):format(card.title,card.label)}
+	local about={}
+	about[#about+1]=card.character
+	about[#about+1]=card.span
+	about[#about+1]=card.hours and(card.hours.." played")or nil
+	if#about>0 then
+		lines[#lines+1]=table.concat(about,", ")
+	end
+	for _,held in ipairs(card.cells)do
+		local key=held.key:sub(1,1)..held.key:sub(2):lower()
+		lines[#lines+1]=("%s: %s"):format(key,plain(held.text))
+	end
+	local weeks={}
+	for _,step in ipairs(card.path or{})do
+		weeks[#weeks+1]=step.rating and tostring(math.floor(step.rating))or DETAIL_DASH
+	end
+	if#weeks>0 then
+		lines[#lines+1]="Rating by week: "..table.concat(weeks,", ")
+	end
 	return lines
 end

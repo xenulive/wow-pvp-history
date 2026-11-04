@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.33
+-- WowPvpHistory 0.75.26
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -44,8 +44,8 @@ function A.bandVerdict(band)
 		return false,"folded"
 	end
 
-	local room=band.room
-	if type(room)~="number"then
+	local room=A.unitFigure(band.room)
+	if room==nil then
 		return true,"unmeasured"
 	end
 	if room<=0 then
@@ -54,7 +54,8 @@ function A.bandVerdict(band)
 
 	local heading=type(band.heading)=="number"and band.heading or 0
 	local rowHeight=type(band.rowHeight)=="number"and band.rowHeight or 0
-	if heading+minimum*rowHeight>room then
+	local needs=A.unitFigure(heading+minimum*rowHeight)or 0
+	if needs>room then
 		return false,"cramped"
 	end
 

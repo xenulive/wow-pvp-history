@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.33
+-- WowPvpHistory 0.75.26
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -29,6 +29,7 @@ local function decimalArgument(word)
 	end
 	return n
 end
+A.decimalArgument=decimalArgument
 
 local SEASON_NOT_WHOLE="a season is a whole number above zero"
 
@@ -220,6 +221,50 @@ local function reportMatch(id)
 	end
 end
 
+function A.reportStar(words)
+	local word=words[2]
+	if word==nil then
+		local db=A.db()
+		local list=(db and type(db.matches)=="table")and db.matches or{}
+		local starred={}
+		for i=#list,1,-1 do
+			if A.isStarred(list[i])then
+				starred[#starred+1]=list[i]
+			end
+		end
+		if#starred==0 then
+			A.say("no match is starred. /pvph star <id> stars one")
+			return
+		end
+		A.say(("%d starred %s, newest first:"):format(#starred,#starred==1 and"match"or"matches"))
+		for i=1,#starred do
+			local record=starred[i]
+			A.say(("  %s  %s"):format(A.matchLink(record.id,"#"..A.matchIdText(record.id)),
+				A.summaryLine(record)))
+		end
+		return
+	end
+	local id=A.matchIdFromWord(word)
+	if not id then
+		A.say(("%q is not a match id. /pvph list to see what is held"):format(word))
+		return
+	end
+	if not A.match(id)then
+		A.say(("no stored match with id %s. /pvph list to see what is held"):format(A.matchIdText(id)))
+		return
+	end
+	if type(A.rowMenuStar)~="function"then
+		A.say("the match window did not load, so the star could not be written")
+		return
+	end
+	local outcome=A.rowMenuStar(id,"word")
+	if outcome=="starred"or outcome=="unstarred"then
+		A.say(("%s match #%s"):format(outcome,A.matchIdText(id)))
+	else
+		A.say(("match #%s: the star could not be written"):format(A.matchIdText(id)))
+	end
+end
+
 local function characterLabel(guid)
 	if type(A.characterList)=="function"then
 		local ok,list=pcall(A.characterList)
@@ -264,7 +309,8 @@ function A.refuseUnstoredFormat(format,character)
 end
 
 function A.reportBests(format)
-	if A.refuseUnstoredFormat(format,A.windowCharacter())then
+	local character=A.windowCharacter()
+	if A.refuseUnstoredFormat(format,character)then
 		return
 	end
 	format=format or A.windowFormat()
@@ -278,7 +324,7 @@ function A.reportBests(format)
 		local _,s,_,b=A.formatScope(format)
 		season,bound=s,b
 	end
-	local ok,lines,rows=pcall(A.bestsLines,format,season,A.windowCharacter(),bound)
+	local ok,lines,rows=pcall(A.bestsLines,format,season,character,bound)
 	if not ok then
 		A.say("the bests could not be read: "..tostring(lines))
 		return
@@ -287,6 +333,45 @@ function A.reportBests(format)
 		format and A.scopeText(format)or"all time",rows,rows==1 and"spec"or"specs"))
 	for i=1,#lines do
 		A.say("  "..lines[i])
+	end
+end
+
+function A.reportPartners(format)
+	if A.refuseUnstoredFormat(format,A.windowCharacter())then
+		return
+	end
+	format=format or A.windowFormat()
+	if not A.partnerFormat(format)then
+		A.say(("%s has no partners: only the arena tabs, 2v2, 3v3, Arena and Skirmish, keep who was on your side")
+			:format(format and A.formatLabel(format)or"All"))
+		return
+	end
+	local ok,rows,_,rangeWord=pcall(A.partnerReading,format)
+	if not ok or type(rows)~="table"then
+		A.say("the partners could not be read: "..tostring(rows))
+		return
+	end
+	A.say(("partners on %s, %s: %d %s"):format(A.formatLabel(format),tostring(rangeWord),#rows,
+		#rows==1 and"partner"or"partners"))
+	if#rows==0 then
+		A.say("  no partners yet")
+		return
+	end
+	local shown=math.min(#rows,A.partnerPanelRows())
+	for i=1,shown do
+		local row=rows[i]
+		local parts={row.name or row.key}
+		parts[#parts+1]=A.partnerSpecText(row)
+		parts[#parts+1]=(A.partnerRecordText(row))
+		local change=A.partnerRatingText(row)
+		parts[#parts+1]=change and("rating "..change)or"no rating"
+		local day=row.lastAt and A.shortDay(row.lastAt)or nil
+		parts[#parts+1]=day and("last "..day)or nil
+		A.say(("  %d. %s"):format(i,table.concat(parts,"  ")))
+	end
+	local rest=#rows-shown
+	if rest>0 then
+		A.say(("  %d more %s"):format(rest,rest==1 and"partner"or"partners"))
 	end
 end
 
@@ -327,23 +412,35 @@ local NOTES_CONTROLS={
 	sort=function(value)
 		local word,dir=(value or""):lower():match("^(%S+)%s*(%S*)%s*$")
 		if not A.setNotesSort(word,dir~=""and dir or nil)then
-			return nil,"/pvph notes sort <recent||met||rep||player||record||with||against> [up||down]"
+			return nil,"/pvph notes sort <recent||met||skill||attitude||player||trend||record||with||against> [up||down]"
 		end
 		local state=A.notesState()
 		return("the players list is sorted %s%s for this session"):format(state.sort,
 			state.dir and(" "..state.dir)or"")
 	end,
-	rep=function(value)
+	skill=function(value)
 		local word=value and value:lower()or nil
 		if word=="off"or word=="all"then
 			A.setNotesRep(nil)
-			return"the players list shows every rep"
+			return"the players list shows every skill"
 		end
-		local rep=A.repFromWord(word)
-		if rep==nil or not A.setNotesRep(rep)then
-			return nil,"/pvph notes rep <bad||negative||neutral||positive||strong||none||off>"
+		local step=A.repFromWord(word,"skill")
+		if step==nil or not A.setNotesScale("skill",step)then
+			return nil,"/pvph notes skill <weak||below||average||good||strong||none||off>"
 		end
-		return("the players list shows %s only"):format((A.ratingRampLabel(rep~="none"and rep or nil)))
+		return("the players list shows skill %s only"):format((A.ratingRampLabel(step~="none"and step or nil,"skill")))
+	end,
+	attitude=function(value)
+		local word=value and value:lower()or nil
+		if word=="off"or word=="all"then
+			A.setNotesScale("attitude",nil)
+			return"the players list shows every attitude"
+		end
+		local step=A.repFromWord(word,"attitude")
+		if step==nil or not A.setNotesScale("attitude",step)then
+			return nil,"/pvph notes attitude <toxic||rude||neutral||friendly||great||none||off>"
+		end
+		return("the players list shows attitude %s only"):format((A.ratingRampLabel(step~="none"and step or nil,"attitude")))
 	end,
 	format=function(value)
 		local word=value and value:lower()or nil
@@ -354,16 +451,13 @@ local NOTES_CONTROLS={
 			A.setNotesFormat(nil)
 			return"the players list shows every format"
 		end
-		local choices=A.playerFormatChoices()
-		for _,choice in ipairs(choices)do
-			if choice.value~=nil and choice.value==word then
-				A.setNotesFormat(word)
-				return("the players list shows players met in %s"):format(choice.label)
-			end
-		end
 		local held={}
-		for _,choice in ipairs(choices)do
+		for _,choice in ipairs(A.playerFormatChoices())do
 			if choice.value~=nil then
+				if choice.value==word then
+					A.setNotesFormat(word)
+					return("the players list shows players met in %s"):format(choice.label)
+				end
 				held[#held+1]=choice.value
 			end
 		end
@@ -395,9 +489,10 @@ local NOTES_CONTROLS={
 }
 
 local SCOREBOARD={
-	roster={name=true,damage=true,healing=true,kb=true,dispels=true,objective=true},
-	lobby={swing=true,wins=true,damage=true,kb=true,dispels=true},
-	usage="/pvph scoreboard sort <name||damage||healing||kb||dispels||objective||swing||wins> [up||down]",
+	roster={name=true,damage=true,healing=true,kb=true,honor=true,dispels=true,
+		objective=true},
+	lobby={swing=true,wins=true,damage=true,kb=true,honor=true,dispels=true},
+	usage="/pvph scoreboard sort <name||damage||healing||kb||honor||dispels||objective||swing||wins> [up||down]",
 }
 
 function SCOREBOARD.state()
@@ -442,7 +537,8 @@ local function reportScoreboard(words)
 end
 
 local function reportNotesWindow(word,rest)
-	local control=word and NOTES_CONTROLS[word:lower()]or nil
+	local key=word and word:lower()or nil
+	local control=key and NOTES_CONTROLS[key=="rep"and"skill"or key]or nil
 	if control then
 		if not A.showNotes()then
 			A.say("the players window could not be opened")
@@ -471,7 +567,7 @@ local function reportNotesWindow(word,rest)
 		return
 	end
 	local record
-	if word:lower()=="last"then
+	if key=="last"then
 		record=A.matches()[1]
 		if not record then
 			A.say("no match is recorded yet, so there is no roster to scope to")
@@ -508,8 +604,9 @@ local function reportCard(name)
 	end
 	local said=A.showNameCard(name,nil,"typed")
 	if said.kind=="met"then
-		A.say(("%s: met %d %s, rep %s"):format(tostring(said.name),said.met or 0,
-			(said.met or 0)==1 and"time"or"times",tostring((A.ratingRampLabel(said.rating)))))
+		A.say(("%s: met %d %s, skill %s, attitude %s"):format(tostring(said.name),said.met or 0,
+			(said.met or 0)==1 and"time"or"times",tostring((A.ratingRampLabel(said.rating))),
+			tostring((A.ratingRampLabel(said.attitude,"attitude")))))
 	elseif said.kind=="stranger"then
 		A.say(("%s: not met before"):format(tostring(said.name)))
 	elseif said.kind=="self"then
@@ -616,7 +713,7 @@ local function reportNoteCommand(msg,words)
 			A.say(("that note is %d bytes and the bound is %d bytes. Nothing written")
 				:format(got,bound))
 		else
-			A.say("no database, so the note could not be stored")
+			A.say(("%s, so the note could not be stored"):format(A.noteRefusalText(reason)))
 		end
 		return
 	end
@@ -638,55 +735,146 @@ local function reportNoteCommand(msg,words)
 		was~=nil and(", replacing: "..tostring(was))or""))
 end
 
-local function reportRate(words)
+local function reportTemplate(msg,words)
+	local usage=("/pvph template <1-%d> [text]  sets a note template. No text clears it. Bare lists them")
+		:format(A.NOTE_TEMPLATE_SLOTS)
+	if not words[2]then
+		local held=A.noteTemplates()
+		for slot=1,A.NOTE_TEMPLATE_SLOTS do
+			A.say(("template %d: %s"):format(slot,held[slot]or"empty"))
+		end
+		return
+	end
+	local slot=wholeArgument(words[2],1,A.NOTE_TEMPLATE_SLOTS)
+	if not slot then
+		A.say(usage)
+		return
+	end
+	local body=rest(msg,2)
+	local stored,was,why,got,bound=A.setNoteTemplate(slot,body~=""and body or nil)
+	if not stored then
+		if why=="too-long"then
+			A.say(("that template is %d bytes and the bound is %d bytes. Nothing written"):format(got,bound))
+		else
+			A.say(("%s, so the template could not be stored"):format(A.noteRefusalText(why)))
+		end
+		return
+	end
+	if body==""then
+		A.say(was==nil and("template %d was empty"):format(slot)
+			or("template %d cleared, was: %s"):format(slot,was))
+	elseif was==body then
+		A.say(("template %d already reads: %s"):format(slot,was))
+	else
+		A.say(("template %d set%s"):format(slot,was~=nil and(", replacing: "..was)or""))
+	end
+end
+
+local function reportScale(words,scale)
 	local who=words[2]
-	local usage="/pvph rate <who> +2|+1|0|-1|-2  rates an indexed player. No value clears it"
+	local command=scale=="attitude"and"attitude"or"rate"
+	local usage=("/pvph %s <who> +2|+1|0|-1|-2 or a step word  sets the %s of an indexed player. "
+		.."No value clears it"):format(command,scale)
 	if not who then
 		A.say(usage)
 		return
 	end
+	local word=words[3]
 	if words[4]then
-		refuseUnread(words[4],usage)
-		return
+		local joined=table.concat(words," ",3)
+		if A.ratingValue(joined,scale)==nil then
+			refuseUnread(words[4],usage)
+			return
+		end
+		word=joined
 	end
 
-	local guid,entry=addressed(who,"rate")
+	local guid,entry=addressed(who,command)
 	if not guid then
 		return
 	end
 
-	local word=words[3]
 	local value
 	if word then
-		value=A.ratingValue(word)
+		value=A.ratingValue(word,scale)
 		if value==nil then
-			A.say(("%q is not a rating. +2, +1, 0, -1 or -2, and + and - are taken as the "
-				.."single step either way"):format(word))
+			A.say(("%q is not a %s step. +2, +1, 0, -1 or -2, a step word, and + and - are taken "
+				.."as the single step either way"):format(word,scale))
 			return
 		end
 	end
 
-	local ok,was=A.setPlayerRating(guid,value)
+	local set=scale=="attitude"and A.setPlayerAttitude or A.setPlayerRating
+	local ok,was,reason=set(guid,value)
 	if not ok then
-		A.say("no database, so the rating could not be stored")
+		A.say(("%s, so the %s could not be stored"):format(A.noteRefusalText(reason),scale))
 		return
 	end
 
 	if value==nil then
 		if was==nil then
-			A.say(("%s had no rating"):format(nameOf(guid,entry)))
+			A.say(("%s had no %s"):format(nameOf(guid,entry),scale))
 		else
-			A.say(("rating cleared on %s, was %s"):format(nameOf(guid,entry),
-				tostring(A.ratingText(was))))
+			A.say(("%s cleared on %s, was %s"):format(scale,nameOf(guid,entry),
+				tostring(A.ratingText(was,scale))))
 		end
 		return
 	end
 
 	if was==value then
-		A.say(("%s is already rated %s"):format(nameOf(guid,entry),tostring(A.ratingText(value))))
+		A.say(("%s is already %s %s"):format(nameOf(guid,entry),scale,tostring(A.ratingText(value,scale))))
 		return
 	end
-	A.say(("%s rated %s"):format(nameOf(guid,entry),tostring(A.ratingText(value))))
+	A.say(("%s %s %s"):format(nameOf(guid,entry),scale,tostring(A.ratingText(value,scale))))
+end
+
+local function reportRate(words)
+	reportScale(words,"skill")
+end
+
+local function reportAttitude(words)
+	reportScale(words,"attitude")
+end
+
+local function reportWords(words)
+	local usage="/pvph words <skill||attitude> <1-5> [word]  sets a step word, worst step first. "
+		.."No word restores the default. Bare lists both"
+	if not words[2]then
+		for _,scale in ipairs(A.SCALES)do
+			local shown={}
+			for step=-2,2 do
+				shown[#shown+1]=A.stepWord(scale,step)
+			end
+			A.say(("%s: %s"):format(scale,table.concat(shown,", ")))
+		end
+		return
+	end
+	local scale=words[2]:lower()
+	local position=wholeArgument(words[3],1,5)
+	if A.scaleWordsKey(scale)==nil or position==nil then
+		A.say(usage)
+		return
+	end
+	local typed=words[4]and table.concat(words," ",4)or nil
+	local stored,was,why,got,bound=A.setStepWord(scale,position,typed)
+	if not stored then
+		if why=="too-long"then
+			A.say(("that word is %d bytes and the bound is %d bytes. Nothing written"):format(got,bound))
+		elseif why=="taken"then
+			A.say(("step %d of %s already holds that word. Nothing written"):format(got,scale))
+		else
+			A.say(("%s, so the word could not be stored"):format(A.noteRefusalText(why)))
+		end
+		return
+	end
+	local now=A.stepWord(scale,position-3)
+	if words[4]==nil then
+		A.say(("%s step %d is %s again"):format(scale,position,now))
+	elseif was==now then
+		A.say(("%s step %d already reads %s"):format(scale,position,now))
+	else
+		A.say(("%s step %d is %s, was %s"):format(scale,position,now,tostring(was)))
+	end
 end
 
 local function reportTag(words)
@@ -715,7 +903,7 @@ local function reportTag(words)
 			A.say(("%s already carries %d tags, which is the bound, so %q was not added. Nothing "
 				.."written"):format(nameOf(guid,entry),bound,tostring(offender)))
 		else
-			A.say("no database, so the tags could not be stored")
+			A.say(("%s, so the tags could not be stored"):format(A.noteRefusalText(reason)))
 		end
 		return
 	end
@@ -745,9 +933,9 @@ local function reportUntag(words)
 		tags[#tags+1]=words[i]
 	end
 
-	local ok,removed=A.removePlayerTags(guid,tags)
+	local ok,removed,reason=A.removePlayerTags(guid,tags)
 	if not ok then
-		A.say("no database, so the tags could not be changed")
+		A.say(("%s, so the tags could not be changed"):format(A.noteRefusalText(reason)))
 		return
 	end
 
@@ -757,6 +945,34 @@ local function reportUntag(words)
 	end
 
 	A.say(("%s untagged %s"):format(nameOf(guid,entry),table.concat(removed,", ")))
+end
+
+local function reportTidy(confirm)
+	if not confirm then
+		local reading=A.tidyDryRun()
+		local line=A.tidyLine(reading)
+		if not reading.reason and reading.count>0 then
+			line=line..". /pvph tidy confirm drops them"
+		end
+		A.say(line)
+		return
+	end
+	local ok,why,reading,backup=A.tidyDrop(A.tidySeenCount())
+	if ok then
+		A.say(("dropped %d %s from the players list, about %d%% of the file. Their matches keep them, "
+			.."and /pvph rebuild brings them back"):format(reading.count,
+			reading.count==1 and"player"or"players",reading.share))
+		if type(backup)=="table"and not backup.ok then
+			A.say(("the backup before it did not run: %s"):format(tostring(backup.reason)))
+		end
+	elseif why=="moved"then
+		A.say(("the count moved since /pvph tidy said %d; it is %d now. Nothing dropped. /pvph tidy "
+			.."reads it again"):format(A.tidySeenCount()or 0,reading.count))
+	elseif why=="nothing"then
+		A.say("no player was met once, over a year ago, with nothing written. Nothing dropped")
+	else
+		A.say("no database, so nothing was dropped")
+	end
 end
 
 local function reportRosterUsage(word)
@@ -805,7 +1021,7 @@ local function reportRoster(words)
 			elseif reason=="no-tags"then
 				reportRosterUsage()
 			else
-				A.say("no database, so the tags could not be stored")
+				A.say(("%s, so the tags could not be stored"):format(A.noteRefusalText(reason)))
 			end
 			return
 		end
@@ -826,11 +1042,11 @@ local function reportRoster(words)
 			A.say(("match #%s has nobody to untag: its roster is you and %d bot %s")
 				:format(tostring(id),summary.bots,summary.bots==1 and"row"or"rows"))
 		else
-			A.say("no database, so the tags could not be changed")
+			A.say(("%s, so the tags could not be changed"):format(A.noteRefusalText(reason)))
 		end
 		return
 	end
-	A.say(A.rosterWriteLine(summary,false))
+	A.sayRosterRemoved(summary)
 end
 
 local function reportTags()
@@ -878,6 +1094,23 @@ local function reportEditState(label,subject,captured,capturedLabel,none)
 	A.say("  "..tostring(A.editedSummary(subject)))
 end
 
+local function sayNoteEdit(label,subject,raw,ok,was,got,bound)
+	if not ok then
+		A.say(("that note is %d bytes and the bound is %d. Nothing written")
+			:format(got or 0,bound or 0))
+		return
+	end
+	if raw==""and was==nil then
+		A.say(("%s had no note"):format(label))
+	elseif raw==""then
+		A.say(("note cleared on %s, was: %s. It stays marked as edited"):format(label,tostring(was)))
+	elseif was==raw then
+		A.say(("%s already noted: %s"):format(label,tostring(was)))
+	else
+		A.say(("%s noted: %s"):format(label,tostring(subject.manual.note)))
+	end
+end
+
 local function reportEditRecord(id,field,value,raw)
 	local record=A.match(id)
 	if not record then
@@ -895,21 +1128,7 @@ local function reportEditRecord(id,field,value,raw)
 
 	if field=="note"then
 		local ok,was,_,got,bound=A.editNote(record,raw~=""and raw or nil)
-		if not ok then
-			A.say(("that note is %d bytes and the bound is %d. Nothing written")
-				:format(got or 0,bound or 0))
-			return
-		end
-		if raw==""and was==nil then
-			A.say(("match #%s had no note"):format(tostring(id)))
-		elseif raw==""then
-			A.say(("note cleared on match #%s, was: %s. It stays marked as edited")
-				:format(tostring(id),tostring(was)))
-		elseif was==raw then
-			A.say(("match #%s already noted: %s"):format(tostring(id),tostring(was)))
-		else
-			A.say(("match #%s noted: %s"):format(tostring(id),tostring(record.manual.note)))
-		end
+		sayNoteEdit(("match #%s"):format(tostring(id)),record,raw,ok,was,got,bound)
 		return
 	end
 
@@ -971,21 +1190,7 @@ local function reportEditIncomplete(id,field,value,raw)
 
 	if field=="note"then
 		local ok,was,_,got,bound=A.editIncompleteNote(entry,raw~=""and raw or nil)
-		if not ok then
-			A.say(("that note is %d bytes and the bound is %d. Nothing written")
-				:format(got or 0,bound or 0))
-			return
-		end
-		if raw==""and was==nil then
-			A.say(("incomplete #%s had no note"):format(tostring(id)))
-		elseif raw==""then
-			A.say(("note cleared on incomplete #%s, was: %s. It stays marked as edited")
-				:format(tostring(id),tostring(was)))
-		elseif was==raw then
-			A.say(("incomplete #%s already noted: %s"):format(tostring(id),tostring(was)))
-		else
-			A.say(("incomplete #%s noted: %s"):format(tostring(id),tostring(entry.manual.note)))
-		end
+		sayNoteEdit(("incomplete #%s"):format(tostring(id)),entry,raw,ok,was,got,bound)
 		return
 	end
 
@@ -1234,13 +1439,13 @@ local function reportAsk(format)
 		A.say("the questions did not load")
 		return
 	end
-	if A.refuseUnstoredFormat(format,A.windowCharacter())then
+	local character=A.windowCharacter()
+	if A.refuseUnstoredFormat(format,character)then
 		return
 	end
 
 	local named=format or A.windowFormat()
 	local _,season,_,bound=A.formatScope(named)
-	local character=A.windowCharacter()
 
 	local lines=A.askLines(named,season,character,bound)
 	for i=1,#lines do
@@ -1261,6 +1466,7 @@ local ASK_SORT_USAGE="/pvph ask sort <beats||where||worth||comp> <met||won||defa
 local ASK_SPECS_USAGE="/pvph ask specs <on||off>, or /pvph ask specs sort <spec||rounds-against||wl-against||"
 	.."won-against||rounds-with||wl-with||won-with||default>, held for this session"
 local ASK_UNDER_USAGE="/pvph ask under <on||off>   shows the rows under the floor for this session"
+local SPECS_UNREAD="the specs view could not be read"
 
 local function askPopulationNow()
 	local named=A.windowFormat()
@@ -1276,19 +1482,14 @@ local function drawnAnswer(answer,key,named,season,character,bound)
 end
 
 local function reportAskSort(key,word)
-	if type(A.askQuestion)~="function"or A.askQuestion(key)==nil or word==nil then
+	local column=word and ASK_SORT_WORDS[word]or nil
+	if type(A.askQuestion)~="function"or A.askQuestion(key)==nil or column==nil then
 		A.say(ASK_SORT_USAGE)
 		return
 	end
 	local named,season,character,bound=askPopulationNow()
 	local answer=drawnAnswer(A.askAnswer(key,named,season,character,bound),key,named,season,
 		character,bound)
-
-	local column=ASK_SORT_WORDS[word]
-	if column==nil then
-		A.say(ASK_SORT_USAGE)
-		return
-	end
 	A.toggleAskSort(key,column)
 	if type(A.pickAsk)=="function"then
 		pcall(A.pickAsk,key)
@@ -1325,7 +1526,12 @@ local function reportAskSpecs(word,column)
 	end
 	local named,season,character,bound=askPopulationNow()
 	local held,up=A.specsSort()
-	local _,_,_,rows=A.specRows(named,season,character,held,up,bound)
+	local read,_,_,_,rows=pcall(A.specRows,named,season,character,held,up,bound)
+	if not read then
+		A.say(SPECS_UNREAD..", so no spec is named in its order")
+		return
+	end
+	rows=type(rows)=="table"and rows or{}
 	local names={}
 	for i=1,math.min(3,#rows)do
 		names[#names+1]=A.chipText(rows[i])
@@ -1419,10 +1625,14 @@ local function reportAskOpen(word)
 		return
 	end
 
-	if type(A.specsShowing)=="function"and A.specsShowing()and word~=nil then
+	if type(A.specsShowing)=="function"and A.specsShowing()then
 		local sort,ascending=A.specSort()
 		local read,_,_,_,merged=pcall(A.specRows,named,season,character,sort,ascending,bound)
-		local specs=read and type(merged)=="table"and merged or{}
+		if not read then
+			A.say(SPECS_UNREAD..", so no row was opened")
+			return
+		end
+		local specs=type(merged)=="table"and merged or{}
 		local n=wholeArgument(word)
 		local row=n and specs[n]or nil
 		if row==nil then
@@ -1626,7 +1836,8 @@ local WINDOW_ROW_PICKS={
 local function windowRowRecord(word,verb)
 	if word==nil then
 		A.say(("/pvph window %s <id||last>: a stored match's id, or last for the newest match row the "
-			.."History list draws"):format(verb))
+			.."History list draws. draw, typed and short pick the newest drawn as a draw, carrying a result "
+			.."entered by hand, or a shuffle storing fewer than six rounds"):format(verb))
 		return nil
 	end
 	local wanted=WINDOW_ROW_PICKS[word:lower()]
@@ -1656,8 +1867,8 @@ local function windowRowRecord(word,verb)
 	return record
 end
 
-local MENU_WORDS={open=true,note=true,roster=true,print=true,talents=true,compare=true,
-	result=true}
+local MENU_WORDS={open=true,note=true,star=true,roster=true,print=true,talents=true,
+	compare=true,result=true}
 
 local function reportWindowMenu(words)
 	if words[3]and words[3]:lower()=="close"then
@@ -1691,7 +1902,7 @@ local function reportWindowMenu(words)
 		return
 	end
 	if not MENU_WORDS[entryWord]then
-		A.say(("/pvph window menu %s takes open, note, roster, print, talents, compare or result <win||loss||draw>, and %q is none of them")
+		A.say(("/pvph window menu %s takes open, note, star, roster, print, talents, compare or result <win||loss||draw>, and %q is none of them")
 			:format(id,entryWord))
 		return
 	end
@@ -1847,6 +2058,10 @@ local function reportWindowSize(words)
 	end
 	local widthWord=words[from]and words[from]:lower()or nil
 	local heightWord=words[from+1]and words[from+1]:lower()or nil
+	if words[from+2]then
+		refuseUnread(words[from+2],"/pvph window size [players||match||player] <width> [height]")
+		return
+	end
 	if widthWord==nil then
 		if kind=="match"or kind=="player"then
 			A.say(("/pvph window size %s <width> [height]: a number, min, max, authored or same, and "
@@ -2095,11 +2310,12 @@ local function reportWindow(word,words)
 	end
 
 	if word=="reset"then
-		if type(A.resetGeometryLines)~="function"then
+		local announcements=words[3]~=nil and words[3]:lower()=="announcements"
+		if type(announcements and A.resetAnnouncementLines or A.resetGeometryLines)~="function"then
 			A.say("the window geometry did not load, so nothing could be forgotten")
 			return
 		end
-		local reset=A.resetGeometryLines()
+		local reset=announcements and A.resetAnnouncementLines()or A.resetGeometryLines()
 		for i=1,#reset do
 			A.say(reset[i])
 		end
@@ -2120,7 +2336,8 @@ local function reportWindow(word,words)
 		if given=="reset"then
 			A.setSessionWindowScale(nil,"reset")
 		elseif given~=nil then
-			if A.setSessionWindowScale(given,"command")==nil then
+			local figure=decimalArgument(given)
+			if figure==nil or A.setSessionWindowScale(figure,"command")==nil then
 				local least,most,step=A.windowScaleRange()
 				A.say(("/pvph window scale takes a percentage from %d to %d in steps of %d, or reset, and %q is none")
 					:format(least,most,step,given))
@@ -2135,10 +2352,11 @@ local function reportWindow(word,words)
 
 	if word=="scroll"then
 		local where=words[3]and words[3]:lower()or nil
+		local overviewUsage="/pvph window scroll overview [top|bottom]: the All tab's Stats page moved, or where it is"
 		if where=="overview"then
 			local to=words[4]and words[4]:lower()or nil
 			if to~=nil and to~="top"and to~="bottom"then
-				A.say("/pvph window scroll overview [top|bottom]: the All tab's Stats page moved, or where it is")
+				A.say(overviewUsage)
 				return
 			end
 			if type(A.scrollOverview)~="function"then
@@ -2162,7 +2380,7 @@ local function reportWindow(word,words)
 		end
 		if where~="top"then
 			A.say("/pvph window scroll top: the History list back to its top")
-			A.say("/pvph window scroll overview [top|bottom]: the All tab's Stats page moved, or where it is")
+			A.say(overviewUsage)
 			return
 		end
 		if type(A.scrollListTop)~="function"then
@@ -2304,11 +2522,11 @@ local function reportWindow(word,words)
 end
 
 local function reportSummary(format,season)
-	if A.refuseUnstoredFormat(format,A.windowCharacter())then
+	local character=A.windowCharacter()
+	if A.refuseUnstoredFormat(format,character)then
 		return
 	end
 
-	local character=A.windowCharacter()
 	local choice,_,why,bound=A.formatScope(format)
 	local read={A.windowCharacterText()}
 	if why=="range"then
@@ -2409,6 +2627,35 @@ local function reportSeason(msg,words)
 		return
 	end
 
+	if word=="card"then
+		local number=wholeArgument(words[3])
+		local format=words[4]and words[4]:lower()or A.windowFormat()
+		if number==nil then
+			A.say("/pvph season card <n> [format]. The number is an ended season")
+			return
+		end
+		local character=A.windowCharacter()
+		if A.refuseUnstoredFormat(format,character)then
+			return
+		end
+		local card,why=A.seasonCard(format,number,character)
+		if card==nil then
+			local refusals={
+				current="season %d has not ended, so it has no card",
+				unrated="%s moves no rating, so there is no season card",
+				empty="season %d holds no match on this tab",
+			}
+			local said=refusals[why]or"no season card"
+			A.say(why=="unrated"and said:format(A.formatLabel(format))or said:format(number))
+			return
+		end
+		local lines=A.seasonCardText(card)
+		for i=1,#lines do
+			A.say(lines[i])
+		end
+		return
+	end
+
 	if word=="start"then
 		local number=wholeArgument(words[3])
 		if number==nil then
@@ -2491,6 +2738,14 @@ local function reportSize()
 	for i=1,#lines do
 		A.say(lines[i])
 	end
+	local offer,why=A.roomOffer(size)
+	if why=="no-season"then
+		A.say("  no stored match carries a season, so none can move out by season")
+	end
+	local roomLines=A.roomLines(offer)
+	for i=1,#roomLines do
+		A.say(roomLines[i])
+	end
 
 	local noted,notedError=pcall(A.noteCanary,size.constants)
 	if not noted then
@@ -2537,6 +2792,9 @@ local function reportReset(confirmed)
 	if pin.ok then
 		A.say(("a copy holding %d %s is pinned, %d bytes encoded. /pvph restore pinned brings it "
 			.."back"):format(pin.matches,pin.matches==1 and"match"or"matches",pin.bytes))
+	elseif pin.reason=="smaller"and pin.promoted then
+		A.say(("the %d-match backup copy was larger and is now the pin. /pvph restore pinned brings it back")
+			:format(pin.promoted))
 	elseif pin.reason=="smaller"then
 		A.say(("the pin holding %d %s was kept rather than overwritten with %d")
 			:format(pin.held,pin.held==1 and"match"or"matches",pin.matches))
@@ -2549,6 +2807,10 @@ local function reportFixture(words)
 	local second=words[2]and words[2]:lower()or nil
 
 	if second=="clear"then
+		if words[4]then
+			refuseUnread(words[4],"/pvph debug fixture clear [confirm]")
+			return
+		end
 		local before=A.fixturePreview()
 		local leftEarly=tonumber(before.leftEarly)or 0
 		if before.marked==0 and leftEarly==0 then
@@ -2605,6 +2867,7 @@ local function reportFixture(words)
 		return
 	end
 
+	local usage="/pvph debug fixture [n] [healer||damage] [samespec] [unrated] [winning], or clear [confirm]"
 	local asked,seat,sameSpec,unrated,winning=nil,nil,false,false,false
 	for i=2,#words do
 		local word=words[i]:lower()
@@ -2622,6 +2885,9 @@ local function reportFixture(words)
 				A.say(("fixture: a count is a whole number from 1, and %q is not one"):format(word))
 				return
 			end
+		else
+			refuseUnread(words[i],usage)
+			return
 		end
 	end
 
@@ -2734,8 +3000,8 @@ local function reportCsvExport(filter,part)
 		return
 	end
 
+	local named=filterText(filter)
 	if matches==0 then
-		local named=filterText(filter)
 		if leftOutText then
 			A.say(("there is nothing finished to export: %s"):format(leftOutText))
 		elseif named then
@@ -2747,7 +3013,6 @@ local function reportCsvExport(filter,part)
 	end
 
 	local where=parts>1 and(" part %d of %d"):format(taken,parts)or""
-	local named=filterText(filter)
 	A.say(("csv export%s is %d characters, %d %s, holding %d %s%s%s")
 		:format(where,#text,rows,rows==1 and"row"or"rows",
 			matches,matches==1 and"match"or"matches",
@@ -2874,7 +3139,7 @@ local function showWord(word,tabs)
 		return"format",false
 	end
 	for i=1,#tabs do
-		if tabs[i].format~=nil and tabs[i].format==word then
+		if tabs[i].format==word then
 			return"format",word
 		end
 	end
@@ -2948,10 +3213,13 @@ local function reportShowState(words)
 				want.body="stats"
 			end
 			any=true
-		elseif id==nil and A.matchIdFromWord(words[i])then
-			id=A.matchIdFromWord(words[i])
 		else
-			unknown[#unknown+1]=words[i]
+			local wordId=id==nil and A.matchIdFromWord(words[i])or nil
+			if wordId then
+				id=wordId
+			else
+				unknown[#unknown+1]=words[i]
+			end
 		end
 	end
 	if not any and#unknown==0 then
@@ -3058,7 +3326,62 @@ local function appearanceLabel(name)
 	return tostring(name)
 end
 
-local function reportAppearance(word)
+local function reportAppearance(word,pairWord)
+	if word=="colors"then
+		local choices=A.resultPairChoices()
+		local labels,names={},{}
+		for i=1,#choices do
+			labels[choices[i].value]=choices[i].label
+			names[i]=choices[i].value
+		end
+		if pairWord==nil then
+			local chosen=A.resultPair()
+			A.say(("the win and loss colors are %s (%s)"):format(labels[chosen]:lower(),chosen))
+		elseif labels[pairWord]==nil then
+			A.say(("unknown colors %q. %s"):format(pairWord,table.concat(names,", ")))
+		elseif not A.setResultPair(pairWord,"typed")and A.resultPair()~=pairWord then
+			A.say("no database, so the setting could not be stored")
+		else
+			A.say(("win and loss colors set to %s (%s)"):format(labels[pairWord]:lower(),pairWord))
+		end
+		return
+	end
+
+	local looks={
+		text={on="large",off="normal",get=A.largeText,set=A.setLargeText,what="the list text",
+			is="is"},
+		rows={on="dense",off="normal",get=A.denseRows,set=A.setDenseRows,what="the list rows",
+			is="are"},
+		realms={on="on",off="off",get=A.realmsShown,set=A.setRealms,what="realm names",is="are"},
+	}
+
+	if word=="clock"then
+		if pairWord==nil then
+			local setting=A.clockSetting()
+			A.say(("the clock is %s, drawing %s-hour"):format(setting,A.clockDrawn()))
+		elseif pairWord~="game"and pairWord~="24"and pairWord~="12"then
+			A.say(("unknown clock %q. game, 24 or 12"):format(pairWord))
+		elseif not A.setClock(pairWord,"typed")and A.clockSetting()~=pairWord then
+			A.say("no database, so the setting could not be stored")
+		else
+			A.say(("clock set to %s, drawing %s-hour"):format(pairWord,A.clockDrawn()))
+		end
+		return
+	end
+	local look=word and looks[word]
+	if look then
+		if pairWord==nil then
+			A.say(("%s %s %s"):format(look.what,look.is,look.get()and look.on or look.off))
+		elseif pairWord~=look.on and pairWord~=look.off then
+			A.say(("unknown %s %q. %s or %s"):format(word,pairWord,look.on,look.off))
+		elseif not look.set(pairWord==look.on,"typed")and(look.get()==true)~=(pairWord==look.on)then
+			A.say("no database, so the setting could not be stored")
+		else
+			A.say(("%s set to %s"):format(look.what,pairWord))
+		end
+		return
+	end
+
 	if word=="stored"then
 		A.holdTheme(nil)
 		A.say(("the appearance held for this session is released: %s, as stored")
@@ -3075,7 +3398,7 @@ local function reportAppearance(word)
 	end
 
 	if word then
-		A.say(("unknown appearance %q. game, dark or stored"):format(word))
+		A.say(("unknown appearance %q. game, dark, stored, colors, text, rows, realms or clock"):format(word))
 		return
 	end
 
@@ -3292,7 +3615,11 @@ local function reportAlert(word)
 		was and"on"or"off"))
 end
 
-local function reportPostGame(word)
+local function reportPostGame(word,figure)
+	if word=="nudge"then
+		A.reportLossNudge(figure)
+		return
+	end
 	if word=="on"or word=="off"then
 		local wanted=word=="on"
 		if not A.setPostGame(wanted)then
@@ -3408,8 +3735,7 @@ local function reportAnnounceFigure(word,figure)
 		end
 
 		if time then
-			A.say(("the announcement stays up for %s%% of its length, so a full banner lasts %s "
-				.."seconds"):format(tostring(was),tostring(A.announceFullSeconds())))
+			A.say(("the announcement stays up for %s seconds"):format(tostring(was)))
 			return
 		end
 
@@ -3444,10 +3770,11 @@ local function reportAnnounceFigure(word,figure)
 			:format(tostring(figure),word,min,max,step))
 		return
 	end
-	A.say(("the announcement %s is %s%%, from %s%%"):format(word,tostring(now),tostring(was)))
+	local unit=time and" seconds"or"%"
+	A.say(("the announcement %s is %s%s, from %s%s"):format(word,tostring(now),unit,tostring(was),unit))
 end
 
-local SHAPE_WORDS={side="split",column="stacked"}
+local SHAPE_WORDS={card="card",headline="headline",side="split",column="stacked"}
 
 local function shapeWords(value)
 	local choices=A.announceShapeChoices()
@@ -3476,7 +3803,7 @@ local function reportAnnounceShape(word)
 	end
 
 	if word then
-		A.say(("unknown announcement shape %q. side, column or stored"):format(word))
+		A.say(("unknown announcement shape %q. card, headline, side, column or stored"):format(word))
 		return
 	end
 
@@ -3487,6 +3814,23 @@ local function reportAnnounceShape(word)
 	else
 		A.say(("the announcement draws %s, as stored"):format(said))
 	end
+end
+
+local function reportAnnounceCrowd(figure)
+	local min,max,step=A.announceCrowdRange()
+	local was=A.announceCrowd()
+	if figure==nil then
+		A.say(("the announcement card lists up to %d players you know, and a lobby with more is drawn as "
+			.."the headline"):format(was))
+		return
+	end
+	local want=decimalArgument(figure)
+	if want==nil or not A.setAnnounceCrowd(want)then
+		A.say(("%s is not one this takes. /pvph announce crowd takes %d to %d in steps of %d")
+			:format(tostring(figure),min,max,step))
+		return
+	end
+	A.say(("the announcement card lists up to %d players, from %d"):format(A.announceCrowd(),was))
 end
 
 local function reportAnnounceLock(verb,word)
@@ -3524,6 +3868,33 @@ local function reportAnnounceLock(verb,word)
 	A.say(("the announcement is %s, as stored"):format(said(A.announceStoredLocked())))
 end
 
+local ANNOUNCE_READINGS={
+	comp={get=function()return A.announceCompEnabled()end,
+		set=function(on)return A.setAnnounceComp(on)end,said="the comp warning at the gates"},
+	rematch={get=function()return A.announceRematchEnabled()end,
+		set=function(on)return A.setAnnounceRematch(on)end,said="the rematch line at the gates"},
+}
+
+local function reportAnnounceReading(word,how)
+	local reading=ANNOUNCE_READINGS[word]
+	local was=reading.get()
+	local parent=A.announceEnabled()and""
+		or". The announcement is off, so it draws nothing until /pvph announce on"
+	if how==nil then
+		A.say(("%s is %s%s"):format(reading.said,was and"on"or"off",parent))
+		return
+	end
+	if how~="on"and how~="off"then
+		A.say(("unknown word %q. /pvph announce %s takes on or off"):format(how,word))
+		return
+	end
+	if not reading.set(how=="on")then
+		A.say("no database, so the setting could not be stored")
+		return
+	end
+	A.say(("%s %s, from %s%s"):format(reading.said,how,was and"on"or"off",parent))
+end
+
 local function reportAnnounce(word,figure)
 	if word=="lock"or word=="unlock"then
 		reportAnnounceLock(word,figure and figure:lower()or nil)
@@ -3537,6 +3908,29 @@ local function reportAnnounce(word,figure)
 
 	if word=="shape"then
 		reportAnnounceShape(figure and figure:lower()or nil)
+		return
+	end
+
+	if word=="crowd"then
+		reportAnnounceCrowd(figure)
+		return
+	end
+
+	if word=="comp"or word=="rematch"then
+		reportAnnounceReading(word,figure and figure:lower()or nil)
+		return
+	end
+
+	if word=="last"then
+		local held=A.announceLastHeld()
+		local drew=A.announceLast()
+		if not held then
+			A.say("nothing has been announced this session")
+		elseif drew then
+			A.say("the last announcement is drawn again")
+		else
+			A.say("the last announcement could not be drawn on this client")
+		end
 		return
 	end
 
@@ -3600,8 +3994,8 @@ local function reportAnnounce(word,figure)
 	end
 
 	if word then
-		A.say(("unknown announce command %q. on, off, preview, reset, time, size, opacity, shape, "
-			.."lock or unlock"):format(word))
+		A.say(("unknown announce command %q. on, off, preview, reset, last, time, size, opacity, shape, "
+			.."crowd, comp, rematch, lock or unlock"):format(word))
 		return
 	end
 
@@ -3653,7 +4047,7 @@ local function reportOverlayFigure(word,figure)
 		return
 	end
 
-	local stored=count and A.setOverlayCount(want)or(not count and A.setOverlayOpacity(want))
+	local stored=(count and A.setOverlayCount or A.setOverlayOpacity)(want)
 	if not stored then
 		A.say("no database, so the setting could not be stored")
 		return
@@ -3675,13 +4069,13 @@ local function reportOverlay(word,figure,extra)
 		return
 	end
 
+	local second=figure and figure:lower()or nil
 	if word=="count"or word=="opacity"then
 		reportOverlayFigure(word,figure)
 		return
 	end
 
 	if word=="combat"then
-		local second=figure and figure:lower()or nil
 		if second=="on"or second=="off"then
 			local wanted=second=="on"
 			local was=A.overlayCombat()
@@ -3701,10 +4095,30 @@ local function reportOverlay(word,figure,extra)
 		return
 	end
 
+	if word=="two"then
+		if second=="on"or second=="off"then
+			local wanted=second=="on"
+			local was=A.overlayTwo()
+			if not A.setOverlayTwo(wanted)then
+				A.say("no database, so the setting could not be stored")
+				return
+			end
+			A.say(("the results overlay's second format row: %s, from %s"):format(wanted and"on"or"off",
+				was and"on"or"off"))
+			return
+		end
+		if second~=nil then
+			A.say(("unknown overlay two word %q. on or off"):format(second))
+			return
+		end
+		A.say(("the results overlay's second format row: %s"):format(A.overlayTwo()and"on"or"off"))
+		return
+	end
+
 	if word=="preview"then
-		local second=figure and figure:lower()or nil
 		if second=="opacity"then
-			local held=A.overlayPreviewOpacity(extra)
+			local want=decimalArgument(extra)
+			local held=want~=nil and A.overlayPreviewOpacity(want)
 			local min,max=A.overlayOpacityRange()
 			if held then
 				A.say(("the results overlay's background is drawn at %d%% for this session"):format(held))
@@ -3759,7 +4173,6 @@ local function reportOverlay(word,figure,extra)
 	end
 
 	if word=="hover"then
-		local second=figure and figure:lower()or nil
 		if second=="off"then
 			A.overlayHover(nil)
 			A.say("results overlay hover hidden")
@@ -3768,7 +4181,8 @@ local function reportOverlay(word,figure,extra)
 		local index=wholeArgument(second)
 		if index==nil then
 			if figure==nil then
-				A.say("/pvph overlay hover takes a tile number from 1, or off")
+				A.say("/pvph overlay hover takes a tile number from 1, or off. The numbers run along the first "
+					.."row and on into the second")
 			else
 				A.say(("/pvph overlay hover takes a tile number from 1, or off, and %q is neither"):format(figure))
 			end
@@ -3787,7 +4201,55 @@ local function reportOverlay(word,figure,extra)
 		return
 	end
 
-	A.say(("unknown overlay command %q. on, off, count, opacity, combat, preview or hover"):format(word))
+	A.say(("unknown overlay command %q. on, off, count, opacity, combat, two, preview or hover"):format(word))
+end
+
+local function reportTally(word)
+	if word==nil then
+		local lines=A.tallyReadout()
+		for i=1,#lines do
+			A.say(lines[i])
+		end
+		return
+	end
+	if word=="on"or word=="off"then
+		local was=A.tallyEnabled()
+		if not A.setTally(word=="on")then
+			A.say("no database, so the setting could not be stored")
+			return
+		end
+		A.say(("the round tally in Solo Shuffle %s, from %s"):format(word,was and"on"or"off"))
+		return
+	end
+	if word=="lock"or word=="unlock"then
+		if not A.setTallyLocked(word=="lock")then
+			A.say("no database, so the setting could not be stored")
+			return
+		end
+		A.say(word=="lock"and"the round tally is fixed where it is"
+			or"the round tally can be dragged, and while a match draws it")
+		return
+	end
+	if word=="preview"then
+		local toggled=A.tallyPreview()
+		if toggled=="shown"then
+			A.say("the round tally sample is drawn where the strip draws. /pvph tally preview puts it away")
+		elseif toggled=="ended"then
+			A.say("the round tally sample is put away")
+		else
+			A.say("the round tally could not be drawn on this client")
+		end
+		return
+	end
+	if word=="reset"then
+		if A.resetTallyPosition()then
+			A.say("the round tally is back at the top of the screen")
+		else
+			A.say("no database, so the position could not be cleared")
+		end
+		return
+	end
+	A.say(("unknown tally command %q. on, off, preview, reset, lock or unlock"):format(word))
 end
 
 local function reportContextMenu(word)
@@ -3845,16 +4307,115 @@ local function reportDuel(word)
 	end
 end
 
+local function reportWorld(word)
+	if word=="on"or word=="off"then
+		local wanted=word=="on"
+		local was=A.worldEnabled()
+		if not A.setWorld(wanted)then
+			A.say("no database, so the setting could not be stored")
+			return
+		end
+		A.say(("World PvP recording %s, from %s"):format(wanted and"on"or"off",was and"on"or"off"))
+		return
+	end
+	if word then
+		A.say(("unknown world command %q. on or off"):format(word))
+		return
+	end
+	A.say("World PvP recording "..(A.worldEnabled()and"on"or"off"))
+end
+
+local function reportRecord(word)
+	if word=="on"or word=="off"then
+		local wanted=word=="on"
+		local was=A.characterRecorded()
+		if not A.setCharacterRecorded(wanted)then
+			A.say("no database or no readable character, so the setting could not be stored")
+			return
+		end
+		A.say(("recording on %s %s, from %s"):format(A.recordingName()or"this character",
+			wanted and"on"or"off",was and"on"or"off"))
+		return
+	end
+	if word then
+		A.say(("unknown record command %q. on or off"):format(word))
+		return
+	end
+	local muted=A.mutedCharacters()
+	if#muted==0 then
+		A.say("every character is recorded")
+		return
+	end
+	local names={}
+	for i=1,#muted do
+		names[i]=A.recordingName(muted[i])or"a character with no stored name"
+	end
+	A.say(("not recorded: %s"):format(table.concat(names,", ")))
+end
+
+local function reportPause(figure)
+	if figure==nil then
+		local at=A.pausedUntil()
+		if at==nil then
+			A.say("the pause is not running. /pvph pause <minutes> starts one")
+		else
+			A.say(("recording is paused until %s. /pvph resume starts it again"):format(A.pauseClock(at)))
+		end
+		return
+	end
+	local min,max=A.pauseRange()
+	local minutes=wholeArgument(figure,-math.huge)
+	local at=minutes~=nil and A.setPause(minutes)
+	if not at then
+		A.say(("%q is not a pause. /pvph pause takes whole minutes from %d to %d"):format(figure,min,max))
+		return
+	end
+	A.say(("recording is paused until %s. A match already running is still recorded. /pvph resume "
+		.."starts it again"):format(A.pauseClock(at)))
+end
+
+local function reportResume()
+	if A.resumeRecording()then
+		A.say("recording resumed")
+	else
+		A.say("the pause is not running, so recording is already on")
+	end
+end
+
+local RECORDING_COMMANDS={
+	world=function(word)reportWorld(word and word:lower()or nil)end,
+	record=function(word)reportRecord(word and word:lower()or nil)end,
+	pause=reportPause,
+	resume=reportResume,
+}
+
+function A.recordingCommand(first,word)
+	local run=RECORDING_COMMANDS[first]
+	if run==nil then
+		return false
+	end
+	run(word)
+	return true
+end
+
 local function reportHold(word,sub,figure)
 	if word=="preview"then
 		local wanted=type(sub)=="string"and sub:lower()or nil
-		local drawn,why=A.holdPreview(wanted,figure)
+		local seconds=figure~=nil and decimalArgument(figure)or nil
+		local drawn,why
+		if figure~=nil and seconds==nil then
+			why="seconds"
+		else
+			drawn,why=A.holdPreview(wanted,seconds)
+		end
 		local state=A.holdPreviewState()
 		if drawn=="off"then
 			A.say("hold preview off")
 		elseif drawn~=nil and state~=nil then
-			A.say(("hold preview: %s, over a stand-in at the center of the screen. Nothing stored")
-				:format(state.text or drawn))
+			local took=state.pick=="rated"and", taking the newest rated match"
+				or state.pick=="newest"and", taking the newest match, none stored being rated"or""
+			A.say(("hold preview: %s%s, over a stand-in at the center of the screen. Nothing stored")
+				:format(state.text or drawn,took))
 		elseif why=="holding"then
 			A.say("the exit is held for a match now, so no preview is drawn over it")
 		elseif why=="seconds"then
@@ -3970,10 +4531,7 @@ local function reportSample(word,words)
 			.."first"):format(word))
 		return
 	end
-	local args={}
-	for i=3,#(words or{})do
-		args[#args+1]=words[i]
-	end
+	local args={unpack(words or{},3)}
 
 	if word=="announce"then
 		local record=sampleRecord(word,args[1])
@@ -4130,11 +4688,7 @@ local function reportDebug(word,one,two,words)
 			A.say("the debug ring is off, and the fixture is an instrument. /pvph debug on first")
 			return
 		end
-		local fixtureWords={}
-		for i=2,#(words or{})do
-			fixtureWords[#fixtureWords+1]=words[i]
-		end
-		reportFixture(fixtureWords)
+		reportFixture({unpack(words or{},2)})
 		return
 	end
 
@@ -4152,6 +4706,26 @@ local function reportDebug(word,one,two,words)
 		return
 	end
 
+	if word=="ceiling"then
+		local figure=one and one:lower()or nil
+		local n=figure~="clear"and wholeArgument(figure,-math.huge)or nil
+		if figure~="clear"and n==nil then
+			A.say("/pvph debug ceiling <n||clear>: a whole number of values, or clear")
+			return
+		end
+		if not A.setSandboxCeiling(n)then
+			A.trace("sandbox",{state="ceiling",reason=A.sandboxed()and"bad-figure"or"no-sandbox"},"data")
+			A.say(A.sandboxed()and"ceiling: a whole number from 1 up to the file's limit"
+				or"ceiling: only the sandbox takes one. /pvph debug sandbox starts it")
+			return
+		end
+		A.trace("sandbox",{state="ceiling",ceiling=n},"data")
+		A.dropHeldStoredSize()
+		A.say(n and("ceiling: the sandbox's room is measured against %d values"):format(n)
+			or"ceiling: the sandbox's room is measured against the file's limit again")
+		return
+	end
+
 	if word=="text"then
 		one=one and one:lower()or nil
 		if one~=nil and one~="on"and one~="off"then
@@ -4159,13 +4733,9 @@ local function reportDebug(word,one,two,words)
 			return
 		end
 		local was=A.debugTextEnabled()
-		local wanted
-		if one=="on"then
-			wanted=true
-		elseif one=="off"then
-			wanted=false
-		else
-			wanted=not was
+		local wanted=not was
+		if one~=nil then
+			wanted=one=="on"
 		end
 		if not A.setDebugText(wanted)then
 			A.say("no database, so the setting could not be stored")
@@ -4206,15 +4776,21 @@ local USAGE={
 	"                     180d 90d 30d 7d 3d 1d, in any order",
 	"/pvph status         what is held: version, counts, the last match, the drops",
 	"/pvph options        the settings, and closes them from there. client opens the game's own panel",
-	"/pvph options <page> the settings on one page: general, alerts, notes, recording, data or",
-	"                     diagnostic. The older words all, window, minimap, history and storage",
-	"                     still open the page that holds their rows",
+	"/pvph options <page> the settings on one page: general, appearance, alerts,",
+	"                     aftermatch, notes, skill, recording, data or diagnostic. The older words all,",
+	"                     window, minimap, history and storage still open the page that holds",
+	"                     their rows",
 	"/pvph options close  closes the window from the settings, as Escape does",
 	"/pvph options find [words]  sets the settings' find box for this session; bare clears it",
 	"/pvph options slot <latest||pinned>  the copy the restore card reads, for this session",
 	"/pvph about          the window on its About tab: the name, the version and the license",
 	"/pvph about copy     the About tab with the website's copy box open",
 	"/pvph appearance     which appearance draws. game or dark holds one for this session, stored ends it",
+	"/pvph appearance colors [green||blue||white]  the win and loss colors; bare names the choice",
+	"/pvph appearance text [large||normal]  Large text, the list text one size up; bare names it",
+	"/pvph appearance rows [dense||normal]  Dense rows, the list rows two thirds as tall; bare names it",
+	"/pvph appearance realms [on||off]  Realm names beside names in lists and chat lines; bare names it",
+	"/pvph appearance clock [game||24||12]  the clock every time draws in; bare names it",
 	"/pvph tab            whether the window opens on the tab last selected. remember or all",
 	"/pvph minimap        show or hide the minimap button. reset puts it back, where says where it sits",
 	"/pvph alert          name who in a group or a finished match is already in the history",
@@ -4223,19 +4799,35 @@ local USAGE={
 	"/pvph announce       name who you know across the screen when a match's roster resolves",
 	"                     preview draws a sample to drag; reset puts it back",
 	"                     preview full draws fifteen for this session, so a side wraps",
-	"                     time [percent] how long it stays up; size [percent] how large it draws",
+	"                     last draws the last one again, as the card",
+	"                     time [2-30] how many seconds it stays up; size [percent] how large it draws",
 	"                     opacity [percent] how dark the ground behind each name is",
-	"                     shape side or column holds one for this session, stored ends it",
+	"                     shape card, headline, side or column holds one for this session,",
+	"                     stored ends it",
+	"                     crowd [players] how many the card lists before it is the headline",
+	"                     comp on or off warns of the other team's classes when you lose to them",
+	"                     rematch on or off says when the other team played you earlier this sitting",
 	"                     lock or unlock holds one for this session, lock stored ends it",
 	"/pvph overlay        a bar of the newest results of the format last played. on or off;",
 	"                     bare prints the settings and the ids it draws, newest first",
 	"                     count <4-10> how many; opacity <0-100> how dark the background is",
-	"                     combat on or off hides it in combat; preview holds it up for this",
+	"                     combat on or off hides it in combat; two on or off adds a second row",
+	"                     for a second format played today; preview holds it up for this",
 	"                     session without storing, preview off puts it away",
 	"                     preview <format> holds it on that stored format for this session;",
 	"                     preview opacity <0-100> draws the background so for this session",
 	"                     hover <n> shows tile n's tooltip as a pointer would; hover off hides it",
+	"/pvph tally          the round strip in a Solo Shuffle. on or off; bare prints its state",
+	"                     preview holds a sample up until typed again; reset puts it back",
+	"                     lock or unlock keeps it in place or lets it be dragged",
 	"/pvph postgame       the lines after a match or a duel. on or off; a fault still prints",
+	"                     nudge <2-10||off> one more line at that many losses in a row; bare nudge reads it",
+	"/pvph toast          a result card after a match that opens it on a click. on or off;",
+	"                     bare prints its state. preview holds a sample up until typed again;",
+	"                     lock or unlock keeps it in place or lets it be dragged; reset puts it back",
+	"                     seconds [2-30] how long it stays up; bare seconds reads it",
+	"/pvph sound <bad||best||saved> [on||off]  a sound when somebody at the worst skill or attitude arrives, a best falls or a",
+	"                     match is saved. The word alone plays it once; bare reads all three",
 	"/pvph aftermatch     open the match's window once its instance is left. on or off; bare reads it",
 	"/pvph closeall       close every match and player window with the main window. on or off; bare reads it",
 	"/pvph sight          mark and name a player you wrote about when they appear. on or off; bare reads it",
@@ -4243,6 +4835,10 @@ local USAGE={
 	"/pvph menu           write a note and a rating from the player right-click menu",
 	"/pvph tooltip        put the record, the last rating and the note on a unit tooltip",
 	"/pvph duel           record completed duels. on or off, and what the readout can see",
+	"/pvph world          record World PvP outings. on or off; bare reads it",
+	"/pvph record         record on the logged-in character. on or off; bare names every character not recorded",
+	"/pvph pause [minutes]  stop recording for that many minutes; bare says whether a pause is running",
+	"/pvph resume         end a running pause",
 	"/pvph hold           hold the exit while the scoreboard is read. on or off;",
 	"                     preview saving [seconds], saved or off draws its cover for this session",
 	"/pvph debug          record what the addon decides. on or off, show [cat] [n], clear [cat], export, fault",
@@ -4251,8 +4847,11 @@ local USAGE={
 	"/pvph perf           what the addon takes of each frame, from the client's profiler",
 	"/pvph perf trace     what one debug ring write takes; again after a switch counts its writes",
 	"/pvph list [format]  the stored matches, newest first",
-	"/pvph search <text>  narrow the match list to names, specs or a map; commas join terms, - excludes. No text clears it",
-	"/pvph filter result <all||won||lost||even>  narrow the match list by result; all widens it again",
+	"/pvph search <text>  narrow the match list to names, specs or a map; commas join terms, - excludes, * is starred. No text clears it",
+	"/pvph filter result <all||won||lost||even||starred>  narrow the match list by result or to starred matches; all widens it again",
+	"/pvph filter remember <on||off>  whether the search and the filters are kept for the next load",
+	"/pvph filter follow <on||off>  whether the strip, the graph and Stats read only what the search and filters leave",
+	"/pvph star [id]  star or unstar one match; alone, lists the starred matches",
 	"/pvph filter spec <spec||all>  narrow it to the spec you played. /pvph filter prints the choices and the count",
 	"/pvph filter zone <zone||all>  narrow the World PvP list and its strip to one zone; all widens it again",
 	"/pvph summary [fmt]  what a format adds up to: rating, win rate, length, counts, for the window's character and range",
@@ -4260,6 +4859,7 @@ local USAGE={
 	"/pvph comps [fmt] [n]  the enemy comps you have faced, worst first. n opens a row",
 	"/pvph comps pairs [fmt] [n] | trios [fmt]  the enemy pairs, and the window on Pairs or back for this session; nothing is stored",
 	"/pvph bests [fmt]    your bests per spec on a tab: damage, healing, peak rating and MMR, fastest win",
+	"/pvph partners [fmt]  who you queued with on an arena tab: matches, won-lost, rating change and the last day",
 	"/pvph ask [format]   the cards the Stats half draws on that tab, over the stored scope",
 	"/pvph ask sort <card> <met||won||default>  reorder one card's table, as a header click does",
 	"/pvph ask open [n]   open row n of the lit card's table; no number closes it; refused under Where you fight, Maps, Bests, Builds or the All overview",
@@ -4267,15 +4867,22 @@ local USAGE={
 	"/pvph ask specs <on||off>  the specs view in place of the cards, for this session",
 	"/pvph ask specs sort <column>  reorder the specs view, as a header click does",
 	"/pvph fold <graph||details> <open||shut>  fold for this session; nothing is stored",
+	"/pvph graph mmr <on||off>  whether the Stats graph draws the gray MMR line; bare prints the switch",
 	"/pvph session [<n> <open||shut>]  each History session's key, count and fold, on All the grid lines drawn; n counts from the newest, held for this session",
+	"/pvph session recap [format]  the newest session's record, rating, best win, worst comp met and who you played most with",
 	"/pvph finder [on||off||dock||undock||reset]  the group finder's season tooltip; all but reset hold for the session",
 	"/pvph tiers          each rated format's PvP tiers and the rating each starts at",
+	"/pvph builds         the talent window's PvPHistory Builds window for your active spec: each build's share, win rate, rating change and marks",
+	"/pvph goal [<played> [won]||off]  the weekly goal of rated matches to play and win, 1 to 50 each;",
+	"                     bare reads it and this week's count, off removes it, and a played figure",
+	"                     alone clears the won one",
 	"/pvph region [fmt]   what the summary strip and graph work out to, block by block",
 	"/pvph region list    the match list's edges and where each drawn element stands",
 	"/pvph region band    where the History search box, its count and the three filters stand",
 	"/pvph faults         checks that against what the models declare, and names what fails",
 	"/pvph faults verbose the same, naming every family it checked on a clean run",
-	"/pvph window [reset] each window's authored size, its smallest size and what is stored",
+	"/pvph window [reset] each window's authored size, its smallest size and what is stored; reset puts the windows back",
+	"/pvph window reset announcements  the roster banner, round tally, result card and results bar back at their default places",
 	"/pvph window size [players] <w> [h]  both halves' size: a number, min, max, authored or same.",
 	"                     never stored; session says so",
 	"/pvph window size match|player <w> [h]  the newest match or player window, this session, never stored",
@@ -4283,8 +4890,8 @@ local USAGE={
 	"/pvph window scroll top  the History list back to its top. Holds nothing and stores nothing",
 	"/pvph window scroll overview [top|bottom]  the All tab's Stats page moved to its top or bottom, or where it is. Holds nothing and stores nothing",
 	"/pvph window store   the store panel. window player <who> opens that player's window",
-	"/pvph window menu <id||last||draw||typed||short> [open||note||roster||print||talents||compare||result <win||loss||draw>]  a match row's menu, or one entry of it. menu close closes an open menu",
-	"/pvph window hover [<id||last||left>]  the Shift tooltip on a match row where it is drawn; left takes the newest left-early row. No id hides it",
+	"/pvph window menu <id||last||draw||typed||short> [open||note||star||roster||print||talents||compare||result <win||loss||draw>]  a match row's menu, or one entry of it. menu close closes an open menu",
+	"/pvph window hover [<id||last||draw||typed||short||left>]  the Shift tooltip on a match row where it is drawn; left takes the newest left-early row. No id hides it",
 	"/pvph compare        the matches picked for comparing: count, format, base, each id in column order, and the boxes the last list paint drew",
 	"/pvph compare add <id||last [n]>  pick a match; last n is the nth newest on the tab. remove <id> and clear take them out",
 	"/pvph compare box <id||last [n]>  press a row's pick box as a click there does; last n is the nth newest of the newest match's type",
@@ -4299,6 +4906,7 @@ local USAGE={
 	"/pvph window close  close every match window and player window",
 	"/pvph window click [players] <who> [shift||ctrl||alt||shift-alt||ctrl-alt]  a click on that name in the newest match window, or in the players window. #N is a roster row; a modifier adds the name or the spec to the search instead",
 	"/pvph season        the client's season and rated counters, and what is declared. start, end, label, forget",
+	"/pvph season card <n> [format]  the season card of an ended season, as the lines Copy as text gives",
 	"/pvph left           matches left or abandoned, as the Other tab lists them for the window's character",
 	"/pvph incomplete     the same entries in a window, with the reason menu",
 	"/pvph <id>           one match in full",
@@ -4307,9 +4915,10 @@ local USAGE={
 	"/pvph edit <id>      fill a field the capture did not record, marked as hand entered",
 	"/pvph notes          the players window: the index, and what you wrote on it",
 	"/pvph notes last     that window, scoped to the newest match. notes #<id> for one match",
-	"/pvph notes sort <recent||met||rep||player||record||with||against> [up||down]  order the players list for this session",
-	"/pvph scoreboard sort <name||damage||healing||kb||dispels||objective||swing||wins> [up||down]  order the match window for this session",
-	"/pvph notes rep <bad||negative||neutral||positive||strong||none||off>  narrow the list to one rep",
+	"/pvph notes sort <recent||met||skill||attitude||player||trend||record||with||against> [up||down]  order the players list for this session",
+	"/pvph scoreboard sort <name||damage||healing||kb||honor||dispels||objective||swing||wins> [up||down]  order the match window for this session",
+	"/pvph notes skill <weak||below||average||good||strong||none||off>  narrow the list to one skill step",
+	"/pvph notes attitude <toxic||rude||neutral||friendly||great||none||off>  narrow the list to one attitude step",
 	"/pvph notes format <format||all>  narrow the list to players met in one format",
 	"/pvph notes side <with||against||all>  narrow the list to players met on one side",
 	"/pvph notes search [text]  search the players list as the box does. No text clears it",
@@ -4317,13 +4926,18 @@ local USAGE={
 	"/pvph players        who has been played with and against, most matches first",
 	"/pvph player <text>  one player in full, matched on a stored name, with the player window's figures",
 	"/pvph note <who>     what you thought of a player. No text clears it",
-	"/pvph rate <who>     rate a player from +2 to -2. No value clears it",
+	"/pvph template <1-5> [text]  a phrase the note chips write into a note. No text clears it; bare lists them",
+	"/pvph rate <who>     set a player's skill from +2 to -2 or a step word. No value clears it",
+	"/pvph attitude <who>  set a player's attitude from +2 to -2 or a step word. No value clears it",
+	"/pvph words <skill||attitude> <1-5> [word]  replace a step word, worst step first. No word restores it; bare lists them",
 	"/pvph tag <who>      add one or more tags to a player",
 	"/pvph untag <who>    remove tags from a player. No tag removes all of them",
 	"/pvph tags           every tag in use with a count, most used first",
 	"/pvph roster <id>    tag or untag everyone in one match's roster in a single write",
 	"/pvph error         what threw last and when. clear forgets it",
 	"/pvph rebuild        rebuild the player index from the stored matches",
+	"/pvph undo           put back the last note, rating, tag or comment a window removed, within five seconds",
+	"/pvph tidy           players met once, over a year ago, with nothing written. confirm drops them from the players list",
 	"/pvph debug fixture [n]  write generated records, so the empty screens can be seen",
 	"/pvph debug fixture healer  deal the generated shuffles from a healer seat rather than a damage one",
 	"/pvph debug fixture samespec  put two of a generated shuffle lobby on one spec",
@@ -4331,18 +4945,22 @@ local USAGE={
 	"/pvph debug fixture unrated  write only the generated matches that move no rating",
 	"/pvph debug fixture clear [confirm]  the bare word lists what would go; confirm removes every generated record, keeping what you wrote",
 	"/pvph debug sandbox  this session reads an empty store that generated matches can fill, and your history is untouched. /reload ends it",
+	"/pvph debug ceiling <n||clear>  in the sandbox, measure the room against n values instead of the file's limit",
 	"/pvph debug announce <id||last>  in the sandbox, the announcement for that match's roster, drawn once",
 	"/pvph debug tooltip [who]  in the sandbox, the unit tooltip's block for that player. No name hides it",
 	"/pvph debug group <who> [who ...]  in the sandbox, the group alert's lines as if they had joined",
 	"/pvph debug gates <id||last>  in the sandbox, the gates line for that match's own side",
 	"/pvph size           how much is stored, how much is left, and what it is made of",
+	"/pvph room <n>       past 90% of the room, keep the newest n seasons: copy the older ones out, read the copy back, then remove them",
 	"/pvph backup         copy the whole history into this character's own file",
 	"/pvph restore        what the backup holds. /pvph restore confirm replaces the history",
 	"/pvph restore pinned the copy a reset set aside. confirm after it replaces the history",
 	"/pvph reset          what erasing everything would destroy. confirm after it does it",
 	"/pvph export         the whole history as one string, to copy out of the game",
-	"/pvph import         paste a history string back in",
-	"/pvph export csv     the history as a CSV file. [format] [since <date>] [last <n>] [part]",
+	"/pvph import         paste a history string back in. A copy of older seasons adds beside what is stored",
+	"/pvph export settings  your settings alone as one string, without positions or window sizes",
+	"/pvph import settings  paste a settings string in. The first click names what it holds, the second writes it",
+	"/pvph export csv    the history as a CSV file. [format] [since <date>] [last <n>] [part]",
 	"/pvph import csv     paste a CSV back in. Adds what is new, skips what is stored. force overrides",
 }
 
@@ -4394,13 +5012,7 @@ local function editDistance(one,two,bound)
 		local best=current[0]
 		for j=1,#two do
 			local swap=one:sub(i,i)==two:sub(j,j)and 0 or 1
-			local step=previous[j]+1
-			if current[j-1]+1<step then
-				step=current[j-1]+1
-			end
-			if previous[j-1]+swap<step then
-				step=previous[j-1]+swap
-			end
+			local step=math.min(previous[j]+1,current[j-1]+1,previous[j-1]+swap)
 			current[j]=step
 			if step<best then
 				best=step
@@ -4409,9 +5021,7 @@ local function editDistance(one,two,bound)
 		if best>bound then
 			return bound+1
 		end
-		for j=0,#two do
-			previous[j]=current[j]
-		end
+		previous,current=current,previous
 	end
 	return previous[#two]
 end
@@ -4439,7 +5049,7 @@ function A.nearestCommand(word)
 	return best
 end
 
-local SAMPLE_LINE={announce=true,tooltip=true,group=true,gates=true}
+local SAMPLE_LINE={announce=true,tooltip=true,group=true,gates=true,ceiling=true}
 
 local function reportUsage()
 	local sandboxed=A.sandboxed()
@@ -4462,8 +5072,15 @@ local function reportMiss(word)
 	A.say(("unknown command %q. /pvph help lists every command"):format(word))
 end
 
+local SWITCH_REPORTS={
+	repaint=reportRepaint,tab=reportTab,minimap=reportMinimap,alert=reportAlert,login=reportLogin,
+	tooltip=reportTooltip,groupnotes=reportGroupNotes,menu=reportContextMenu,tally=reportTally,
+	duel=reportDuel,
+}
+
 local TAKES_NO_WORD={
 	status="/pvph status takes no word after it",
+	resume="/pvph resume takes no word after it",
 	left="/pvph left takes no word after it. /pvph edit left #<n> reads one entry",
 	incomplete="/pvph incomplete takes no word after it",
 	tags="/pvph tags takes no word after it. /pvph tag <who> <tag> writes one",
@@ -4472,33 +5089,55 @@ local TAKES_NO_WORD={
 	size="/pvph size takes no word after it",
 	backup="/pvph backup takes no word after it",
 	tiers="/pvph tiers takes no word after it",
+	builds="/pvph builds takes no word after it",
 	help="/pvph help takes no word after it",
 	commands="/pvph commands takes no word after it",
+	undo="/pvph undo takes no word after it",
 }
 
-local TAKES_ONE_WORD={about="copy",error="clear"}
+local TAKES_ONE_WORD={about="copy",error="clear",tidy="confirm"}
 
 local LAST_WORD_READ={
-	repaint=2,appearance=2,tab=2,minimap=2,alert=2,login=2,postgame=2,
-	tooltip=2,groupnotes=2,menu=2,duel=2,list=2,region=2,faults=2,bests=2,
-	perf=2,aftermatch=2,closeall=2,sight=2,chatmark=2,meter=2,finder=2,
-	reset=2,summary=3,fold=3,session=3,
-	announce={lock=3,unlock=3,time=3,size=3,opacity=3,shape=3,preview=3},
-	overlay={count=3,opacity=3,combat=3,hover=3,preview=3},
-	hold={preview=4},
-	ask={sort=4,open=3,specs=4,under=3},
+	repaint=2,appearance={colors=3,text=3,rows=3,realms=3,clock=3,["*"]=2},tab=2,minimap=2,alert=2,login=2,postgame={nudge=3,["*"]=2},toast={seconds=3,["*"]=2},
+	tooltip=2,groupnotes=2,menu=2,duel=2,world=2,record=2,pause=2,list=2,region=2,faults=2,bests=2,partners=2,
+	perf=2,aftermatch=2,closeall=2,sight=2,chatmark=2,meter=2,finder=2,sound=3,tally=2,star=2,
+	reset=2,summary=3,fold=3,graph=3,session={recap=3,["*"]=3},goal={off=2,["*"]=3},
+	announce={lock=3,unlock=3,time=3,size=3,opacity=3,shape=3,preview=3,crowd=3,
+		comp=3,rematch=3,last=2},
+	comps={pairs=4,trios=4,["*"]=3},
+	import={csv=3},
+	filter={remember=3,follow=3,["*"]=false},
+	room=2,export={settings=2,csv=false,["*"]=false},
+	overlay={count=3,opacity=3,combat=3,two=3,hover=3,preview={opacity=4,["*"]=3}},
+	hold={preview={saving=4,["*"]=3}},
+	ask={sort=4,open=3,specs={sort=4,["*"]=3},under=3},
+	window={reset={announcements=3,["*"]=2},size=false,scale=3,scroll={overview=4,["*"]=3},store=2,
+		player=false,menu={close=3,["*"]={result=5,["*"]=4}},hover=3,round=3,
+		click=false,dropdown=3,tile=3,rect=3,grip=3,close=2,["*"]=false},
+	season={start=4,["end"]=3,forget=3,card=4,label=false,["*"]=false},
+	options={client=2,close=2,slot=3,find=false,all=3,["*"]=2},
+	debug={on=2,off=2,export=2,fault=2,sandbox=2,ceiling=3,text=3,announce=3,tooltip=3,
+		gates=3,group=false,show=false,clear=false,fixture=false,["*"]=false},
+	compare={add={last=4,["*"]=3},box={last=4,["*"]=3},remove=3,clear=2,
+		open=2,close=2,base=3,rows=2,tab=3,["*"]=false},
 }
 
 local function lastWordRead(first,words)
+	local at=1
 	local held=LAST_WORD_READ[first]
-	if type(held)~="table"then
-		return held
+	while type(held)=="table"do
+		at=at+1
+		local word=words[at]and words[at]:lower()or nil
+		local entry=word and held[word]
+		if entry==nil then
+			entry=held["*"]
+		end
+		if entry==nil then
+			entry=at
+		end
+		held=entry
 	end
-	local second=words[2]and words[2]:lower()or nil
-	if first=="overlay"and second=="preview"and words[3]and words[3]:lower()=="opacity"then
-		return 4
-	end
-	return second and held[second]or 2
+	return held or nil
 end
 
 local function unreadWord(first,words)
@@ -4624,37 +5263,47 @@ SlashCmdList["WOWPVPHISTORY"]=function(msg)
 	end
 
 	if first=="repaint"then
-		reportRepaint(words[2]and words[2]:lower()or nil)
+		SWITCH_REPORTS.repaint(words[2]and words[2]:lower()or nil)
 		return
 	end
 
 	if first=="appearance"then
-		reportAppearance(words[2]and words[2]:lower()or nil)
+		reportAppearance(words[2]and words[2]:lower()or nil,words[3]and words[3]:lower()or nil)
 		return
 	end
 
 	if first=="tab"then
-		reportTab(words[2]and words[2]:lower()or nil)
+		SWITCH_REPORTS.tab(words[2]and words[2]:lower()or nil)
 		return
 	end
 
 	if first=="minimap"then
-		reportMinimap(words[2]and words[2]:lower()or nil)
+		SWITCH_REPORTS.minimap(words[2]and words[2]:lower()or nil)
 		return
 	end
 
 	if first=="alert"then
-		reportAlert(words[2]and words[2]:lower()or nil)
+		SWITCH_REPORTS.alert(words[2]and words[2]:lower()or nil)
 		return
 	end
 
 	if first=="login"then
-		reportLogin(words[2]and words[2]:lower()or nil)
+		SWITCH_REPORTS.login(words[2]and words[2]:lower()or nil)
 		return
 	end
 
 	if first=="postgame"then
-		reportPostGame(words[2]and words[2]:lower()or nil)
+		reportPostGame(words[2]and words[2]:lower()or nil,words[3]and words[3]:lower()or nil)
+		return
+	end
+
+	if first=="toast"then
+		A.reportToast(words[2]and words[2]:lower()or nil,words[3])
+		return
+	end
+
+	if first=="sound"then
+		A.reportSound(words[2]and words[2]:lower()or nil,words[3]and words[3]:lower()or nil)
 		return
 	end
 
@@ -4679,12 +5328,12 @@ SlashCmdList["WOWPVPHISTORY"]=function(msg)
 	end
 
 	if first=="tooltip"then
-		reportTooltip(words[2]and words[2]:lower()or nil)
+		SWITCH_REPORTS.tooltip(words[2]and words[2]:lower()or nil)
 		return
 	end
 
 	if first=="groupnotes"then
-		reportGroupNotes(words[2]and words[2]:lower()or nil)
+		SWITCH_REPORTS.groupnotes(words[2]and words[2]:lower()or nil)
 		return
 	end
 
@@ -4699,7 +5348,12 @@ SlashCmdList["WOWPVPHISTORY"]=function(msg)
 	end
 
 	if first=="menu"then
-		reportContextMenu(words[2]and words[2]:lower()or nil)
+		SWITCH_REPORTS.menu(words[2]and words[2]:lower()or nil)
+		return
+	end
+
+	if first=="tally"then
+		SWITCH_REPORTS.tally(words[2]and words[2]:lower()or nil)
 		return
 	end
 
@@ -4709,7 +5363,11 @@ SlashCmdList["WOWPVPHISTORY"]=function(msg)
 	end
 
 	if first=="duel"then
-		reportDuel(words[2]and words[2]:lower()or nil)
+		SWITCH_REPORTS.duel(words[2]and words[2]:lower()or nil)
+		return
+	end
+
+	if A.recordingCommand(first,words[2])then
 		return
 	end
 
@@ -4731,9 +5389,17 @@ SlashCmdList["WOWPVPHISTORY"]=function(msg)
 		local record
 		if words[2]then
 			local id=A.matchIdFromWord(words[2])
-			record=id and A.match(id)or nil
+			if not id then
+				A.say(("%q is not a match id. /pvph list to see what is held"):format(words[2]))
+				return
+			end
+			record=A.match(id)
 		else
 			record=db.matches[#db.matches]
+			if not record then
+				A.say("no match is stored yet")
+				return
+			end
 		end
 		for _,line in ipairs(A.meterLines(record))do
 			A.say(line)
@@ -4772,23 +5438,62 @@ SlashCmdList["WOWPVPHISTORY"]=function(msg)
 		return
 	end
 
+	if first=="star"then
+		A.reportStar(words)
+		return
+	end
+
 	if first=="filter"then
 		if type(A.setMatchFilter)~="function"or type(A.matchFilter)~="function"then
 			A.say("the match list did not load, so there is nothing to filter")
 			return
 		end
 		local which=words[2]and words[2]:lower()or nil
+		local resultWords=table.concat(A.resultFilterWords(),", ")
 		if which==nil then
 			local result,spec,shown,scoped,zone=A.matchFilter()
-			A.say(("result %s, spec %s, zone %s"):format(result or"all",spec or"all",zone or"all"))
+			local search=A.matchSearch()
+			A.say(("search %s, result %s, spec %s, zone %s"):format(search and("%q"):format(search)or"none",
+				result or"all",spec or"all",zone or"all"))
 			A.say(A.searchCountLine(shown,scoped))
+			A.say(("the search and filters are %s"):format(A.rememberFilters()and"kept for the next load"
+				or"not kept, so a reload clears them"))
+			return
+		end
+		if which=="follow"then
+			local word=words[3]and words[3]:lower()or nil
+			if word~="on"and word~="off"then
+				A.say(("figures follow is %s. follow on or off"):format(A.figuresFollow()and"on"or"off"))
+				return
+			end
+			if not A.setFiguresFollow(word=="on")then
+				A.say("no database, so the setting could not be stored")
+				return
+			end
+			A.say(word=="on"and"the strip, the graph and Stats read what the search and filters leave"
+				or"the strip, the graph and Stats read the whole tab again")
+			return
+		end
+		if which=="remember"then
+			local word=words[3]and words[3]:lower()or nil
+			if word~="on"and word~="off"then
+				A.say(("the search and filters are %s. remember on or off"):format(
+					A.rememberFilters()and"kept"or"not kept"))
+				return
+			end
+			if not A.setRememberFilters(word=="on")then
+				A.say("no database, so the setting could not be stored")
+				return
+			end
+			A.say(word=="on"and"the search and filters are kept for the next load"
+				or"the search and filters are not kept, and what was kept is cleared")
 			return
 		end
 		if which=="result"or which=="spec"or which=="zone"then
 			local choice=rest(msg,2)
 			if choice==""then
 				local usage={
-					result="result takes all, won, lost or even",
+					result="result takes "..resultWords,
 					spec="spec takes a spec as the list spells it, or all",
 					zone="zone takes a zone as the World PvP list spells it, or all",
 				}
@@ -4796,23 +5501,19 @@ SlashCmdList["WOWPVPHISTORY"]=function(msg)
 				return
 			end
 			local shown,scoped,counted=A.setMatchFilter(which,choice,"word")
-			if counted==false then
+			if counted==false or(shown==nil and which~="result")then
 				A.say(("filter %s set to %q, and the match list could not be read, so there is no count")
 					:format(which,choice))
 				return
 			end
-			if shown==nil and which=="result"then
-				A.say(("unknown result word %q: all, won, lost or even"):format(choice))
-				return
-			elseif shown==nil then
-				A.say(("filter %s set to %q, and the match list could not be read, so there is no count")
-					:format(which,choice))
+			if shown==nil then
+				A.say(("unknown result word %q: %s"):format(choice,resultWords))
 				return
 			end
 			A.say(A.searchCountLine(shown,scoped))
 			return
 		end
-		A.say(("unknown filter word %q. result, spec, zone, or nothing for the choices"):format(which))
+		A.say(("unknown filter word %q. result, spec, zone, follow, remember, or nothing for the choices"):format(which))
 		return
 	end
 
@@ -4872,6 +5573,30 @@ SlashCmdList["WOWPVPHISTORY"]=function(msg)
 		return
 	end
 
+	if first=="graph"then
+		local which=words[2]and words[2]:lower()or nil
+		local state=words[3]and words[3]:lower()or nil
+		if which~="mmr"then
+			A.say("/pvph graph mmr <on||off>   whether the Stats graph draws the gray MMR line")
+			return
+		end
+		if state==nil then
+			A.say(("the MMR line is %s"):format(A.mmrLineEnabled()and"on"or"off"))
+			return
+		end
+		if state~="on"and state~="off"then
+			A.say("/pvph graph mmr <on||off>")
+			return
+		end
+		if not A.setMmrLine(state=="on")then
+			A.say("no database, so the setting could not be stored")
+			return
+		end
+		A.say(state=="on"and"the MMR line draws on the graph wherever enough matches recorded one"
+			or"the MMR line is off; the rating line still draws")
+		return
+	end
+
 	if first=="fold"then
 		local which=words[2]and words[2]:lower()or nil
 		local state=words[3]and words[3]:lower()or nil
@@ -4886,9 +5611,21 @@ SlashCmdList["WOWPVPHISTORY"]=function(msg)
 	end
 
 	if first=="session"then
+		if words[2]and words[2]:lower()=="recap"then
+			local format=words[3]and words[3]:lower()or nil
+			if A.refuseUnstoredFormat(format,A.windowCharacter())then
+				return
+			end
+			local lines=A.sessionRecapReadout(format or A.windowFormat(),A.windowCharacter(),
+				(type(A.scopeNow)=="function"and A.scopeNow())or time())
+			for i=1,#lines do
+				A.say(lines[i])
+			end
+			return
+		end
 		local index=wholeArgument(words[2])
 		local state=words[3]and words[3]:lower()or nil
-		local usage="/pvph session [<n> <open||shut>]   n counts from the newest line drawn; holds for this session and stores nothing"
+		local usage="/pvph session [<n> <open||shut>]   n counts from the newest line drawn; holds for this session and stores nothing. /pvph session recap [format] reads the newest session's recap"
 		if words[2]~=nil and(index==nil or(state~="open"and state~="shut"))then
 			A.say(usage)
 			return
@@ -4957,11 +5694,54 @@ SlashCmdList["WOWPVPHISTORY"]=function(msg)
 		return
 	end
 
+	if first=="builds"then
+		for _,line in ipairs(A.talentBuildsLines())do
+			A.say(line)
+		end
+		return
+	end
+
 	if first=="tiers"then
 		local lines=A.ratingTierLines()
 		for i=1,#lines do
 			A.say(lines[i])
 		end
+		return
+	end
+
+	if first=="goal"then
+		local word=words[2]and words[2]:lower()or nil
+		local usage=("/pvph goal <played> [won] takes whole numbers from 1 to %d, or off. A played figure "
+			.."alone clears the won one"):format(A.GOAL_MAX)
+		if word=="off"then
+			A.setGoal("played",nil)
+			A.setGoal("won",nil)
+			A.say("the weekly goal is off")
+			return
+		end
+		if word~=nil then
+			local played=wholeArgument(words[2],1,A.GOAL_MAX)
+			local won=words[3]==nil and 0 or wholeArgument(words[3],0,A.GOAL_MAX)
+			if played==nil or won==nil then
+				A.say(usage)
+				return
+			end
+			if won>played then
+				A.say("the won figure cannot be above the played one")
+				return
+			end
+			A.setGoal("played",played)
+			A.setGoal("won",won)
+		end
+		local played,won=A.goalSet()
+		local count,reason=A.weekGoal()
+		local week=count and("this week %d played, %d won"):format(count.played,count.won)
+			or("this week cannot be counted (%s)"):format(tostring(reason))
+		if played==nil and won==nil then
+			A.say(("no weekly goal is set; %s"):format(week))
+			return
+		end
+		A.say(("weekly goal: play %s, win %s; %s"):format(played or"-",won or"-",week))
 		return
 	end
 
@@ -4987,7 +5767,7 @@ SlashCmdList["WOWPVPHISTORY"]=function(msg)
 			reportComps(formFormat,formIndex,form)
 			return
 		end
-		local format=words[2]and words[2]:lower()or nil
+		local format=form
 		local rowWord=words[3]
 		if rowWord==nil and tonumber(words[2])~=nil then
 			format,rowWord=nil,words[2]
@@ -5003,6 +5783,11 @@ SlashCmdList["WOWPVPHISTORY"]=function(msg)
 
 	if first=="bests"then
 		A.reportBests(words[2]and words[2]:lower()or nil)
+		return
+	end
+
+	if first=="partners"then
+		A.reportPartners(words[2]and words[2]:lower()or nil)
 		return
 	end
 
@@ -5031,8 +5816,23 @@ SlashCmdList["WOWPVPHISTORY"]=function(msg)
 		return
 	end
 
+	if first=="template"then
+		reportTemplate(msg,words)
+		return
+	end
+
 	if first=="rate"then
 		reportRate(words)
+		return
+	end
+
+	if first=="attitude"then
+		reportAttitude(words)
+		return
+	end
+
+	if first=="words"then
+		reportWords(words)
 		return
 	end
 
@@ -5043,6 +5843,16 @@ SlashCmdList["WOWPVPHISTORY"]=function(msg)
 
 	if first=="untag"then
 		reportUntag(words)
+		return
+	end
+
+	if first=="undo"then
+		A.reportUndo()
+		return
+	end
+
+	if first=="tidy"then
+		reportTidy(words[2]~=nil)
 		return
 	end
 
@@ -5165,6 +5975,10 @@ SlashCmdList["WOWPVPHISTORY"]=function(msg)
 				i=i+1
 			end
 			reportCsvExport(filter,part)
+		elseif words[2]and words[2]:lower()=="settings"then
+			A.openSettingsExport()
+		elseif words[2]then
+			A.say(("/pvph export takes csv or settings, or nothing for the whole history, and %q is neither"):format(words[2]))
 		else
 			A.openExport()
 		end
@@ -5174,9 +5988,18 @@ SlashCmdList["WOWPVPHISTORY"]=function(msg)
 	if first=="import"then
 		if words[2]and words[2]:lower()=="csv"then
 			reportCsvImport(words[3]~=nil and words[3]:lower()=="force")
+		elseif words[2]and words[2]:lower()=="settings"then
+			A.openSettingsImport()
+		elseif words[2]then
+			A.say(("/pvph import takes csv or settings, or nothing for a history string, and %q is neither"):format(words[2]))
 		else
 			A.openImport()
 		end
+		return
+	end
+
+	if first=="room"then
+		A.openRoomMove(words[2])
 		return
 	end
 

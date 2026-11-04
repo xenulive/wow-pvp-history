@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.33
+-- WowPvpHistory 0.75.26
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -10,7 +10,7 @@ local GUID_ARGUMENT=14
 local marked=0
 local passed={}
 
-local registered
+local registered,unregistered
 
 local REASONS={"no-store","switch","no-guid","secret-guid","self","unwritten"}
 
@@ -41,8 +41,7 @@ function A.setChatMark(enabled)
 end
 
 function A.chatMarkBar(note)
-	local rating=type(note)=="table"and note.rating or nil
-	return A.colorEscape(A.ratingMark(rating)or A.ratingMark(nil)).."|||r "
+	return A.colorEscape((A.noteMark(note))).."|||r "
 end
 
 local function traceMark(outcome,reason,mark,rated,event)
@@ -89,8 +88,8 @@ local function decorate(event,decoratedPlayerName,...)
 	end
 
 	marked=marked+1
-	traceMark("marked",nil,A.ratingMark(note.rating)or A.ratingMark(nil),A.ratingText(note.rating)~=nil,
-		chatEvent)
+	local mark,markScale=A.noteMark(note)
+	traceMark("marked",nil,mark,markScale~=nil,chatEvent)
 	return A.chatMarkBar(note)..decoratedPlayerName
 end
 
@@ -110,12 +109,13 @@ local function register()
 	local util=ChatFrameUtil
 	local add=type(util)=="table"and util.AddSenderNameFilter or nil
 	if type(add)~="function"then
-		registered=false
+		registered,unregistered=false,"no-api"
 		traceMark("unavailable","no-api")
 		return
 	end
 	registered=pcall(add,filter)
 	if not registered then
+		unregistered="refused"
 		traceMark("unavailable","refused")
 	end
 end
@@ -128,9 +128,12 @@ local function sample()
 	for i=1,#SAMPLES do
 		local rating=SAMPLES[i]or nil
 		local note={rating=rating}
-		local word=rating and("rated "..A.ratingText(rating))or"written about, no rating"
+		local word=rating and("skill "..A.ratingText(rating))or"written about, no rating"
 		A.say(("%sSample: %s, drawn in %s"):format(A.chatMarkBar(note),word,A.ratingMark(rating)))
 	end
+	local worst={rating=2,attitude=-2}
+	A.say(("%sSample: skill %s, attitude %s, drawn in %s"):format(A.chatMarkBar(worst),
+		A.ratingText(2),A.ratingText(-2,"attitude"),(A.noteMark(worst))))
 end
 
 function A.reportChatMark(word)
@@ -164,7 +167,9 @@ function A.reportChatMark(word)
 	A.say(("marking people you have written about in chat %s, %d %s marked this session, passed over: %s")
 		:format(not A.db()and"unread, no store loaded"or A.chatMarkEnabled()and"on"or"off",marked,marked==1 and"name"or"names",
 			#reasons>0 and table.concat(reasons,", ")or"none"))
-	if registered==false then
+	if unregistered=="refused"then
+		A.say("the client refused the chat name hook, so no name is marked")
+	elseif registered==false then
 		A.say("this client offers no chat name hook, so no name is marked")
 	end
 end

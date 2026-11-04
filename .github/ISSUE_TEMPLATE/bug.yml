@@ -14,7 +14,7 @@ body:
     attributes:
       label: Version
       description: Type `/pvph status` in game. The version is on its first line, and at the bottom right of the match history window.
-      placeholder: "0.68.47"
+      placeholder: "0.x.y"
     validations:
       required: true
 

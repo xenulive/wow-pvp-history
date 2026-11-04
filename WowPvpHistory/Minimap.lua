@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.33
+-- WowPvpHistory 0.75.26
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -260,10 +260,6 @@ local function openMenu(owner)
 	return false,"no-menu",built,players
 end
 
-local function escapeOf(r,g,b)
-	return A.channelEscape(r,g,b)
-end
-
 local function headlineOf(record)
 	local ok,lines,_,_,heads=pcall(A.detailLines,record)
 	if not ok or type(lines)~="table"or type(heads)~="table"then
@@ -292,113 +288,286 @@ local function newestMatch(character)
 	return record
 end
 
+local MAX_LINES=9
+
+local SLOT_FLOOR=20
+
+local SLOT_WORDS={"morning","afternoon","early evening","evening","late evening","late night"}
+
+local heldSlot=nil
+
+local heldSession=nil
+
+local heldFigures={}
+
+local function heldFigure(name,compute,a,b)
+	local db=A.db()
+	local mark=A.storeMark()
+	local left=db and type(db.incomplete)=="table"and#db.incomplete or 0
+	local day=A.dayKey(A.stamp())
+	local since=A.weekStartEpoch()
+	local key=name.."|"..tostring(a).."|"..tostring(b)
+	local held=heldFigures[key]
+	if held and A.storeMarkSame(held.mark,mark)and held.left==left and held.day==day
+		and held.since==since then
+		return held.value
+	end
+	local value=compute(a,b)
+	heldFigures[key]={mark=mark,left=left,day=day,since=since,value=value}
+	return value
+end
+
+local function newestSession()
+	if type(A.newestSession)~="function"then
+		return nil
+	end
+	local mark=A.storeMark()
+	local held=heldSession
+	if held and A.storeMarkSame(held.mark,mark)then
+		return held.session
+	end
+	local _,session=A.newestSession()
+	heldSession={mark=mark,session=session}
+	return session
+end
+
+local function bestSlot(recorder)
+	local mark=A.storeMark()
+	local held=heldSlot
+	if held and held.recorder==recorder and A.storeMarkSame(held.mark,mark)then
+		return held.slot
+	end
+	local cells={}
+	for i=1,#SLOT_WORDS do
+		cells[i]={won=0,decided=0}
+	end
+	for _,record in ipairs(mark.matches or{})do
+		if type(record)=="table"and A.recordedBy(record,recorder)then
+			local outcome,_,derived=A.recordVerdict(record)
+			local _,block=A.heatCell(A.recordEpoch(record))
+			if outcome~=nil and block~=nil and cells[block]then
+				local cell=cells[block]
+				cell.decided=cell.decided+1
+				if outcome=="win"and not A.recordLevel(record,outcome,derived)then
+					cell.won=cell.won+1
+				end
+			end
+		end
+	end
+	local slot=nil
+	for i,cell in ipairs(cells)do
+		if cell.decided>=SLOT_FLOOR then
+			local rate=cell.won/cell.decided
+			if slot==nil or rate>slot.rate then
+				slot={word=SLOT_WORDS[i],rate=rate,decided=cell.decided}
+			end
+		end
+	end
+	heldSlot={mark=mark,recorder=recorder,slot=slot}
+	return slot
+end
+
+local function pair(left,right,leftColor,rightColor)
+	return{left=left,right=right,leftColor=leftColor,rightColor=rightColor}
+end
+
+local function tone(name)
+	local r,g,b=A.color(name)
+	return{r,g,b}
+end
+
+function A.minimapLines()
+	local accent,dim,dimmer,text=tone("accent"),tone("dim"),tone("dimmer"),tone("text")
+	local hint=pair("Click: match history "..A.HEAD_DOT.." Right click: menu",nil,dimmer)
+	local lines={}
+
+	local character=A.barCharacter()
+	local newest=character~=nil and newestMatch(character)or nil
+	if newest==nil or newest.format==nil then
+		lines[1]=pair(A.displayName(),nil,accent)
+		lines[2]=hint
+		return lines,{state="empty"}
+	end
+	local recorder=A.barRecorder(character)
+
+	local format=newest.format
+	local meta={format=format,id=newest.id}
+	lines[#lines+1]=pair(A.displayName(),A.formatLabel(format),accent,dim)
+
+	local figures=A.todayFigures(format,character)or{}
+	if figures.rating~=nil or figures.change~=nil then
+		local parts={}
+		if figures.rating~=nil then
+			local rr,rg,rb=A.ratingTint(format,figures.rating)
+			parts[#parts+1]=A.channelEscape(rr,rg,rb)..tostring(figures.rating).."|r"
+			meta.ratingFigure=figures.rating
+		end
+		if figures.change~=nil then
+			parts[#parts+1]=A.colorEscape(figures.changeTone or"dim")..figures.change.." today|r"
+			meta.today=figures.change
+		end
+		lines[#lines+1]=pair("Rating",table.concat(parts," "),dim,text)
+	end
+
+	if figures.record~=nil then
+		lines[#lines+1]=pair("Today",figures.record,dim,tone(figures.recordTone or"dim"))
+		meta.record=figures.record
+	end
+
+	do
+		local session=newestSession()
+		local recap=session and type(A.sessionRecap)=="function"and A.sessionRecap(session,nil,recorder)or nil
+		local held=recap and recap.record or nil
+		if held==nil and session then
+			local row={decided=0,wins=0,draws=0}
+			for _,entry in ipairs(session.entries or{})do
+				local record=entry.kind~="incomplete"and entry.subject or nil
+				if type(record)=="table"and A.recordedBy(record,recorder)then
+					A.tallyVerdict(row,record)
+				end
+			end
+			held={wins=row.wins,losses=row.decided-row.wins-row.draws,draws=row.draws}
+		end
+		if session and held and held.wins+held.losses+held.draws>0 then
+			local words=A.sessionRecapRecordText and A.sessionRecapRecordText(held)
+				or("%d-%d"):format(held.wins,held.losses)
+			local start=session.startEpoch or session.startStamp
+			local clock=start and A.clockWords(start)or nil
+			if clock then
+				words=words..A.colorEscape("dim").." since "..clock.."|r"
+			end
+			local tint=held.wins>held.losses and"win"or held.wins<held.losses and"loss"or"text"
+			lines[#lines+1]=pair("Tonight",words,dim,tone(tint))
+			meta.tonight=("%d-%d-%d"):format(held.wins,held.losses,held.draws)
+		end
+	end
+
+	if type(A.currentStreak)=="function"then
+		local run=heldFigure("streak",A.currentStreak,format,recorder)
+		if run then
+			lines[#lines+1]=pair("Streak",run.word,dim,tone(run.result))
+			meta.streak=run.word
+		end
+	end
+
+	if type(A.tierDistance)=="function"and figures.rating~=nil then
+		local distance,why=A.tierDistance(format,figures.rating)
+		if distance then
+			lines[#lines+1]=pair("Next tier",("%d below %s"):format(distance.points,distance.tier),dim,accent)
+			meta.nextTier=distance.points
+		else
+			meta.nextTier=why
+		end
+	end
+
+	if type(A.goalProgress)=="function"and type(A.weekGoal)=="function"then
+		local goal=A.goalProgress(recorder,heldFigure("weekGoal",A.weekGoal,recorder))
+		if goal then
+			local parts,met={},true
+			for _,held in ipairs(goal.lines)do
+				parts[#parts+1]=held.text
+				met=met and held.met
+			end
+			lines[#lines+1]=pair("Week",table.concat(parts,", "),dim,tone(met and"win"or"accent"))
+			meta.goal=goal.ring
+		end
+	end
+
+	local block={pair(" ")}
+	local clock=A.clockWords(newest.openedAt or newest.completedAt)
+	if clock~=nil then
+		block[#block+1]=pair("Last match",clock,dim,dim)
+	else
+		block[#block+1]=pair("Last match",nil,dim)
+	end
+
+	local head=headlineOf(newest)
+	local result,side=nil,nil
+	if head~=nil then
+		local shown=A.matchVerdict(newest)
+		local verdict=shown and shown.words or nil
+		if verdict~=nil and head.mark~=nil then
+			verdict=verdict.." "..A.colorEscape("dim")..head.mark.."|r"
+		end
+		local resultColor,deltaColor=tone(head.resultTone or"text"),tone(head.deltaTone or"text")
+		if verdict~=nil then
+			result=pair(verdict,head.delta,resultColor,deltaColor)
+		elseif head.delta~=nil then
+			result=pair(head.delta,nil,deltaColor)
+		end
+
+		local word=A.factionWord(head.faction)
+		if word~=nil then
+			side=pair(word,head.place,tone(A.factionTone(head.faction)),text)
+			side.faction=head.faction
+		elseif head.place~=nil then
+			side=pair(head.place,nil,text)
+		end
+	end
+
+	local tail={}
+	tail[#tail+1]=result
+	tail[#tail+1]=side
+	local room=MAX_LINES-(#lines+1)
+	for i=1,math.min(#tail,math.max(0,room))do
+		block[#block+1]=tail[i]
+		meta.faction=tail[i].faction or meta.faction
+	end
+	for _,held in ipairs(block)do
+		lines[#lines+1]=held
+	end
+
+	lines[#lines+1]=pair(" ")
+	lines[#lines+1]=hint
+	local slot=bestSlot(recorder)
+	if slot then
+		lines[#lines+1]=pair(("You win %d%% of %s matches"):format(A.percentPoints(slot.rate),slot.word),nil,dimmer)
+		meta.slot=slot.word
+	end
+	return lines,meta
+end
+
+function A.drawTooltipLines(tooltip,lines)
+	local drawn=0
+	for _,held in ipairs(lines or{})do
+		local l=held.leftColor or{1,1,1}
+		if held.right~=nil then
+			local r=held.rightColor or l
+			tooltip:AddDoubleLine(held.left,held.right,l[1],l[2],l[3],r[1],r[2],r[3])
+		else
+			tooltip:AddLine(held.left,l[1],l[2],l[3])
+		end
+		drawn=drawn+1
+	end
+	return drawn
+end
+
 local function showTooltip(owner)
 	GameTooltip:SetOwner(owner,"ANCHOR_LEFT")
 	if type(GameTooltip.ClearLines)=="function"then
 		GameTooltip:ClearLines()
 	end
-	local ar,ag,ab=A.color("accent")
-	local dr,dg,db=A.color("dim")
-	local mr,mg,mb=A.color("dimmer")
-	local tr,tg,tb=A.color("text")
-	local hint="Click: match history "..A.HEAD_DOT.." Right click: menu"
-
-	local character=A.barCharacter()
-	local newest=character~=nil and newestMatch(character)or nil
-	if newest==nil or newest.format==nil then
-		GameTooltip:AddLine(A.displayName(),ar,ag,ab)
-		GameTooltip:AddLine(hint,mr,mg,mb)
-		GameTooltip:Show()
+	local lines,meta=A.minimapLines()
+	local drawn=A.drawTooltipLines(GameTooltip,lines)
+	GameTooltip:Show()
+	if meta.state=="empty"then
 		A.trace("minimap/tooltip",{state="empty"},"ui")
 		return
 	end
 
-	local drawn=0
-	local function line(text,r,g,b)
-		GameTooltip:AddLine(text,r,g,b)
-		drawn=drawn+1
-	end
-	local function double(left,right,lr,lg,lb,rr,rg,rb)
-		GameTooltip:AddDoubleLine(left,right,lr,lg,lb,rr,rg,rb)
-		drawn=drawn+1
-	end
-
-	local format=newest.format
-	local formatText=A.formatLabel(format)
-	double(A.displayName(),formatText,ar,ag,ab,dr,dg,db)
-
-	local figures=A.todayFigures(format,character)or{}
-	local drawnRating,drawnChange
-	if figures.rating~=nil or figures.change~=nil then
-		local parts={}
-		if figures.rating~=nil then
-			local rr,rg,rb=A.ratingTint(format,figures.rating)
-			parts[#parts+1]=escapeOf(rr,rg,rb)..tostring(figures.rating).."|r"
-			drawnRating=figures.rating
-		end
-		if figures.change~=nil then
-			parts[#parts+1]=A.colorEscape(figures.changeTone or"dim")..figures.change.." today|r"
-			drawnChange=figures.change
-		end
-		double("Rating",table.concat(parts," "),dr,dg,db,tr,tg,tb)
-	end
-
-	if figures.record~=nil then
-		local rr,rg,rb=A.color(figures.recordTone or"dim")
-		double("Today",figures.record,dr,dg,db,rr,rg,rb)
-	end
-
-	line(" ")
-	local clock=A.clockKey(newest.openedAt or newest.completedAt)
-	if clock~=nil then
-		double("Last match",clock,dr,dg,db,dr,dg,db)
-	else
-		line("Last match",dr,dg,db)
-	end
-
-	local drawnFaction
-	local head=headlineOf(newest)
-	if head~=nil then
-		local result=head.result
-		if result~=nil and head.mark~=nil then
-			result=result.." "..A.colorEscape("dim")..head.mark.."|r"
-		end
-		local er,eg,eb=A.color(head.resultTone or"text")
-		local cr,cg,cb=A.color(head.deltaTone or"text")
-		if result~=nil and head.delta~=nil then
-			double(result,head.delta,er,eg,eb,cr,cg,cb)
-		elseif result~=nil then
-			line(result,er,eg,eb)
-		elseif head.delta~=nil then
-			line(head.delta,cr,cg,cb)
-		end
-
-		local side=A.factionWord(head.faction)
-		if side~=nil then
-			local sr,sg,sb=A.color(A.factionTone(head.faction))
-			if head.place~=nil then
-				double(side,head.place,sr,sg,sb,tr,tg,tb)
-			else
-				line(side,sr,sg,sb)
-			end
-			drawnFaction=head.faction
-		elseif head.place~=nil then
-			line(head.place,tr,tg,tb)
-		end
-	end
-
-	line(" ")
-	line(hint,mr,mg,mb)
-	GameTooltip:Show()
-
 	A.trace("minimap/tooltip",{
-		format=format,
-		ratingFigure=drawnRating,
-		today=drawnChange,
-		record=figures.record,
-		id=newest.id,
-		faction=drawnFaction,
+		format=meta.format,
+		ratingFigure=meta.ratingFigure,
+		today=meta.today,
+		record=meta.record,
+		id=meta.id,
+		faction=meta.faction,
 		lines=drawn,
+		streak=meta.streak,
+		nextTier=meta.nextTier,
+		goal=meta.goal,
+		tonight=meta.tonight,
+		slot=meta.slot,
 	},"ui")
 end
 
@@ -496,7 +665,6 @@ local function buttonOrNil()
 	end
 	local ok,made=pcall(buildButton)
 	if not ok or not made then
-		button=nil
 		return nil
 	end
 	button=made

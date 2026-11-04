@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.33
+-- WowPvpHistory 0.75.26
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -38,7 +38,7 @@ function A.aboutDescription(room,measure)
 	if text==nil then
 		return nil,"withdrawn"
 	end
-	if type(room)~="number"or A.textRoom(measure,text)<=room then
+	if type(room)~="number"or A.textRoom(measure,text)<=(A.unitFigure(room)or room)then
 		return text,"whole"
 	end
 	local head=text:match("^(.-),[^,]*%.$")
@@ -88,80 +88,6 @@ local function bestRating()
 	end
 	if best==nil then
 		return nil,"no-rated-match"
-	end
-	return best
-end
-
-local function longestStreak()
-	local db=A.db()
-	if not(db and type(db.matches)=="table")then
-		return nil,"no-store"
-	end
-	local items={}
-	for i=1,#db.matches do
-		local record=db.matches[i]
-		if type(record)=="table"and record.format~=nil then
-			local at=A.recordEpoch(record)
-			if at~=nil then
-				items[#items+1]={at=at,record=record,order=i}
-			end
-		end
-	end
-	for i,entry in ipairs(A.incompleteList())do
-		local at=A.recordEpoch(entry)
-		if at~=nil then
-			items[#items+1]={at=at,entry=entry,order=#db.matches+i}
-		end
-	end
-	table.sort(items,function(a,b)
-		if a.at~=b.at then
-			return a.at<b.at
-		end
-		return a.order<b.order
-	end)
-
-	local open,best={},nil
-	local function close(format)
-		local run=open[format]
-		open[format]=nil
-		if run and(best==nil or run.count>best.count or(run.count==best.count and run.at>=best.at))then
-			best=run
-		end
-	end
-	for _,item in ipairs(items)do
-		local record=item.record
-		if record then
-			local format=record.format
-			if A.recordVerdict(record)=="win"then
-				local run=open[format]or{format=format,count=0}
-				run.count=run.count+1
-				run.at=item.at
-				run.stamp=record.openedAt or record.completedAt
-				open[format]=run
-			else
-				close(format)
-			end
-		elseif item.entry.surfaceFormat~=nil then
-			close(item.entry.surfaceFormat)
-		else
-			local formats={}
-			for format in pairs(open)do
-				formats[#formats+1]=format
-			end
-			for _,format in ipairs(formats)do
-				close(format)
-			end
-		end
-	end
-	local still={}
-	for format in pairs(open)do
-		still[#still+1]=format
-	end
-	for _,format in ipairs(still)do
-		close(format)
-	end
-	if best==nil then
-		return nil,"no-win"
 	end
 	return best
 end
@@ -274,17 +200,16 @@ function A.aboutBests()
 			rgb=r and{r,g,b}or nil,tone=r==nil and"bright"or nil,word=true}
 	end)
 	put("streak","Longest win streak",function()
-		local run,reason=longestStreak()
+		local run,reason=A.longestWinStreak()
 		if run==nil then
 			return nil,reason
 		end
 		return{value=tostring(run.count),sub=formatDay(run.format,run.stamp),tone="bright"}
 	end)
 	put("met","Most met",function()
-		local view=A.playersView({sort="met",index=A.paintHeld("encounterIndex",A.encounterIndex)})
-		local row=view and view.rows and view.rows[1]
-		if row==nil or(row.met or 0)<1 then
-			return nil,"no-player-met"
+		local row,reason=A.mostMet()
+		if row==nil then
+			return nil,reason
 		end
 		return{value=tostring(row.identity.bare),sub=counted(row.met,"time","times"),
 			traced=row.met,classToken=row.identity.classToken,word=true}
@@ -369,6 +294,9 @@ function A.aboutWeeks(now,room)
 		bars[#bars+1]={monday=monday,count=counts[monday]or 0,current=monday==current,
 			label=A.weekDayLabel(monday)}
 		monday=A.weekOpening(monday+7*86400+43200)
+	end
+	if#bars==0 then
+		return nil,"after-now",undated
 	end
 	local dropped=0
 	room=type(room)=="number"and math.max(math.floor(room),1)or#bars
@@ -706,7 +634,7 @@ local function paintLeft(half,width)
 	local bestH=A.metric("aboutBestRow")
 	for i,row in ipairs(half.bests)do
 		local held=shown[i]
-		if held and held.value~=nil then
+		if held then
 			A.style(row.label,"cardLabel","dim")
 			row.label:SetText(held.label)
 			at(row.label,half,pad,y+4)
@@ -747,6 +675,7 @@ local function paintRight(half,x,width)
 	local pad=A.metric("aboutPad")
 	local inner=width-pad*2
 	local gap=A.metric("aboutGap")
+	local headingSize=A.fontSize(HEADING_ROLE)
 	local drew={}
 	half:ClearAllPoints()
 	half:SetPoint("TOPLEFT",about,"TOPLEFT",x,0)
@@ -768,7 +697,7 @@ local function paintRight(half,x,width)
 	half.since:SetText(since or"")
 	half.since:ClearAllPoints()
 	half.since:SetPoint("TOPRIGHT",half,"TOPRIGHT",-pad,-y)
-	y=y+math.max(A.fontSize(HEADING_ROLE),A.fontSize("cardLabel"))+gap
+	y=y+math.max(headingSize,A.fontSize("cardLabel"))+gap
 
 	local tileGap=A.metric("aboutTileGap")
 	local tileW=math.floor((inner-tileGap*(TILE_COUNT-1))/TILE_COUNT)
@@ -811,7 +740,7 @@ local function paintRight(half,x,width)
 	A.style(half.weekNote,"rowNote","dim")
 	half.weekNote:ClearAllPoints()
 	half.weekNote:SetPoint("TOPRIGHT",half,"TOPRIGHT",-pad,-y)
-	y=y+A.fontSize(HEADING_ROLE)+8
+	y=y+headingSize+8
 	local barGap=A.metric("aboutWeekGap")
 	local room=math.max(math.floor((inner+barGap)/(A.metric("aboutWeekMin")+barGap)),1)
 	room=math.min(room,WEEK_BARS)
@@ -907,7 +836,7 @@ local function paintRight(half,x,width)
 	if#characters>0 then
 		A.style(half.characterHeading,HEADING_ROLE,"dim")
 		at(half.characterHeading,half,pad,y)
-		y=y+A.fontSize(HEADING_ROLE)+6
+		y=y+headingSize+6
 	end
 	local charDrawn=0
 	for i,row in ipairs(half.characters)do
@@ -970,7 +899,7 @@ local function paintRight(half,x,width)
 	if total>0 then
 		A.style(half.formatHeading,HEADING_ROLE,"dim")
 		at(half.formatHeading,half,pad,y)
-		y=y+A.fontSize(HEADING_ROLE)+8
+		y=y+headingSize+8
 	end
 	local before=0
 	local legendX,legendY=pad,y+A.metric("aboutFormatBar")+8

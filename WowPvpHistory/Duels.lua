@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.33
+-- WowPvpHistory 0.75.26
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -20,12 +20,19 @@ local reported=false
 
 local refusedLines=0
 
-function A.duelsEnabled()
-	local db=A.db()
+local function switchOn(db)
 	if not db then
 		return false
 	end
 	return not(type(db.ui)=="table"and db.ui.duels==false)
+end
+
+function A.duelsEnabled()
+	return switchOn(A.db())
+end
+
+local function recording()
+	return switchOn(A.savedDB())
 end
 
 function A.setDuels(enabled)
@@ -172,7 +179,7 @@ end
 
 local function storeDuel(opened,result,ended)
 	local db=A.db()
-	if not(db and A.duelsEnabled())then
+	if not(db and recording())then
 		A.trace("duel",{state="refused",reason=db and"switch"or"no-database"})
 		return
 	end
@@ -189,6 +196,10 @@ local function storeDuel(opened,result,ended)
 			A.trace("duel",{state="refused",reason="no-database"})
 			return
 		end
+	end
+
+	if A.captureRefusal("duel")then
+		return
 	end
 
 	local record={
@@ -317,7 +328,7 @@ local function storeDuel(opened,result,ended)
 end
 
 local function onRequested(event,playerName)
-	if not A.duelsEnabled()then
+	if not recording()then
 		A.trace("duelrequest",{state="refused",reason="switch"})
 		return
 	end
@@ -339,7 +350,7 @@ local function onRequested(event,playerName)
 end
 
 local function onSystem(_,message)
-	if not A.duelsEnabled()then
+	if not recording()then
 		return
 	end
 
@@ -380,7 +391,7 @@ local function onSystem(_,message)
 end
 
 local function onFinished()
-	if not A.duelsEnabled()then
+	if not recording()then
 		A.trace("duelend",{state="refused",reason="switch"})
 		return
 	end
@@ -426,12 +437,11 @@ function A.duelState()
 	}
 end
 
-A.on("DUEL_REQUESTED",function(event,playerName)
+local function requested(event,playerName)
 	contained(onRequested,event,playerName)
-end)
-A.on("DUEL_TO_THE_DEATH_REQUESTED",function(event,playerName)
-	contained(onRequested,event,playerName)
-end)
+end
+A.on("DUEL_REQUESTED",requested)
+A.on("DUEL_TO_THE_DEATH_REQUESTED",requested)
 A.on("CHAT_MSG_SYSTEM",function(event,message)
 	contained(onSystem,event,message)
 end)

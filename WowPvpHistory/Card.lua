@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.33
+-- WowPvpHistory 0.75.26
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -10,21 +10,13 @@ local card
 local waiting=setmetatable({},{__mode="k"})
 local hooked=setmetatable({},{__mode="k"})
 
-local installed,pending=false,false
+local installed=false
 
 local last={state="none"}
 
 local GRID={"With you","Against","Met"}
 
 local HEAD_ROLE="section"
-
-local function text(parent,role)
-	local fs=parent:CreateFontString(nil,"OVERLAY")
-	A.style(fs,role)
-	fs:SetJustifyH("LEFT")
-	fs:SetWordWrap(false)
-	return fs
-end
 
 local function edges(parent)
 	local held={}
@@ -78,23 +70,23 @@ local function cardOrNil()
 		f.ground=f:CreateTexture(nil,"BACKGROUND")
 		f.ground:SetAllPoints(f)
 		f.edges=edges(f)
-		f.head=text(f,HEAD_ROLE)
+		f.head=A.lineText(f,HEAD_ROLE)
 		f.chip=CreateFrame("Frame",nil,f)
 		f.chip.ground=f.chip:CreateTexture(nil,"BACKGROUND")
 		f.chip.ground:SetAllPoints(f.chip)
-		f.chip.label=text(f.chip,"cardHead")
+		f.chip.label=A.lineText(f.chip,"cardHead")
 		f.chip.dashes={}
-		f.name=text(f,"cardName")
-		f.meta=text(f,"cardText")
-		f.line=text(f,"cardText")
+		f.name=A.lineText(f,"cardName")
+		f.meta=A.lineText(f,"cardText")
+		f.line=A.lineText(f,"cardText")
 		f.labels,f.values={},{}
 		for i=1,#GRID do
-			f.labels[i]=text(f,"cardLabel")
-			f.values[i]=text(f,"cardValue")
+			f.labels[i]=A.lineText(f,"cardLabel")
+			f.values[i]=A.lineText(f,"cardValue")
 		end
-		f.metLast=text(f,"cardLabel")
+		f.metLast=A.lineText(f,"cardLabel")
 		f.rule=f:CreateTexture(nil,"ARTWORK")
-		f.note=text(f,"cardText")
+		f.note=A.lineText(f,"cardText")
 		f.note:SetWordWrap(true)
 		f.tags={}
 		return f
@@ -148,7 +140,7 @@ local function tagChip(f,index)
 	if not chip then
 		chip=CreateFrame("Frame",nil,f)
 		chip.edges=edges(chip)
-		chip.label=text(chip,"bodyText")
+		chip.label=A.lineText(chip,"bodyText")
 		f.tags[index]=chip
 	end
 	return chip
@@ -214,8 +206,9 @@ end
 local function layoutName(f,said,inner,padX,top,classToken)
 	local nameText=tostring(said.name or"")
 	local where={}
-	if said.realm then
-		where[#where+1]=said.realm
+	local realm=A.realmDrawn(said.realm)
+	if realm then
+		where[#where+1]=realm
 	end
 	if said.spec then
 		where[#where+1]=said.spec
@@ -480,9 +473,10 @@ local function traceCard(said,source,drew)
 		end
 		ids=table.concat(held,",")
 	end
-	local repStep=nil
+	local repStep,attitudeStep=nil,nil
 	if drew then
-		repStep=said.rating~=nil and said.rating or"none"
+		repStep=said.rating or"none"
+		attitudeStep=said.attitude or"none"
 	end
 	pcall(A.trace,"card",{
 		source=source,
@@ -496,6 +490,7 @@ local function traceCard(said,source,drew)
 		against=A.sideShortText(said.against),
 		ids=ids,
 		repStep=repStep,
+		attitudeStep=attitudeStep,
 		cardNote=drew and drew.note,
 		cardTags=drew and drew.tags,
 		cardTagLines=drew and drew.tagLines,
@@ -578,19 +573,7 @@ local function pass()
 	end
 end
 
-local function schedule()
-	if pending or not(C_Timer and type(C_Timer.After)=="function")then
-		return
-	end
-	pending=true
-	C_Timer.After(0,function()
-		pending=false
-		local ok,err=pcall(pass)
-		if not ok then
-			A.noteError(err,"card-pass")
-		end
-	end)
-end
+local schedule=A.nextFrameOnce(pass,"card-pass")
 
 local function install(source)
 	if installed then

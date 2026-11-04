@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.33
+-- WowPvpHistory 0.75.26
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -90,7 +90,7 @@ function A.playerStripLead(strip)
 end
 
 function A.playerStampWidth(fontString)
-	return A.textRoom(fontString,"Wed 30 Sep 00:00")
+	return A.textRoom(fontString,"Wed 30 Sep "..A.clockWidest())
 end
 
 function A.playerCommentRow()
@@ -109,6 +109,7 @@ function A.playerWindowStack(metRows,tagRows)
 	local commentHeader=A.fontSize("section")+A.metric("headingPad")
 	return A.playerMatchStripHeight()
 		+gap+A.fontSize("dossierName")+2+A.fontSize("note")
+		+gap+A.metric("controlHeight")
 		+gap+A.metric("controlHeight")
 		+gap+A.sideCardHeight()
 		+gap+A.metric("controlHeight")
@@ -176,17 +177,18 @@ local function commitNote(frame)
 	A.commitNoteBox(frame.noteRow.box,frame.guid)
 end
 
+local function scalePicked(frame,scale,wanted)
+	if frame and frame.guid then
+		A.pickNoteStep(frame.guid,scale,wanted)
+	end
+end
+
 local function repPicked(frame,wanted)
-	if not(frame and frame.guid)then
-		return
-	end
-	local held=A.noteFor(frame.guid)
-	if held~=nil and held.rating==wanted then
-		wanted=nil
-	end
-	if not A.setPlayerRating(frame.guid,wanted)then
-		A.say("no database, so the rating could not be stored")
-	end
+	scalePicked(frame,"skill",wanted)
+end
+
+local function attitudePicked(frame,wanted)
+	scalePicked(frame,"attitude",wanted)
 end
 
 local function commitTags(frame)
@@ -195,11 +197,15 @@ end
 
 local function tagClicked(button)
 	local frame=button.playerWindow
-	if not(frame and button.tagValue)then
-		return
+	if frame and button.tagValue then
+		A.removeShownTag(frame.guid,button.tagValue)
 	end
-	if not A.removePlayerTags(frame.guid,{button.tagValue})then
-		A.say("no database, so the tag could not be removed")
+end
+
+local function templateClicked(button)
+	local frame=button.playerWindow
+	if frame and frame.guid and button.templateValue then
+		A.applyNoteTemplate(frame.noteRow.box,frame.guid,button.templateValue)
 	end
 end
 
@@ -236,7 +242,7 @@ local function commitComment(frame)
 			A.say(("this player already carries %d comments and the bound is %d. Remove %d to add another")
 				:format(held,cap,held-cap+1))
 		else
-			A.say("no database, so the comment could not be stored")
+			A.say(("%s, so the comment could not be stored"):format(A.noteRefusalText(why)))
 		end
 		return
 	end
@@ -249,12 +255,15 @@ local function commentRemoved(button)
 	if not(frame and row.commentIndex)then
 		return
 	end
-	local ok,_,why=A.removePlayerComment(frame.guid,row.commentIndex,row.commentText)
-	if not ok then
+	local guid=frame.guid
+	local ok,removed,why=A.removePlayerComment(guid,row.commentIndex,row.commentText)
+	if ok then
+		A.sayRemoved(guid,"comment",removed)
+	else
 		if why=="moved"or why=="absent"then
 			A.say("that comment changed since this window drew it, so nothing was removed")
 		else
-			A.say("no database, so the comment could not be removed")
+			A.say(("%s, so the comment could not be removed"):format(A.noteRefusalText(why)))
 		end
 		written()
 	end
@@ -282,10 +291,6 @@ local function buildCopyBox()
 	A.registerScaledWindow(frame)
 
 	frame.title=A.windowTitle(frame)
-	frame.title:SetPoint("TOPLEFT",frame,"TOPLEFT",A.metric("titleInset"),-A.metric("titleTop"))
-	frame.title:SetPoint("TOPRIGHT",frame,"TOPRIGHT",-A.metric("titleInset"),-A.metric("titleTop"))
-	frame.title:SetJustifyH("CENTER")
-	frame.title:SetWordWrap(false)
 
 	frame.note=frame:CreateFontString(nil,"ARTWORK","GameFontDisableSmall")
 	frame.note:SetPoint("TOPLEFT",frame,"TOPLEFT",A.metric("margin"),-A.metric("headerHeight"))
@@ -332,8 +337,7 @@ function A.showCopyBox(over,title,note,text,source)
 	end
 	local shown=pcall(function()
 		copyBox.copyText=text
-		A.style(copyBox.title,"heading","bright")
-		copyBox.title:SetText(title or"")
+		A.setWindowTitle(copyBox,title or"")
 		A.style(copyBox.note,"note","dim")
 		copyBox.note:SetText(note or"")
 		copyBox.field:SetText(text)
@@ -441,16 +445,21 @@ local function buildHead(frame,body)
 			A.showCopyBox(frame,"Copy name","Ctrl+C copies the name.",frame.copyText)
 		end
 	end,A.metric("actionMin"))
+	frame.undoPill=A.buildUndoPill(body)
 end
 
 local function buildDetail(frame,body)
 	frame.rep=A.buildRepControl(body,function(rating)
 		repPicked(frame,rating)
-	end)
+	end,"skill")
 	frame.rep:SetPoint("TOPLEFT",frame.sub,"BOTTOMLEFT",-headIndent(),-A.metric("paneGap"))
 	frame.rep:SetPoint("RIGHT",body,"RIGHT",0,0)
 
-	frame.cards=hang(A.buildSideCards(body),body,frame.rep,A.metric("paneGap"))
+	frame.attitude=hang(A.buildRepControl(body,function(rating)
+		attitudePicked(frame,rating)
+	end,"attitude"),body,frame.rep,A.metric("paneGap"))
+
+	frame.cards=hang(A.buildSideCards(body),body,frame.attitude,A.metric("paneGap"))
 
 	frame.noteRow=hang(A.buildNoteRow(body),body,frame.cards,A.metric("paneGap"))
 	local box=frame.noteRow.box
@@ -471,11 +480,14 @@ local function buildDetail(frame,body)
 
 	frame.tagRow=hang(A.buildTagRow(body,tagClicked,suggestClicked,function()
 		commitTags(frame)
-	end),body,frame.noteRow,A.metric("paneGap"))
+	end,templateClicked),body,frame.noteRow,A.metric("paneGap"))
 	for _,button in ipairs(frame.tagRow.tagButtons)do
 		button.playerWindow=frame
 	end
 	for _,button in ipairs(frame.tagRow.suggestButtons)do
+		button.playerWindow=frame
+	end
+	for _,button in ipairs(frame.tagRow.templateButtons)do
 		button.playerWindow=frame
 	end
 	frame.tagRow.box:HookScript("OnTextChanged",function(_,userInput)
@@ -679,6 +691,11 @@ local function buildWindow(index)
 	A.closeOnEscape(name)
 
 	frame:SetScript("OnHide",function(self)
+		local readable,stillShown=pcall(self.IsShown,self)
+		if readable and stillShown then
+			A.trace("view",{source="player-hide",state="ignored"},"ui")
+			return
+		end
 		forget(self)
 	end)
 	return frame
@@ -740,10 +757,11 @@ local function paintMatchStrip(frame,index)
 
 	local pips=type(info.pips)=="table"and info.pips or{}
 	local x=A.playerStripLeftEnd(nil,lead)+A.metric("paneGap")*2
+	local box,boxGap=A.metric("roundBox"),A.metric("roundBoxGap")
 	for i,round in ipairs(strip.rounds)do
 		round:ClearAllPoints()
 		round:SetPoint("LEFT",strip,"LEFT",x,0)
-		x=x+A.metric("roundBox")+A.metric("roundBoxGap")
+		x=x+box+boxGap
 		local pip=pips[i]
 		if pip then
 			A.style(round.label,"rowClock","dimmer")
@@ -777,7 +795,8 @@ local function paintHead(frame,dossier)
 	frame.inPlayers:ClearAllPoints()
 	frame.inPlayers:SetPoint("TOPRIGHT",frame.matchStrip,"BOTTOMRIGHT",0,-A.metric("paneGap"))
 	local edge=frame.inPlayers
-	for _,pair in ipairs({{frame.murlok,frame.murlokText},{frame.copyName,frame.copyText}})do
+	for _,pair in ipairs({{frame.murlok,frame.murlokText},{frame.copyName,frame.copyText},
+		{frame.undoPill,A.undoPending(frame.guid)or nil}})do
 		local button,text=pair[1],pair[2]
 		button:ClearAllPoints()
 		if text then
@@ -915,7 +934,7 @@ paintWindow=function(frame,index)
 	if not dossier then
 		return false
 	end
-	frame.heading:SetText("Player")
+	A.setWindowTitle(frame,"Player")
 	local stripId,stripInfo=paintMatchStrip(frame,index)
 	local shownMet,metLines,drawnLines=metShown(frame,dossier)
 	local sideWord,sideKind=A.encounterSideWord(drawnLines)
@@ -934,6 +953,7 @@ paintWindow=function(frame,index)
 	pcall(frame.commentList.SetWidth,frame.commentList,body)
 	paintHead(frame,dossier)
 	A.paintRepControl(frame.rep,dossier.rating,body,true)
+	A.paintRepControl(frame.attitude,dossier.attitude,body,true)
 	A.paintSideCards(frame.cards,dossier,body)
 	local note=dossier.note
 	local shown,typed=A.paintNoteBox(frame.noteRow.box,frame,frame.guid,note and note.text)
@@ -1023,6 +1043,15 @@ forget=function(frame)
 	end
 	frame.closeSource=nil
 	frame.guid=nil
+end
+
+local function closeWindow(frame,source)
+	frame.closeSource=source
+	pcall(frame.Hide,frame)
+	if frame.guid~=nil and open[frame.guid]==frame then
+		forget(frame)
+	end
+	frame.closeSource=nil
 end
 
 local function clearDrafts(frame,guid)
@@ -1122,7 +1151,7 @@ local function place(frame,beside)
 	end
 
 	frame.placedRoom,frame.placedScreen=nil,nil
-	local point,x,y=nil,0,0
+	local point,x,y
 	if type(A.pooledOpenPoint)=="function"then
 		point,x,y=A.pooledOpenPoint("player")
 	end
@@ -1135,6 +1164,21 @@ local function place(frame,beside)
 	end
 	pcall(frame.SetUserPlaced,frame,false)
 	return frame.placedSide
+end
+
+local function traceTitlePlaced(frame,guid)
+	if A.traceWindowTitle(frame)then
+		return
+	end
+	local after=type(C_Timer)=="table"and C_Timer.After or nil
+	if type(after)~="function"then
+		return
+	end
+	after(0,function()
+		if frame.guid==guid and open[guid]==frame and frame:IsShown()then
+			A.traceWindowTitle(frame)
+		end
+	end)
 end
 
 function A.openPlayer(guid,forWriting,source,beside)
@@ -1199,15 +1243,16 @@ function A.openPlayer(guid,forWriting,source,beside)
 		end)
 	end
 	trace(outcome,source,nil,drafts,frame,beside)
+	if outcome=="opened"then
+		traceTitlePlaced(frame,guid)
+	end
 	return frame,outcome
 end
 
 function A.togglePlayer(guid,source,beside)
 	local frame=guid~=nil and open[guid]or nil
 	if frame then
-		frame.closeSource=source
-		pcall(frame.Hide,frame)
-		frame.closeSource=nil
+		closeWindow(frame,source)
 		return nil,"closed"
 	end
 	return A.openPlayer(guid,false,source,beside)
@@ -1268,7 +1313,7 @@ function A.closePlayerWindows()
 		local frame=open[order[i]]
 		if frame then
 			closed=closed+1
-			pcall(frame.Hide,frame)
+			closeWindow(frame,nil)
 		end
 	end
 	return closed

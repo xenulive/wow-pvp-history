@@ -1,4 +1,4 @@
-<!-- WowPvpHistory 0.70.33
+<!-- WowPvpHistory 0.75.26
      Author:  Xenu-Sentinels
      Project: wow-pvp-history
               https://github.com/xenulive/wow-pvp-history
@@ -6,5 +6,20 @@
 <Bindings>
     <Binding name="WOWPVPHISTORY_TOGGLE" category="BINDING_HEADER_WOWPVPHISTORY">
         WowPvpHistory_Toggle()
+    </Binding>
+    <Binding name="WOWPVPHISTORY_ANNOUNCE_LAST" category="BINDING_HEADER_WOWPVPHISTORY">
+        WowPvpHistory_AnnounceLast()
+    </Binding>
+    <Binding name="WOWPVPHISTORY_RATE_BAD" category="BINDING_HEADER_WOWPVPHISTORY">
+        WowPvpHistory_RateBad()
+    </Binding>
+    <Binding name="WOWPVPHISTORY_RATE_STRONG" category="BINDING_HEADER_WOWPVPHISTORY">
+        WowPvpHistory_RateStrong()
+    </Binding>
+    <Binding name="WOWPVPHISTORY_NOTE_TARGET" category="BINDING_HEADER_WOWPVPHISTORY">
+        WowPvpHistory_NoteTarget()
+    </Binding>
+    <Binding name="WOWPVPHISTORY_FLAG_TARGET" category="BINDING_HEADER_WOWPVPHISTORY">
+        WowPvpHistory_FlagTarget()
     </Binding>
 </Bindings>

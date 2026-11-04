@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.33
+-- WowPvpHistory 0.75.26
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -10,6 +10,9 @@ local PREFIX=LINK_TYPE..":"..ADDON..":"
 
 local PLAYER_KIND="player"
 local MATCH_KIND="match"
+local PLAYERS_KIND="players"
+local ROSTER_KIND="roster"
+local UNDO_KIND="undo"
 
 local registered=false
 
@@ -28,8 +31,8 @@ local function link(kind,payload,text)
 	return("|H%s%s:%s|h|cff%s[%s]|r|h"):format(PREFIX,kind,payload,A.linkColor(),text)
 end
 
-function A.playerLink(guid,text)
-	return link(PLAYER_KIND,guid,text)
+function A.playerLink(guid,text,kept)
+	return link(PLAYER_KIND,guid,A.listNameText(text,kept))
 end
 
 function A.matchLink(id,text)
@@ -37,6 +40,24 @@ function A.matchLink(id,text)
 		return text
 	end
 	return link(MATCH_KIND,A.matchIdText(id),text)
+end
+
+function A.undoLink(id,text)
+	if type(id)~="number"then
+		return text
+	end
+	return link(UNDO_KIND,tostring(id),text)
+end
+
+function A.rosterLink(id,text)
+	if type(id)~="number"then
+		return text
+	end
+	return link(ROSTER_KIND,A.matchIdText(id),text)
+end
+
+function A.playersLink(search,text)
+	return link(PLAYERS_KIND,search,text)
 end
 
 function A.linksAvailable()
@@ -66,6 +87,30 @@ local function route(raw)
 		A.trace("open",{source="link",reason=MATCH_KIND,id=id},"ui")
 		if id and type(A.raiseMatchWindow)=="function"then
 			A.raiseMatchWindow("match",id,"link")
+		end
+		return true
+	end
+
+	if kind==ROSTER_KIND then
+		local id=tonumber(payload)
+		A.trace("open",{source="link",reason=ROSTER_KIND,id=id},"ui")
+		if id and type(A.showNotesForMatch)=="function"then
+			A.showNotesForMatch(id)
+		end
+		return true
+	end
+
+	if kind==UNDO_KIND then
+		if type(A.reportUndo)=="function"then
+			A.reportUndo(tonumber(payload)or-1)
+		end
+		return true
+	end
+
+	if kind==PLAYERS_KIND then
+		A.trace("open",{source="link",reason=PLAYERS_KIND},"ui")
+		if type(A.showNotes)=="function"and A.showNotes()then
+			A.setNotesSearch(payload)
 		end
 		return true
 	end

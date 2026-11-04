@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.33
+-- WowPvpHistory 0.75.26
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -32,6 +32,10 @@ local lastOutcome
 
 local lastOutcomeRegister
 
+local function counted(n,one,many)
+	return("%d %s"):format(n,n==1 and one or many)
+end
+
 function A.minimapOffNote()
 	return"With the button off, /pvph show opens the history, as does the key under Key Bindings."
 end
@@ -53,8 +57,7 @@ function A.restoreSlotText(slot)
 	end
 
 	return("%s (%d)"):format(name,entry.matches),
-		("%d %s, written %s."):format(entry.matches,entry.matches==1 and"match"or"matches",
-			tostring(entry.at)),
+		("%s, written %s."):format(counted(entry.matches,"match","matches"),tostring(entry.at)),
 		entry.matches,entry.at
 end
 
@@ -84,8 +87,11 @@ end
 
 local PAGES={
 	{value="general",label="General"},
+	{value="appearance",label="Appearance"},
 	{value="alerts",label="Alerts"},
+	{value="aftermatch",label="After a match"},
 	{value="notes",label="Notes and players"},
+	{value="skill",label="Skill and attitude"},
 	{value="recording",label="Recording"},
 	{value="data",label="Data and backups"},
 }
@@ -186,6 +192,15 @@ local SWITCHES={
 		set=function(on)return A.setRememberTab(on)end,
 	},
 	{
+		key="rememberFilters",
+		section="general",
+		card="WINDOWS",
+		label="Remember the search and filters",
+		tip="Keep the match list's search and filters through a logout or a reload.",
+		get=function()return A.rememberFilters()end,
+		set=function(on)return A.setRememberFilters(on)end,
+	},
+	{
 		key="closeWithMain",
 		section="general",
 		card="WINDOWS",
@@ -227,8 +242,30 @@ local SWITCHES={
 		set=function(on)return A.setAnnounce(on)end,
 	},
 	{
-		key="postGame",
+		key="announceComp",
 		section="alerts",
+		card="AT THE GATES",
+		parent="announce",
+		label="Warn on a comp you lose to",
+		tip="At the gates, name the other team's classes and your record against them when you have "
+			.."lost at least as many games against those classes as you won, over five or more this season.",
+		get=function()return A.announceCompEnabled()end,
+		set=function(on)return A.setAnnounceComp(on)end,
+	},
+	{
+		key="announceRematch",
+		section="alerts",
+		card="AT THE GATES",
+		parent="announce",
+		label="Say when the other team played you earlier this sitting",
+		tip="At the gates, say how long ago and how it went when two or more of the other team played "
+			.."you earlier in this sitting.",
+		get=function()return A.announceRematchEnabled()end,
+		set=function(on)return A.setAnnounceRematch(on)end,
+	},
+	{
+		key="postGame",
+		section="aftermatch",
 		card="AFTER A MATCH",
 		label="Chat line after a match",
 		tip="After a match or a duel, print what was recorded, the rating change, any new personal "
@@ -238,12 +275,52 @@ local SWITCHES={
 	},
 	{
 		key="openAfterMatch",
-		section="alerts",
+		section="aftermatch",
 		card="AFTER A MATCH",
 		label="Open the match window",
 		tip="When you leave a match, open its window. It waits until you are out of combat.",
 		get=function()return A.openAfterMatchEnabled()end,
 		set=function(on)return A.setOpenAfterMatch(on)end,
+	},
+	{
+		key="toast",
+		section="aftermatch",
+		card="AFTER A MATCH",
+		label="Result card after a match",
+		tip="When you leave a match, raise a card with the result, the rating, any new best and the "
+			.."run of wins or losses for a few seconds. Click it to open the match.",
+		get=function()return A.toastEnabled()end,
+		set=function(on)return A.setToast(on)end,
+	},
+	{
+		key="soundBad",
+		section="aftermatch",
+		card="SOUNDS",
+		label=A.soundLabel("badArrival"),
+		tip="Play the raid warning sound on the game's sound effects channel.",
+		play="badArrival",
+		get=function()return A.soundEnabled("badArrival")end,
+		set=function(on)return A.setSound("badArrival",on)end,
+	},
+	{
+		key="soundBest",
+		section="aftermatch",
+		card="SOUNDS",
+		label=A.soundLabel("newBest"),
+		tip="Play the epic loot toast sound on the game's sound effects channel.",
+		play="newBest",
+		get=function()return A.soundEnabled("newBest")end,
+		set=function(on)return A.setSound("newBest",on)end,
+	},
+	{
+		key="soundSaved",
+		section="aftermatch",
+		card="SOUNDS",
+		label=A.soundLabel("saved"),
+		tip="Play the Battle.net toast sound on the game's sound effects channel.",
+		play="saved",
+		get=function()return A.soundEnabled("saved")end,
+		set=function(on)return A.setSound("saved",on)end,
 	},
 	{
 		key="tooltip",
@@ -272,7 +349,7 @@ local SWITCHES={
 		label="A bar before their name",
 		find="a bar before their name mark people you have written about in chat",
 		tip="Outside a match, a dungeon or a raid, put a bar before the name of a player you rated, "
-			.."tagged or wrote about when they talk in chat, colored by your rating.",
+			.."tagged or wrote about when they talk in chat, colored by their skill or attitude step.",
 		get=function()return A.chatMarkEnabled()end,
 		set=function(on)return A.setChatMark(on)end,
 	},
@@ -326,6 +403,92 @@ local SWITCHES={
 			.."Player vs. Player tab opens.",
 		get=function()return A.finderDocked()end,
 		set=function(on)return A.setFinderDocked(on)end,
+	},
+	{
+		key="tally",
+		section="alerts",
+		card="IN A SOLO SHUFFLE",
+		label="Round tally in Solo Shuffle",
+		tip="During a Solo Shuffle, draw a strip at the top of the screen with the round, each round "
+			.."won or lost, your record and the classes with you this round.",
+		get=function()return A.tallyEnabled()end,
+		set=function(on)return A.setTally(on)end,
+	},
+	{
+		key="world",
+		section="recording",
+		card="WHAT IS RECORDED",
+		label="Record World PvP",
+		tip="With War Mode on, keep the kills and deaths of a stretch of open-world PvP as an outing. "
+			.."Turning it off ends an outing already open.",
+		get=function()return A.worldEnabled()end,
+		set=function(on)return A.setWorld(on)end,
+	},
+	{
+		key="recordCharacter",
+		section="recording",
+		card="WHAT IS RECORDED",
+		label="Record on this character",
+		find="record on this character mute",
+		named=function()
+			local name=A.recordingName()
+			return name and("Record on %s"):format(name)or"Record on this character"
+		end,
+		tip="Record matches, duels and World PvP on the character you are logged in on. Off stops "
+			.."recording on this character alone, and what is stored stays shown.",
+		get=function()return A.characterRecorded()end,
+		set=function(on)return A.setCharacterRecorded(on)end,
+	},
+	{
+		key="overlayTwo",
+		section="general",
+		card="RESULTS ON SCREEN",
+		parent="overlayShown",
+		label="Second format",
+		tip="When you played a second format today, draw its rating, today's change and its newest "
+			.."results on a second row under the first.",
+		get=function()return A.overlayTwo()end,
+		set=function(on)return A.setOverlayTwo(on)end,
+	},
+	{
+		key="mmrLine",
+		section="appearance",
+		card="APPEARANCE",
+		label="MMR line on the graph",
+		tip="Draw the gray matchmaking rating line under your rating on the Stats graph, wherever "
+			.."enough matches in a row recorded one.",
+		get=function()return A.mmrLineEnabled()end,
+		set=function(on)return A.setMmrLine(on)end,
+	},
+	{
+		key="largeText",
+		section="appearance",
+		card="APPEARANCE",
+		label="Large text",
+		tip="Draw the words and figures in the lists one size larger, with the windows kept the same "
+			.."size.",
+		get=function()return A.largeText()end,
+		set=function(on)return A.setLargeText(on,"settings")end,
+	},
+	{
+		key="denseRows",
+		section="appearance",
+		card="APPEARANCE",
+		label="Dense rows",
+		tip="Draw the match list's rows two thirds as tall, so more matches show at once.",
+		get=function()return A.denseRows()end,
+		set=function(on)return A.setDenseRows(on,"settings")end,
+	},
+	{
+		key="realms",
+		section="appearance",
+		card="APPEARANCE",
+		label="Realm names",
+		find="realm names server",
+		tip="Draw each player's realm beside the name in lists and chat lines. Off, a realm shows when "
+			.."you rest the pointer on the name, and in the player's own window.",
+		get=function()return A.realmsShown()end,
+		set=function(on)return A.setRealms(on,"settings")end,
 	},
 }
 
@@ -474,8 +637,11 @@ local function paintToggle(toggle)
 	else
 		toggle.knob:SetPoint("LEFT",toggle,"LEFT",inset,0)
 	end
-	toggle.word:SetText(on and"On"or"Off")
 	A.style(toggle.word,"numberSmall",on and"accent"or"dim")
+	local wordRoom=math.max(A.textRoom(toggle.word,"On"),A.textRoom(toggle.word,"Off"))
+	toggle.word:SetWidth(wordRoom)
+	toggle.wordRoom=wordRoom+A.metric("pillGap")
+	toggle.word:SetText(on and"On"or"Off")
 	toggle:SetAlpha(toggle:IsEnabled()and 1 or 0.4)
 end
 
@@ -488,13 +654,9 @@ local function buildToggle(parent)
 	toggle.knob=toggle:CreateTexture(nil,"OVERLAY")
 	toggle.knob:SetSize(A.metric("toggleKnob"),A.metric("toggleKnob"))
 	toggle.word=toggle:CreateFontString(nil,"OVERLAY","GameFontHighlightSmall")
-	A.style(toggle.word,"numberSmall","dim")
-	local wordRoom=math.max(A.textRoom(toggle.word,"On"),A.textRoom(toggle.word,"Off"))
-	toggle.word:SetWidth(wordRoom)
 	toggle.word:SetJustifyH("RIGHT")
 	toggle.word:SetWordWrap(false)
 	toggle.word:SetPoint("RIGHT",toggle,"LEFT",-A.metric("pillGap"),0)
-	toggle.wordRoom=wordRoom+A.metric("pillGap")
 	for _,method in ipairs({"SetChecked","Enable","Disable"})do
 		local base=toggle[method]
 		toggle[method]=function(self,...)
@@ -615,7 +777,11 @@ local function atRight(row,control,beside)
 end
 
 local function rowNeed(row)
-	local need=row.indent+A.labelRoom(row.label:GetText()or"")+(row.rightInset or 0)
+	local text=A.labelRoom(row.label:GetText()or"")
+	for i=1,#(row.lines or{})do
+		text=math.max(text,A.labelRoom(row.lines[i]:GetText()or""))
+	end
+	local need=row.indent+text+(row.rightInset or 0)
 	local controls=row.rightControls or{}
 	if#controls>0 then
 		need=need+A.metric("pillGap")+A.metric("setCardPad")
@@ -799,10 +965,24 @@ local function buildStepper(frame,row,getter,setter,range,suffix)
 	return stepper
 end
 
+local function stepperFigureWidth(stepper)
+	local min,max=stepper.range()
+	local suffix=stepper.suffix or"%"
+	local width=math.max(A.metric("stepFigure"),
+		A.textRoom(stepper.figure,("%d%s"):format(min,suffix)),
+		A.textRoom(stepper.figure,("%d%s"):format(max,suffix)))
+	if stepper.offAtFloor then
+		width=math.max(width,A.textRoom(stepper.figure,"Off"))
+	end
+	return width
+end
+
 local function paintStepper(stepper)
 	local min,max=stepper.range()
 	local at=stepper.getter()
-	stepper.figure:SetText(("%d%s"):format(at,stepper.suffix or"%"))
+	A.style(stepper.figure,"numberSmall","text")
+	stepper.figure:SetWidth(stepperFigureWidth(stepper))
+	stepper.figure:SetText(stepper.offAtFloor and at<=min and"Off"or("%d%s"):format(at,stepper.suffix or"%"))
 	pcall(at<=min and stepper.minus.Disable or stepper.minus.Enable,stepper.minus)
 	pcall(at>=max and stepper.plus.Disable or stepper.plus.Enable,stepper.plus)
 end
@@ -861,6 +1041,92 @@ ROW_BUILDERS.theme={
 	end,
 }
 
+ROW_BUILDERS.clock={
+	build=function(frame,card)
+		local labels={}
+		for _,choice in ipairs(A.clockChoices())do
+			labels[choice.value]=choice.label
+		end
+		local row,track=segmentRow(card,"Clock",A.clockChoices(),function(value)
+			if A.setClock(value,"settings")then
+				outcome({("clock set to %s"):format(tostring(labels[value]):lower())})
+			end
+		end,{
+			key="clock",
+			find="clock time 12-hour 24-hour am pm",
+			tip="How every time of day draws. As the game's follows the game's own clock setting.",
+		})
+		frame.clockSegment=track
+		return row
+	end,
+}
+
+ROW_BUILDERS.resultPair={
+	build=function(frame,card)
+		local tip="The two colors every win and loss draws in. Blue and orange, and white and gray, "
+			.."read for the common red-green color blindness."
+		local row=cardRow(card,"Win and loss colors",{
+			key="resultPair",
+			find="win and loss colors color blind green red blue orange white gray",
+			tip=tip,
+		})
+		A.style(row.label,"cardText","text")
+		local side,gap,pad=A.metric("pairSwatch"),A.metric("pairSwatchGap"),A.metric("pairSwatchPad")
+		local edge=A.metric("pairSwatchEdge")
+		local choices=A.resultPairChoices()
+		frame.resultPairSwatches={}
+		local beside=nil
+		for i=#choices,1,-1 do
+			local choice=choices[i]
+			local swatch=CreateFrame("Button",nil,row)
+			swatch:SetSize(pad*2+side*2+gap,pad*2+side)
+			swatch.pairValue=choice.value
+			swatch.edges={}
+			for e,spot in ipairs({{"TOPLEFT","TOPRIGHT"},{"BOTTOMLEFT","BOTTOMRIGHT"},
+				{"TOPLEFT","BOTTOMLEFT"},{"TOPRIGHT","BOTTOMRIGHT"}})do
+				local line=swatch:CreateTexture(nil,"BORDER")
+				line:SetPoint(spot[1],swatch,spot[1],0,0)
+				line:SetPoint(spot[2],swatch,spot[2],0,0)
+				if e<=2 then
+					line:SetHeight(edge)
+				else
+					line:SetWidth(edge)
+				end
+				swatch.edges[e]=line
+			end
+			swatch.win=swatch:CreateTexture(nil,"ARTWORK")
+			swatch.win:SetSize(side,side)
+			swatch.win:SetPoint("TOPLEFT",swatch,"TOPLEFT",pad,-pad)
+			swatch.win:SetColorTexture(A.resultPairColor(choice.value,"win"))
+			swatch.loss=swatch:CreateTexture(nil,"ARTWORK")
+			swatch.loss:SetSize(side,side)
+			swatch.loss:SetPoint("TOPLEFT",swatch.win,"TOPRIGHT",gap,0)
+			swatch.loss:SetColorTexture(A.resultPairColor(choice.value,"loss"))
+			swatch:SetScript("OnClick",function(self)
+				if A.setResultPair(self.pairValue,"settings")then
+					outcome({("win and loss colors set to %s"):format(choice.label:lower())})
+				end
+			end)
+			hoverTip(swatch,{label=choice.label,tip=choice.tooltip})
+			atRight(row,swatch,beside)
+			beside=swatch
+			row.inertControls[#row.inertControls+1]=swatch
+			frame.resultPairSwatches[i]=swatch
+		end
+		return row
+	end,
+}
+
+local function paintResultPair(frame)
+	local chosen=A.resultPair()
+	for _,swatch in ipairs(frame.resultPairSwatches or{})do
+		local r,g,b,a=A.color(swatch.pairValue==chosen and"accent"or"hairline")
+		for e=1,#swatch.edges do
+			swatch.edges[e]:SetColorTexture(r,g,b,a)
+		end
+	end
+end
+
 ROW_BUILDERS.windowScale={
 	build=function(frame,card)
 		local row=cardRow(card,"Scale",{
@@ -905,6 +1171,42 @@ ROW_BUILDERS.overlayOpacity={
 		return row
 	end,
 }
+
+local function goalRow(which,label,tip)
+	return{
+		build=function(frame,card)
+			local key=which=="won"and"goalWon"or"goalPlayed"
+			local row=cardRow(card,label,{
+				key=key,
+				find="goal weekly week rated target",
+				tip=tip,
+			})
+			local stepper=buildStepper(frame,row,function()
+				local played,won=A.goalSet()
+				return(which=="won"and won or played)or 0
+			end,function(value)
+				local _,won=A.goalSet()
+				if which=="played"and value>0 and won~=nil and value<won then
+					outcome({"the played figure cannot be below the won one"})
+					return
+				end
+				local _,why=A.setGoal(which,value)
+				if why=="above-played"then
+					outcome({"the won figure cannot be above the played one"})
+				end
+			end,A.goalRange,"")
+			stepper.offAtFloor=true
+			frame[key]=stepper
+			return row
+		end,
+	}
+end
+
+ROW_BUILDERS.goalPlayed=goalRow("played","Rated matches to play",
+	"A number of rated matches to play this week, counted on the History strip and the minimap "
+	.."tooltip until the weekly reset.")
+ROW_BUILDERS.goalWon=goalRow("won","Of them to win",
+	"How many of this week's rated matches to win.")
 
 ROW_BUILDERS.minimapPosition={
 	parent="minimap",
@@ -954,13 +1256,79 @@ ROW_BUILDERS.geometryReset={
 		end,{
 			key="geometryReset",
 			find="size and place of every window reset",
-			tip="Put every PvPHistory window back at its normal size and place, the match windows "
-				.."beside the match list, and the results bar where it starts.",
+			tip="Put every PvPHistory window back at its normal size and place, and the match windows "
+				.."beside the match list.",
 		})
 		frame.resetGeometry=reset
 		return row
 	end,
 }
+
+ROW_BUILDERS.announcementReset={
+	build=function(frame,card)
+		local row,reset=buttonRow(card,"Place of every announcement","Reset all",function()
+			if type(A.resetAnnouncementLines)~="function"then
+				outcome({"the window geometry did not load, so nothing could be forgotten"},"fault")
+				return
+			end
+			local lines=A.resetAnnouncementLines()
+			for i=1,#lines do
+				A.say(lines[i])
+			end
+			outcome(lines)
+		end,{
+			key="announcementReset",
+			find="place of every announcement reset roster banner round tally result card results bar",
+			tip="Put the roster banner, the round tally, the result card and the results bar back at "
+				.."their normal places.",
+		})
+		frame.resetAnnouncements=reset
+		return row
+	end,
+}
+
+ROW_BUILDERS.recordPause={
+	build=function(frame,card)
+		local row,button=buttonRow(card,"Pause recording","Pause an hour",function()
+			if A.pausedUntil()~=nil then
+				A.resumeRecording()
+				outcome({"recording resumed"})
+				return
+			end
+			local at=A.setPause()
+			if at then
+				outcome({("recording is paused until %s. A match already running is still recorded")
+					:format(A.pauseClock(at))})
+			else
+				outcome({"no database, so the pause could not be stored"},"fault")
+			end
+		end,{
+			key="recordPause",
+			find="pause recording an hour resume paused until",
+			tip="Stop recording matches, duels and World PvP for an hour, on every character. A match "
+				.."already running is still recorded, and the pause ends by itself.",
+		})
+		frame.recordPause=row
+		frame.recordPauseButton=button
+		return row
+	end,
+}
+
+local function paintPause(frame)
+	local row,button=frame.recordPause,frame.recordPauseButton
+	if not(row and button)then
+		return
+	end
+	local at=A.pausedUntil()
+	if at~=nil then
+		row.label:SetText(("Paused until %s"):format(A.pauseClock(at)))
+		button:SetText("Resume")
+	else
+		row.label:SetText("Pause recording")
+		button:SetText("Pause an hour")
+	end
+	A.fitControl(button,A.metric("actionMin"))
+end
 
 ROW_BUILDERS.announceShape={
 	parent="announce",
@@ -985,11 +1353,29 @@ ROW_BUILDERS.announceShape={
 			sub=true,
 			key="announceShape",
 			parent="announce",
-			find="layout shape side by side one column",
-			tip="Side by side puts both sides on one line where they fit the screen. One column "
-				.."stacks one side under the other.",
+			find="layout shape card headline side by side one column",
+			tip="Card lists each player you know on a row of their own, with your note. Headline "
+				.."names the players who matter on one line. Side by side and One column draw a "
+				.."strip of names.",
 		})
 		frame.announceShapeSegment=shape
+		return row
+	end,
+}
+
+ROW_BUILDERS.announceCrowd={
+	parent="announce",
+	build=function(frame,card)
+		local row=cardRow(card,"Headline above",{
+			sub=true,
+			key="announceCrowd",
+			parent="announce",
+			find="headline above crowded lobby players",
+			tip="With the card, a lobby holding more players you know than this is drawn as the "
+				.."headline. At 15 the card is always drawn.",
+		})
+		frame.announceCrowd=buildStepper(frame,row,A.announceCrowd,A.setAnnounceCrowd,A.announceCrowdRange,
+			"")
 		return row
 	end,
 }
@@ -1002,9 +1388,10 @@ ROW_BUILDERS.announceTime={
 			key="announceTime",
 			parent="announce",
 			find="shown for time seconds",
-			tip="How long the announcement stays on screen, as a share of its usual time.",
+			tip="How long the announcement stays on screen, in seconds.",
 		})
-		frame.announceTime=buildStepper(frame,row,A.announceTime,A.setAnnounceTime,A.announceTimeRange)
+		frame.announceTime=buildStepper(frame,row,A.announceTime,A.setAnnounceTime,A.announceTimeRange,
+			" sec")
 		return row
 	end,
 }
@@ -1038,94 +1425,335 @@ ROW_BUILDERS.announceOpacity={
 	end,
 }
 
-ROW_BUILDERS.announcePosition={
+local function positionRow(spec)
+	return{
+		parent=spec.parent,
+		build=function(frame,card)
+			local position=cardRow(card,"Position",{
+				sub=true,
+				key=spec.key,
+				parent=spec.parent,
+				find=spec.find,
+				tip=spec.tip,
+			})
+			A.style(position.label,"cardLabel","dim")
+			frame[spec.rowField]=position
+
+			local reset=buildButton(position,"Reset",function()
+				if spec.reset()then
+					outcome({spec.resetSaid})
+				else
+					outcome({"no database, so the position could not be cleared"},"fault")
+				end
+			end)
+			frame[spec.prefix.."Reset"]=reset
+			atRight(position,reset)
+
+			local preview=buildButton(position,"Preview",function()
+				local toggled=spec.preview()
+				if toggled=="ended"then
+					outcome({spec.previewEnded})
+				elseif toggled=="shown"then
+					outcome({spec.previewShown})
+				else
+					outcome({spec.previewFailed},"fault")
+				end
+			end)
+			frame[spec.prefix.."Preview"]=preview
+			atRight(position,preview,reset)
+
+			local lock=buildToggle(position)
+			frame[spec.prefix.."Lock"]=lock
+			atRight(position,lock,preview)
+			local lockLabel=position:CreateFontString(nil,"ARTWORK","GameFontHighlightSmall")
+			lock.label=lockLabel
+			lockLabel:SetPoint("RIGHT",lock.word,"LEFT",-A.metric("pillGap"),0)
+			lockLabel:SetText("Lock")
+			A.style(lockLabel,"cardLabel","dim")
+			lock:SetScript("OnClick",function(self)
+				local locked=self:GetChecked()and true or false
+				if spec.lock(locked)then
+					outcome({locked and spec.lockedSaid or spec.unlockedSaid})
+				else
+					outcome({"no database, so the setting could not be stored"},"fault")
+				end
+				A.refreshOptionsWindow()
+			end)
+			for _,control in ipairs({reset,preview,lock})do
+				position.inertControls[#position.inertControls+1]=control
+				position.liveControls[#position.liveControls+1]=control
+			end
+			hoverTip(reset,position.tipSpec)
+			hoverTip(preview,position.tipSpec)
+			lock:SetScript("OnEnter",function(self)
+				showTip(self,position.tipSpec)
+			end)
+			lock:SetScript("OnLeave",hideTip)
+			position.inertRegions[#position.inertRegions+1]=lockLabel
+			return position
+		end,
+	}
+end
+
+ROW_BUILDERS.announcePosition=positionRow({
+	key="announcePosition",
 	parent="announce",
+	find="position lock preview reset",
+	tip="Lock keeps the announcement where it is. Preview draws it where it draws, so you "
+		.."can drag it somewhere else. Reset puts it back.",
+	rowField="announcePosition",
+	prefix="announce",
+	reset=function()return A.resetAnnouncePosition()end,
+	resetSaid="the announcement is back a sixth of the screen down",
+	preview=function()return A.announcePreviewToggle()end,
+	previewEnded="the preview is put away and the position it was dragged to is kept",
+	previewShown="the announcement is drawn where it draws. Drag it, and Escape or "
+		.."this button puts it away",
+	previewFailed="the preview could not be drawn on this client",
+	lock=function(locked)return A.setAnnounceLocked(locked)end,
+	lockedSaid="the announcement is fixed where it is",
+	unlockedSaid="the announcement can be dragged here, and while a match draws it",
+})
+
+ROW_BUILDERS.tallyPosition=positionRow({
+	key="tallyPosition",
+	parent="tally",
+	find="round tally position lock preview reset",
+	tip="Lock keeps the round tally where it is. Unlocked, it can be dragged here and during "
+		.."a match. Preview draws a sample to drag. Reset puts it back.",
+	rowField="tallyPosition",
+	prefix="tally",
+	reset=function()return A.resetTallyPosition()end,
+	resetSaid="the round tally is back at the top of the screen",
+	preview=function()return A.tallyPreview()end,
+	previewEnded="the round tally sample is put away",
+	previewShown="the round tally sample is drawn where the strip draws. This button puts it away",
+	previewFailed="the round tally could not be drawn on this client",
+	lock=function(locked)return A.setTallyLocked(locked)end,
+	lockedSaid="the round tally is fixed where it is",
+	unlockedSaid="the round tally can be dragged here, and while a match draws it",
+})
+
+ROW_BUILDERS.toastSeconds={
+	parent="toast",
 	build=function(frame,card)
-		local position=cardRow(card,"Position",{
+		local row=cardRow(card,"Shown for",{
 			sub=true,
-			key="announcePosition",
-			parent="announce",
-			find="position lock preview reset",
-			tip="Lock keeps the announcement where it is. Preview draws it where it draws, so you "
-				.."can drag it somewhere else. Reset puts it back.",
+			key="toastSeconds",
+			parent="toast",
+			find="result card shown for time seconds",
+			tip="How long the result card stays on screen, in seconds.",
 		})
-		A.style(position.label,"cardLabel","dim")
-		frame.announcePosition=position
-
-		frame.announceReset=buildButton(position,"Reset",function()
-			if A.resetAnnouncePosition()then
-				outcome({"the announcement is back a sixth of the screen down"})
-			else
-				outcome({"no database, so the position could not be cleared"},"fault")
-			end
-		end)
-		atRight(position,frame.announceReset)
-
-		frame.announcePreview=buildButton(position,"Preview",function()
-			local toggled=A.announcePreviewToggle()
-			if toggled=="ended"then
-				outcome({"the preview is put away and the position it was dragged to is kept"})
-			elseif toggled=="shown"then
-				outcome({"the announcement is drawn where it draws. Drag it, and Escape or "
-					.."this button puts it away"})
-			else
-				outcome({"the preview could not be drawn on this client"},"fault")
-			end
-		end)
-		atRight(position,frame.announcePreview,frame.announceReset)
-
-		frame.announceLock=buildToggle(position)
-		atRight(position,frame.announceLock,frame.announcePreview)
-		local lockLabel=position:CreateFontString(nil,"ARTWORK","GameFontHighlightSmall")
-		frame.announceLock.label=lockLabel
-		lockLabel:SetPoint("RIGHT",frame.announceLock.word,"LEFT",-A.metric("pillGap"),0)
-		lockLabel:SetText("Lock")
-		A.style(lockLabel,"cardLabel","dim")
-		frame.announceLock:SetScript("OnClick",function(self)
-			local locked=self:GetChecked()and true or false
-			if A.setAnnounceLocked(locked)then
-				outcome({locked and"the announcement is fixed where it is"
-					or"the announcement can be dragged here, and while a match draws it"})
-			else
-				outcome({"no database, so the setting could not be stored"},"fault")
-			end
-			A.refreshOptionsWindow()
-		end)
-		for _,control in ipairs({frame.announceReset,frame.announcePreview,frame.announceLock})do
-			position.inertControls[#position.inertControls+1]=control
-			position.liveControls[#position.liveControls+1]=control
-		end
-		hoverTip(frame.announceReset,position.tipSpec)
-		hoverTip(frame.announcePreview,position.tipSpec)
-		frame.announceLock:SetScript("OnEnter",function(self)
-			showTip(self,position.tipSpec)
-		end)
-		frame.announceLock:SetScript("OnLeave",hideTip)
-		position.inertRegions[#position.inertRegions+1]=lockLabel
-		return position
+		frame.toastSeconds=buildStepper(frame,row,A.toastSeconds,A.setToastSeconds,A.toastSecondsRange,
+			" sec")
+		return row
 	end,
 }
 
+ROW_BUILDERS.toastPosition=positionRow({
+	key="toastPosition",
+	parent="toast",
+	find="result card position lock preview reset",
+	tip="Lock keeps the result card where it is. Unlocked, it can be dragged while it is up. "
+		.."Preview draws a sample to drag. Reset puts it back.",
+	rowField="toastPositionRow",
+	prefix="toast",
+	reset=function()return A.resetToastPosition()end,
+	resetSaid="the result card is back a sixth of the screen down",
+	preview=function()return A.toastPreview()end,
+	previewEnded="the result card sample is put away",
+	previewShown="the result card sample is drawn where the card rises. Drag it, and this button "
+		.."puts it away",
+	previewFailed="the result card could not be drawn on this client",
+	lock=function(locked)return A.setToastLocked(locked)end,
+	lockedSaid="the result card is fixed where it is",
+	unlockedSaid="the result card can be dragged while it is up",
+})
+
+ROW_BUILDERS.lossNudge={
+	parent="postGame",
+	build=function(frame,card)
+		local row=cardRow(card,"Say so after N losses",{
+			sub=true,
+			key="lossNudge",
+			parent="postGame",
+			find="say so after losses in a row nudge streak break",
+			tip="After this many losses in a row in one format, the chat after a match says so once.",
+		})
+		local min=A.lossNudgeRange()
+		local stepper=buildStepper(frame,row,function()
+			return A.lossNudge()or(min-1)
+		end,function(value)
+			A.setLossNudge(value>=min and value or nil)
+		end,function()
+			local _,max,size=A.lossNudgeRange()
+			return min-1,max,size
+		end,"")
+		stepper.offAtFloor=true
+		frame.lossNudge=stepper
+		return row
+	end,
+}
+
+local function templateRow(slot)
+	return{
+		build=function(frame,card)
+			local row=cardRow(card,("Template %d"):format(slot),{
+				key="noteTemplate"..slot,
+				find="note template phrase chip one click "..slot,
+				tip="A phrase the chips beside a player's tags write into their note in one click. "
+					.."Enter saves it, and an emptied box clears it.",
+			})
+			A.style(row.label,"cardText","text")
+			local box=A.entry(row)
+			box:SetSize(A.metric("templateBox"),A.metric("controlHeight"))
+			box:SetMaxLetters(A.NOTE_TEMPLATE_MAX)
+			A.entryPlaceholder(box,"a phrase, Enter saves")
+			atRight(row,box)
+			box:SetScript("OnEnterPressed",function(self)
+				local read,text=pcall(self.GetText,self)
+				local stored,was,why,got,bound=A.setNoteTemplate(slot,read and text or nil)
+				if not stored then
+					if why=="too-long"then
+						outcome({("that template is %d bytes and the bound is %d bytes. Nothing written")
+							:format(got,bound)},"fault")
+					else
+						outcome({("%s, so the template could not be stored"):format(A.noteRefusalText(why))},
+							"fault")
+					end
+					return
+				end
+				pcall(self.ClearFocus,self)
+				local held=A.noteTemplates()[slot]
+				if held==nil then
+					outcome({was==nil and("template %d is empty"):format(slot)
+						or("template %d cleared"):format(slot)})
+				else
+					outcome({("template %d set"):format(slot)})
+				end
+			end)
+			box:SetScript("OnEscapePressed",function(self)
+				pcall(self.ClearFocus,self)
+				pcall(self.SetText,self,A.noteTemplates()[slot]or"")
+			end)
+			frame.templateBoxes[slot]=box
+			return row
+		end,
+	}
+end
+
+for slot=1,A.NOTE_TEMPLATE_SLOTS do
+	ROW_BUILDERS["noteTemplate"..slot]=templateRow(slot)
+end
+
+local STEP_POSITIONS={"Worst","Low","Middle","High","Best"}
+
+local function wordRow(scale,position)
+	return{
+		build=function(frame,card)
+			local row=cardRow(card,STEP_POSITIONS[position],{
+				key=scale.."Word"..position,
+				find=("%s step word replace %s"):format(scale,STEP_POSITIONS[position]:lower()),
+				tip="The word this step is drawn as, in every window, menu and chat line. Enter saves it, "
+					.."and an emptied box goes back to the default. Stored ratings keep their step.",
+			})
+			A.style(row.label,"cardText","text")
+			local box=A.entry(row)
+			box:SetSize(A.metric("templateBox"),A.metric("controlHeight"))
+			box:SetMaxLetters(A.STEP_WORD_MAX)
+			A.entryPlaceholder(box,A.defaultStepWord(scale,position-3))
+			atRight(row,box)
+			box:SetScript("OnEnterPressed",function(self)
+				local read,text=pcall(self.GetText,self)
+				local stored,_,why,got,bound=A.setStepWord(scale,position,read and text or nil)
+				if not stored then
+					if why=="too-long"then
+						outcome({("that word is %d bytes and the bound is %d bytes. Nothing written")
+							:format(got,bound)},"fault")
+					elseif why=="taken"then
+						outcome({("step %d already holds that word. Nothing written"):format(got)},"fault")
+					else
+						outcome({("%s, so the word could not be stored"):format(A.noteRefusalText(why))},
+							"fault")
+					end
+					return
+				end
+				pcall(self.ClearFocus,self)
+				outcome({("%s step %d reads %s"):format(scale,position,A.stepWord(scale,position-3))})
+			end)
+			box:SetScript("OnEscapePressed",function(self)
+				pcall(self.ClearFocus,self)
+				pcall(self.SetText,self,A.storedStepWords(scale)[position-3]or"")
+			end)
+			frame.wordBoxes[scale..position]={box=box,scale=scale,position=position}
+			return row
+		end,
+	}
+end
+
+for _,scale in ipairs(A.SCALES)do
+	for position=1,5 do
+		ROW_BUILDERS[scale.."Word"..position]=wordRow(scale,position)
+	end
+end
+
+local function paintWords(frame)
+	for _,held in pairs(frame.wordBoxes or{})do
+		local ok,typing=pcall(held.box.HasFocus,held.box)
+		if not(ok and typing)then
+			pcall(held.box.SetText,held.box,A.storedStepWords(held.scale)[held.position-3]or"")
+		end
+	end
+end
+
+local function paintTemplates(frame)
+	local held=A.noteTemplates()
+	for slot,box in pairs(frame.templateBoxes or{})do
+		local ok,typing=pcall(box.HasFocus,box)
+		if not(ok and typing)then
+			pcall(box.SetText,box,held[slot]or"")
+		end
+	end
+end
+
 local PAGE_CARDS={
 	general={
-		{title="APPEARANCE",rows={"theme","windowScale"}},
-		{title="RESULTS ON SCREEN",rows={"overlayShown","overlayCount","overlayOpacity","overlayCombat"}},
+		{title="RESULTS ON SCREEN",rows={"overlayShown","overlayTwo","overlayCount","overlayOpacity",
+			"overlayCombat"}},
 		{title="MINIMAP AND LOGIN",rows={"minimap","minimapPosition","loginLine"}},
-		{title="WINDOWS",rows={"rememberTab","closeWithMain","geometryReset"},link="clientPanel"},
+		{title="GOAL",rows={"goalPlayed","goalWon"}},
+		{title="WINDOWS",rows={"rememberTab","rememberFilters","closeWithMain","geometryReset","announcementReset"},link="clientPanel"},
+	},
+	appearance={
+		{title="APPEARANCE",rows={"theme","resultPair","windowScale","largeText","denseRows","mmrLine",
+			"realms","clock"}},
 	},
 	alerts={
 		{title="IN A GROUP",rows={"alerts","groupNotes"}},
-		{title="AT THE GATES",rows={"announce","announceShape","announceTime","announceSize",
-			"announceOpacity","announcePosition"},preview=true},
-		{title="AFTER A MATCH",rows={"postGame","openAfterMatch"}},
+		{title="AT THE GATES",rows={"announce","announceComp","announceRematch","announceShape",
+			"announceCrowd","announceTime","announceSize","announceOpacity","announcePosition"},
+			preview=true},
+		{title="IN A SOLO SHUFFLE",rows={"tally","tallyPosition"}},
+	},
+	aftermatch={
+		{title="AFTER A MATCH",rows={"postGame","lossNudge","openAfterMatch","toast","toastSeconds","toastPosition"}},
+		{title="SOUNDS",rows={"soundBad","soundBest","soundSaved"}},
 	},
 	notes={
 		{title="WHERE YOUR NOTES SHOW",rows={"tooltip","contextMenu"}},
 		{title="IN CHAT",rows={"chatMark"}},
 		{title="ON NAMEPLATES",rows={"sight"}},
+		{title="NOTE TEMPLATES",rows={"noteTemplate1","noteTemplate2","noteTemplate3","noteTemplate4",
+			"noteTemplate5"}},
+		{title="TIDY",rows={"tidy"}},
+	},
+	skill={
+		{title="SKILL WORDS",rows={"skillWord1","skillWord2","skillWord3","skillWord4","skillWord5"}},
+		{title="ATTITUDE WORDS",rows={"attitudeWord1","attitudeWord2","attitudeWord3","attitudeWord4",
+			"attitudeWord5"}},
 	},
 	recording={
-		{title="WHAT IS RECORDED",rows={"duels","hold"}},
+		{title="WHAT IS RECORDED",rows={"duels","world","recordCharacter","recordPause","hold"}},
 		{title="GROUP FINDER",rows={"finder","finderDock"}},
 	},
 }
@@ -1160,6 +1788,27 @@ local function buildGatePreview(frame,card)
 	end
 end
 
+local function playButton(frame,row,toggle,kind)
+	local button=buildButton(row,"Play",function()
+		local played,reason=A.playCue(kind,nil,true)
+		if played then
+			outcome({("played %s"):format(A.soundCueText(kind))})
+		elseif reason=="muted"then
+			outcome({"the game's sound is off or a cutscene is playing, so nothing played"},"fault")
+		elseif reason=="no-call"then
+			outcome({"the game did not take the sound, so nothing played"},"fault")
+		elseif reason~="throttled"then
+			outcome({"this client has no such sound, so nothing played"},"fault")
+		end
+	end)
+	atRight(row,button,toggle.word)
+	row.find=row.find.." play sound"
+	row.liveControls[#row.liveControls+1]=button
+	hoverTip(button,toggle.spec)
+	frame.soundPlay=frame.soundPlay or{}
+	frame.soundPlay[kind]=button
+end
+
 local function buildPage(frame,pane,page)
 	local cards=PAGE_CARDS[page]or{}
 	pane.cards={}
@@ -1175,8 +1824,11 @@ local function buildPage(frame,pane,page)
 			local index=SWITCH_INDEX[name]
 			if index then
 				local switch=SWITCHES[index]
-				local _,toggle=switchRow(card,switch,{sub=switch.parent~=nil,find=switch.find})
+				local row,toggle=switchRow(card,switch,{sub=switch.parent~=nil,find=switch.find})
 				frame.checks[index]=toggle
+				if switch.play then
+					playButton(frame,row,toggle,switch.play)
+				end
 			elseif ROW_BUILDERS[name]then
 				ROW_BUILDERS[name].build(frame,card)
 			end
@@ -1186,6 +1838,99 @@ local function buildPage(frame,pane,page)
 		end
 		pane.cards[#pane.cards+1]=card
 	end
+end
+
+local tidyArmed
+
+local function buildTidyRow(frame,card)
+	local row,drop=buttonRow(card,"","Drop",function()
+		local held=frame.heldTidy
+		if not(held and not held.reason and held.count>0)then
+			return
+		end
+		if tidyArmed~=held.count then
+			tidyArmed=held.count
+			outcome({("click Drop %d again to drop them from the players list"):format(held.count)})
+			return
+		end
+		tidyArmed=nil
+		local ok,why,reading,backup=A.tidyDrop(held.count)
+		if ok then
+			local line=("dropped %s from the players list, about %d%% of the file. Their matches keep "
+				.."them, and Rebuild the index brings them back"):format(
+				counted(reading.count,"player","players"),reading.share)
+			local lines={line}
+			if type(backup)=="table"and not backup.ok then
+				lines[2]=("the backup before it did not run: %s"):format(tostring(backup.reason))
+			end
+			A.say(line)
+			outcome(lines,nil,true)
+		elseif why=="moved"then
+			frame.heldTidy=nil
+			outcome({"the count moved since the row drew it, so nothing was dropped. It reads again now"},
+				"fault")
+		else
+			frame.heldTidy=nil
+			outcome({A.tidyLine(reading)},"fault")
+		end
+	end,{find="tidy players met once long ago drop index show them"})
+	local show=buildButton(row,"Show them",function()
+		local held=frame.heldTidy
+		if held and not held.reason and held.count>0 and type(A.showNotesForTidy)=="function"then
+			A.showNotesForTidy(held.guids)
+		end
+	end)
+	atRight(row,show,drop)
+	row.inertControls[#row.inertControls+1]=show
+	row.liveControls[#row.liveControls+1]=show
+
+	local pad=A.metric("setCardPad")
+	local line=A.fontSize("cardLabel")+2
+	row.rowHeight=A.metric("cardRow")+line*2
+	row:SetHeight(row.rowHeight)
+	row.label:ClearAllPoints()
+	row.label:SetPoint("TOPLEFT",row,"TOPLEFT",row.indent,-pad)
+	row.lines={}
+	local above=row.label
+	for i=1,2 do
+		local text=row:CreateFontString(nil,"ARTWORK","GameFontHighlightSmall")
+		text:SetPoint("TOPLEFT",above,"BOTTOMLEFT",0,-2)
+		text:SetJustifyH("LEFT")
+		text:SetWordWrap(false)
+		row.lines[i]=text
+		above=text
+	end
+	frame.tidyRow,frame.tidyDrop,frame.tidyShow=row,drop,show
+	return row
+end
+
+ROW_BUILDERS.tidy={build=buildTidyRow}
+
+local function paintTidy(frame)
+	local row=frame.tidyRow
+	if not row then
+		return
+	end
+	if frame.heldTidy==nil then
+		frame.heldTidy=A.tidyDryRun(frame.heldSize and frame.heldSize.total or nil)
+	end
+	local held=frame.heldTidy
+	local live=not held.reason and held.count>0
+	if tidyArmed~=nil and(not live or tidyArmed~=held.count)then
+		tidyArmed=nil
+	end
+	local sentences=A.tidySentences(held)
+	row.label:SetText(sentences[1]..".")
+	A.style(row.label,"cardLabel","dim")
+	for i=1,#row.lines do
+		local text=sentences[i+1]
+		row.lines[i]:SetText(text and(text..".")or"")
+		A.style(row.lines[i],"cardLabel","dimmer")
+	end
+	frame.tidyDrop:SetText(live and("Drop %d"):format(held.count)or"Drop")
+	A.fitControl(frame.tidyDrop,A.metric("actionMin"))
+	pcall(live and frame.tidyDrop.Enable or frame.tidyDrop.Disable,frame.tidyDrop)
+	pcall(live and frame.tidyShow.Enable or frame.tidyShow.Disable,frame.tidyShow)
 end
 
 local function buildDiagnosticCard(frame,pane)
@@ -1260,12 +2005,8 @@ local function buildSlotCard(parent,slot)
 	return card
 end
 
-local function counted(n,one,many)
-	return("%d %s"):format(n,n==1 and one or many)
-end
-
 local function writtenText(at)
-	local day,clock=A.shortDayText(at),A.clockKey(at)
+	local day,clock=A.shortDayText(at),A.clockWords(at)
 	if day and clock then
 		return("%s, %s"):format(day,clock)
 	end
@@ -1310,6 +2051,24 @@ local function buildStorageSection(frame,pane)
 		frame.byteRows[i]=reading
 	end
 
+	local room=buildCard(frame,pane,"MAKE ROOM")
+	frame.roomCard=room
+	frame.roomRows={}
+	for _,keep in ipairs(A.ROOM_KEEPS)do
+		local row,button=buttonRow(room,"","Keep "..counted(keep,"season","seasons"),
+			function()
+				local ok,lines=A.openRoomMove(keep)
+				outcome(lines,not ok and"fault"or nil)
+			end,{key="roomKeep"..keep})
+		row.keep=keep
+		row.button=button
+		frame.roomRows[#frame.roomRows+1]=row
+	end
+	frame.roomNote=cardRow(room,"They go into a text copy first. Players and notes stay.",{key="roomNote"})
+	for _,row in ipairs(room.rows)do
+		row.wanted=false
+	end
+
 	local backup=buildCard(frame,pane,"BACK UP AND RESTORE")
 	frame.backupCard=backup
 	frame.lastCopy=backup:CreateFontString(nil,"ARTWORK","GameFontHighlightSmall")
@@ -1318,8 +2077,8 @@ local function buildStorageSection(frame,pane)
 	frame.backup=buildButton(backup,"Back up now",function()
 		local result=A.takeBackup()
 		if result.ok then
-			local line=("backup written: %d %s, %d bytes encoded")
-				:format(result.matches,result.matches==1 and"match"or"matches",result.bytes)
+			local line=("backup written: %s, %d bytes encoded")
+				:format(counted(result.matches,"match","matches"),result.bytes)
 			if result.replaced then
 				line=line..(", replacing one holding %d"):format(result.replaced)
 			end
@@ -1329,9 +2088,8 @@ local function buildStorageSection(frame,pane)
 		end
 		local line
 		if result.reason=="smaller"then
-			line=("backup refused: %d %s stored against %d in the backup, which is not "
-				.."overwritten"):format(result.matches,
-				result.matches==1 and"match"or"matches",result.held)
+			line=("backup refused: %s stored against %d in the backup, which is not "
+				.."overwritten"):format(counted(result.matches,"match","matches"),result.held)
 		elseif result.reason=="no-codec"then
 			line="this client provides no encoding surface, so nothing can be backed up"
 		else
@@ -1376,6 +2134,19 @@ local function buildStorageSection(frame,pane)
 		outcome(lines,not ok and"fault"or nil)
 	end,{find=importLabel.." import restore bring"})
 	frame.import=import
+	local settingsLabel="Your settings alone"
+	local settingsRow,settingsPaste=buttonRow(transfer,settingsLabel,"Paste",function()
+		local ok,lines=A.openSettingsImport()
+		outcome(lines,not ok and"fault"or nil)
+	end,{find=settingsLabel.." settings copy paste copy share"})
+	local settingsCopy=buildButton(settingsRow,"Copy",function()
+		local ok,lines=A.openSettingsExport()
+		outcome(lines,not ok and"fault"or nil)
+	end)
+	atRight(settingsRow,settingsCopy,settingsPaste)
+	settingsRow.inertControls[#settingsRow.inertControls+1]=settingsCopy
+	settingsRow.liveControls[#settingsRow.liveControls+1]=settingsCopy
+	frame.settingsCopy,frame.settingsPaste=settingsCopy,settingsPaste
 	local rebuildLabel="Rebuild who you met"
 	local _,rebuild=buttonRow(transfer,rebuildLabel,"Rebuild the index",function()
 		local walked=A.rebuildIndex()
@@ -1383,9 +2154,8 @@ local function buildStorageSection(frame,pane)
 			outcome({"no database. nothing was rebuilt"},"fault")
 			return
 		end
-		local line=("rebuilt the player index from %d stored %s: %d players, %d encounters")
-			:format(walked.matches,walked.matches==1 and"match"or"matches",
-				walked.players,walked.encounters)
+		local line=("rebuilt the player index from %s: %d players, %d encounters")
+			:format(counted(walked.matches,"stored match","stored matches"),walked.players,walked.encounters)
 		A.say(line)
 		outcome({line},nil,true)
 	end,{find=rebuildLabel.." rebuild index who you met"})
@@ -1413,7 +2183,7 @@ local function buildStorageSection(frame,pane)
 	frame.erase:SetPoint("RIGHT",frame.eraseBox,"RIGHT",-pad,0)
 	A.setControlTone(frame.erase,"loss")
 
-	pane.cards={meter,backup,transfer}
+	pane.cards={meter,room,backup,transfer}
 end
 
 local function eraseHeight()
@@ -1501,6 +2271,15 @@ local function layoutStorage(frame)
 	meter:Show()
 	y=y+meterH+gap
 
+	local room=frame.roomCard
+	local roomH=layoutCard(room,"")
+	if roomH>0 then
+		room:ClearAllPoints()
+		room:SetPoint("TOPLEFT",pane,"TOPLEFT",0,-y)
+		room:SetPoint("TOPRIGHT",pane,"TOPRIGHT",0,-y)
+		y=y+roomH+gap
+	end
+
 	local backupW=math.floor((width-gap)*BACKUP_SHARE)
 	local widest=0
 	for _,row in ipairs(frame.transferCard.rows)do
@@ -1561,6 +2340,7 @@ end
 local function layoutStorageFind(frame,query)
 	local pane=frame.panes.data
 	frame.meterCard:Hide()
+	frame.roomCard:Hide()
 	frame.backupCard:Hide()
 	frame.eraseBox:Hide()
 	local transfer=frame.transferCard
@@ -1686,6 +2466,8 @@ local function buildBody(host)
 	frame.cards={}
 	frame.checks={}
 	frame.steppers={}
+	frame.templateBoxes={}
+	frame.wordBoxes={}
 	frame.panes={}
 
 	window=frame
@@ -1693,6 +2475,8 @@ local function buildBody(host)
 	local function offScreen()
 		frame.onScreen=false
 		frame.heldErase=nil
+		frame.heldTidy=nil
+		tidyArmed=nil
 	end
 	pcall(host.HookScript,host,"OnHide",offScreen)
 	local okParent,parent=pcall(host.GetParent,host)
@@ -1780,15 +2564,19 @@ local function buildBody(host)
 		pcall(frame.paneScroll.ScrollBar.SetHideIfUnscrollable,frame.paneScroll.ScrollBar,true)
 	end
 
-	local function gone()
+	local function refreshPlates(cause)
 		if type(A.announcePlateRefresh)=="function"then
-			A.announcePlateRefresh("window-hidden")
+			A.announcePlateRefresh(cause)
+		end
+		if type(A.tallyPlateRefresh)=="function"then
+			A.tallyPlateRefresh(cause)
 		end
 	end
+	local function gone()
+		refreshPlates("window-hidden")
+	end
 	local function came()
-		if type(A.announcePlateRefresh)=="function"then
-			A.announcePlateRefresh("window-shown")
-		end
+		refreshPlates("window-shown")
 	end
 	host:HookScript("OnHide",gone)
 	host:HookScript("OnShow",came)
@@ -1932,6 +2720,30 @@ local function paintMeter(frame,size)
 		frame.byteRows[i].clause:SetText("")
 	end
 	frame.byteFilled=filled
+end
+
+local function paintRoom(frame)
+	local offer=frame.heldRoom and frame.heldRoom.offer or nil
+	local rows=type(offer)=="table"and offer.rows or{}
+	local showing=#rows>0
+	frame.roomShown=showing
+	for _,row in ipairs(frame.roomCard.rows)do
+		row.wanted=showing
+	end
+	if not showing then
+		return
+	end
+	for i,row in ipairs(frame.roomRows)do
+		local held=rows[i]
+		row.label:SetText(A.roomRowText(held))
+		A.style(row.label,"cardLabel","dim")
+		if held and(held.n or 0)+(held.leftEarly or 0)>0 then
+			row.button:Enable()
+		else
+			row.button:Disable()
+		end
+	end
+	A.style(frame.roomNote.label,"cardLabel","dim")
 end
 
 local function paintBackup(frame)
@@ -2082,6 +2894,9 @@ function A.refreshOptionsWindow(walk,finding)
 		local check=window.checks[i]
 		A.containedPaint("options/check",function()
 			check:SetChecked(check.spec.get()and true or false)
+			if check.spec.named then
+				check.label:SetText(check.spec.named())
+			end
 			local available=check.spec.parent==nil or parentOn(check.spec.parent)
 			if available then
 				check:Enable()
@@ -2106,6 +2921,8 @@ function A.refreshOptionsWindow(walk,finding)
 	A.containedPaint("options/diagnostic-link",paintDiagnosticLink,window)
 
 	A.containedPaint("options/theme",A.setSegmentChosen,window.themeSegment,A.theme())
+	A.containedPaint("options/clock",A.setSegmentChosen,window.clockSegment,A.clockSetting())
+	A.containedPaint("options/result-pair",paintResultPair,window)
 	A.containedPaint("options/announce-shape",function()
 		A.setSegmentChosen(window.announceShapeSegment,A.announceShape())
 	end)
@@ -2123,6 +2940,25 @@ function A.refreshOptionsWindow(walk,finding)
 		window.announceLock:SetChecked(A.announceLocked())
 		A.style(window.announceLock.label,"cardLabel","dim")
 	end)
+
+	A.containedPaint("options/tally",function()
+		window.tallyPreview:SetText(A.tallyPreviewActive()and"End preview"or"Preview")
+		A.fitControl(window.tallyPreview,A.metric("actionMin"))
+		window.tallyLock:SetChecked(A.tallyLocked())
+		A.style(window.tallyLock.label,"cardLabel","dim")
+	end)
+
+	A.containedPaint("options/toast",function()
+		window.toastPreview:SetText(A.toastPreviewActive()and"End preview"or"Preview")
+		A.fitControl(window.toastPreview,A.metric("actionMin"))
+		window.toastLock:SetChecked(A.toastLocked())
+		A.style(window.toastLock.label,"cardLabel","dim")
+	end)
+
+	A.containedPaint("options/pause",paintPause,window)
+
+	A.containedPaint("options/templates",paintTemplates,window)
+	A.containedPaint("options/words",paintWords,window)
 
 	A.containedPaint("options/child-rows",paintChildRows,window)
 
@@ -2147,14 +2983,19 @@ function A.refreshOptionsWindow(walk,finding)
 	A.containedPaint("options/meter",function()
 		if walk or(window.heldSize==nil and window.onScreen and storageShowing())then
 			window.heldSize=A.storedSize()
+			window.heldRoom={offer=A.roomOffer(window.heldSize)}
 		end
 		if window.heldSize~=nil then
 			paintMeter(window,window.heldSize)
 		end
 	end)
+	A.containedPaint("options/room",paintRoom,window)
 	A.containedPaint("options/backup",paintBackup,window)
 	if storageShowing()then
 		A.containedPaint("options/erase",paintErase,window,finding)
+	end
+	if chosenPage=="notes"or findQuery()~=""then
+		A.containedPaint("options/tidy",paintTidy,window)
 	end
 
 	A.containedPaint("options/gate-preview",function()
@@ -2194,6 +3035,7 @@ function A.refreshOptionsWindow(walk,finding)
 		meter=onStorage and window.meterText or nil,
 		band=onStorage and window.meterBand or nil,
 		meterRoom=onStorage and window.meterRoomPlace or nil,
+		roomCard=(onStorage or nil)and window.roomShown==true,
 		slot=onStorage and restoreSlot or nil,
 		headRole=HEADING_ROLE,
 	},"ui")
@@ -2266,7 +3108,10 @@ function A.dropHeldStoredSize()
 	if window then
 		window.heldSize=nil
 		window.heldErase=nil
+		window.heldTidy=nil
+		window.heldRoom=nil
 	end
+	tidyArmed=nil
 end
 
 function A.showOptionsWindow(word)

@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.33
+-- WowPvpHistory 0.75.26
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -48,7 +48,11 @@ local COLUMN_FIELDS={
 
 local function readStats(row)
 	local ok,arr=pcall(A.index,row,"stats")
-	if not ok or type(arr)~="table"then
+	if not ok then
+		A.noteError(arr,"harvest-stats")
+		return nil
+	end
+	if type(arr)~="table"then
 		return nil
 	end
 
@@ -60,7 +64,11 @@ local function readStats(row)
 	end
 
 	local sized,n=pcall(function()return#arr end)
-	if not sized or type(n)~="number"or n==0 then
+	if not sized then
+		A.noteError(n,"harvest-stats")
+		return nil
+	end
+	if type(n)~="number"or n==0 then
 		return nil
 	end
 
@@ -85,7 +93,10 @@ end
 
 local function readRow(index)
 	local ok,row=pcall(C_PvP.GetScoreInfo,index)
-	if not ok or type(row)~="table"then
+	if not ok then
+		return nil,nil,"rowThrew"
+	end
+	if type(row)~="table"then
 		return nil,nil,"noRow"
 	end
 
@@ -177,7 +188,11 @@ local function readMap()
 		end
 		return map.name~=nil and map.name~=false,map.instanceType
 	end)
-	if located and named then
+	if not located then
+		A.noteError(named,"harvest-map")
+		return nil,nil
+	end
+	if named then
 		return map,instanceType
 	end
 	return nil,instanceType
@@ -433,7 +448,7 @@ function A.readRoundBoundary(final)
 	return{guids=mates,rating=rating},size,reason
 end
 
-local ROUND_WINS_WIDGET=4457
+A.ROUND_WINS_WIDGET=4457
 
 local ROUND_WINS_STATE_CEILING=3
 
@@ -444,7 +459,7 @@ function A.readRoundWins()
 		return nil,nil,"no-getter"
 	end
 
-	local ok,info=pcall(getter,ROUND_WINS_WIDGET)
+	local ok,info=pcall(getter,A.ROUND_WINS_WIDGET)
 	if not ok then
 		return nil,nil,"threw"
 	end
@@ -923,17 +938,30 @@ local function store(record,participants,kept,rows,attempt,readSeconds,readAt,st
 
 	local line="switch"
 	local rateClause,rateSign=false,nil
+	local flagged
+	local streakWord,nudged,nudgeCount,rosterLinked
 	local said,chatErr=pcall(function()
 		if not A.postGameEnabled()then
 			return
 		end
+		line="streak"
+		local streak=A.currentStreak(record.format,record.character)
+		local streakText=A.streakClause(streak)
+		streakWord=streakText and streak.word or nil
 		line="recorded"
 		local clause,sign=A.ratingClause(record)
 		rateClause,rateSign=clause~=nil,sign
-		A.say(("recorded match %d: %s, %d %s%s%s")
+		A.say(("recorded match %d: %s, %d %s%s%s%s")
 			:format(record.id,A.formatLabel(record.format),kept,
 				kept==1 and"participant"or"participants",knownClause or"",
-				clause and(", "..clause)or""))
+				clause and(", "..clause)or"",streakText and(", "..streakText)or""))
+		line="nudge"
+		local nudgeLine
+		nudgeLine,nudged=A.nudgeLine(streak)
+		nudgeCount=nudged and streak.count or nil
+		if nudgeLine then
+			A.say(nudgeLine)
+		end
 		line="bests"
 		local bestLine=A.newBestLine(bestsSet)
 		if bestLine then
@@ -944,23 +972,43 @@ local function store(record,participants,kept,rows,attempt,readSeconds,readAt,st
 		if pendingOk and pendingLine then
 			A.say(pendingLine)
 		end
+		line="flagged"
+		local flaggedOk,flaggedLine,flaggedN=pcall(A.flaggedLine,record)
+		if flaggedOk then
+			flagged=flaggedN
+			if flaggedLine then
+				A.say(flaggedLine)
+			end
+		end
 		line="link"
 		local linkOk,linkLine=pcall(A.matchLinkLine,record)
 		if linkOk and linkLine then
 			A.say(linkLine)
+			rosterLinked=linkLine:find(":roster:",1,true)~=nil
 		end
 	end)
-	if not said then
-		pcall(A.trace,"chat-line",{source="harvest",state=line,id=record.id,err=chatErr,
-			rateClause=rateClause,rateSign=rateSign})
-	else
-		pcall(A.trace,"chat-line",{source="harvest",state=line=="switch"and"switch"or"said",
-			id=record.id,rateClause=rateClause,rateSign=rateSign})
+	pcall(A.trace,"chat-line",{source="harvest",
+		state=said and(line=="switch"and"switch"or"said")or line,id=record.id,err=chatErr,
+		rateClause=rateClause,rateSign=rateSign,flagged=flagged,streak=streakWord,
+		nudge=nudged,count=nudgeCount,rosterLink=rosterLinked})
+
+	local cuedOk,cuedErr=pcall(function()
+		A.playCue("saved",record.id)
+		if type(bestsSet)=="table"and#bestsSet>0 then
+			A.playCue("newBest",record.id)
+		end
+	end)
+	if not cuedOk then
+		A.noteError(cuedErr,"harvest.sound")
 	end
 
 	local heldOk,heldErr=pcall(A.holdAfterMatch,record.id)
 	if not heldOk then
 		A.noteError(heldErr,"after-match")
+	end
+	local toastOk,toastErr=pcall(A.toastAfterMatch,record,bestsSet)
+	if not toastOk then
+		A.noteError(toastErr,"toast")
 	end
 	return true
 end
@@ -977,7 +1025,8 @@ function A.storeFallback(record,attempt,superseded)
 	end
 	local announce=("%s, storing the roster read at %s: %d rows")
 		:format(why,
-			fallback.readAt and("+"..string.format("%.1f",fallback.readAt).." s")or"the transition",
+			type(fallback.readAt)=="number"and("+%.1f s"):format(fallback.readAt)
+				or"the transition",
 			fallback.kept)
 
 	local stored=store(record,fallback.participants,fallback.kept,fallback.rows,
@@ -1034,6 +1083,7 @@ local function runHarvest(record,attempt)
 			rows=rows,
 			kept=kept,
 			noRow=refused.noRow,
+			rowThrew=refused.rowThrew,
 			noGuid=refused.noGuid,
 			secretGuid=refused.secretGuid,
 			restriction=A.pvpRestriction(),
@@ -1137,10 +1187,7 @@ function A.harvestsPending()
 end
 
 function A.matchInFlight(db)
-	if type(db)=="table"and db.active~=nil then
-		return true
-	end
-	return A.harvestsPending()>0
+	return(type(db)=="table"and db.active~=nil)or A.harvestsPending()>0
 end
 
 function A.scheduleHarvest(record,attempt)

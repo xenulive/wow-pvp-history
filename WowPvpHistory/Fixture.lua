@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.33
+-- WowPvpHistory 0.75.26
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -251,12 +251,12 @@ local CART_COLUMNS={
 local SHUFFLE_ROUNDS_COLUMN=1012
 
 local function characterGuid(n)
-	return("Player-%s-%08X"):format(FIXTURE_REALM,0xF1000000+n)
+	return("Player-%s-%s"):format(FIXTURE_REALM,A.hex8(0xF1000000+n):upper())
 end
 
 local function botGuid(instance,n)
-	return("Player-%04d-%d-%04d-%08X%08X"):format(4900+instance,1,7000+instance,
-		0xB0700000,0x0000F000+n)
+	return("Player-%04d-%d-%04d-%s%s"):format(4900+instance,1,7000+instance,
+		A.hex8(0xB0700000):upper(),A.hex8(0x0000F000+n):upper())
 end
 
 local function participant(fields)
@@ -348,7 +348,7 @@ local selfFrom="stand-in"
 local function ownIdentity()
 	if type(UnitName)=="function"then
 		local ok,own=pcall(UnitName,"player")
-		if ok and type(own)=="string"and A.canRead(own)and own~=""then
+		if ok and A.readableString(own)then
 			local realm=type(A.ownRealm)=="function"and A.ownRealm()or nil
 			if realm~=nil then
 				return own,realm,"client"
@@ -375,10 +375,7 @@ local function recorderName(index)
 end
 
 local function recorderSpec(index)
-	if index%RECORDERS==0 then
-		return SELF
-	end
-	return ALT
+	return index%RECORDERS==0 and SELF or ALT
 end
 
 function A.fixtureCharacterName()
@@ -549,7 +546,10 @@ local function compCounts(n)
 end
 
 function A.fixtureRecords(n,now,options)
-	n=tonumber(n)or DEFAULT_ARENA
+	n=tonumber(n)
+	if n==nil or n~=n then
+		n=DEFAULT_ARENA
+	end
 	n=math.floor(n)
 	if n<MIN_ARENA then
 		n=MIN_ARENA
@@ -988,11 +988,8 @@ function A.fixtureRefusal(adding)
 		return"in-flight"
 	end
 
-	if type(A.pvpRestricted)=="function"then
-		local suppressed=A.pvpRestricted()
-		if suppressed then
-			return"restriction"
-		end
+	if type(A.pvpRestricted)=="function"and A.pvpRestricted()then
+		return"restriction"
 	end
 
 	if type(GetInstanceInfo)=="function"then
@@ -1123,6 +1120,7 @@ function A.generateFixture(n,options)
 			unfolded=unfolded+1
 			foldError=why
 		end
+		A.trace("fixture-record",{state=indexed and"indexed"or"unindexed",format=r.format},"data")
 	end
 	for i=1,#records do
 		store(records[i])
@@ -1151,6 +1149,19 @@ function A.generateFixture(n,options)
 		pcall(A.setPlayerNote,characterGuid(1),"Calls the swap early and peels for the healer")
 		pcall(A.addPlayerTags,characterGuid(1),{"good comms","calls targets","plays late","duo"})
 		pcall(A.setPlayerRating,characterGuid(2),-1)
+		pcall(A.setPlayerAttitude,characterGuid(1),1)
+		pcall(A.setPlayerAttitude,characterGuid(2),-2)
+		pcall(A.setPlayerRating,characterGuid(3),1)
+		pcall(A.setPlayerAttitude,characterGuid(3),-2)
+		pcall(A.setPlayerAttitude,characterGuid(4),0)
+		pcall(A.setPlayerRating,characterGuid(5),0)
+		pcall(A.setPlayerAttitude,characterGuid(5),-1)
+
+		db.characters=type(db.characters)=="table"and db.characters or{}
+		for index=0,RECORDERS-1 do
+			local name,realm=recorderName(index):match("^([^-]+)-(.+)$")
+			db.characters[recorderGuid(index)]={name=name,realm=realm,at=A.stamp()}
+		end
 	end
 
 	local moved=A.orderByCompletion(db.matches)
@@ -1270,6 +1281,13 @@ function A.clearFixture()
 	end
 	if leftRemoved>0 then
 		db.incomplete=leftKept
+	end
+
+	for guid,entry in pairs(type(db.players)=="table"and db.players or{})do
+		if type(entry)=="table"and entry.carried==true and type(entry.fixture)=="number"
+			and entry.fixture>0 then
+			db.players[guid]=nil
+		end
 	end
 
 	local rebuilt,why=pcall(A.rebuildIndex)

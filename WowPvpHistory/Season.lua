@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.33
+-- WowPvpHistory 0.75.26
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -9,23 +9,19 @@ local NO_SEASON=0
 
 A.SEASON_LABEL_MAX=40
 
-function A.arenaSeasonNow()
-	if type(GetCurrentArenaSeason)~="function"then
-		return nil
-	end
-	local ok,value=pcall(GetCurrentArenaSeason)
-	if not ok or not A.canRead(value)or type(value)~="number"then
+local function readableNumber(value)
+	if not A.canRead(value)or type(value)~="number"then
 		return nil
 	end
 	return value
 end
 
+function A.arenaSeasonNow()
+	return readableNumber(A.guardedCall(GetCurrentArenaSeason))
+end
+
 function A.displaySeasonNow()
-	local value=A.pvpCall("GetUIDisplaySeason")
-	if not A.canRead(value)or type(value)~="number"then
-		return nil
-	end
-	return value
+	return readableNumber(A.pvpCall("GetUIDisplaySeason"))
 end
 
 local function seasonPair()
@@ -38,12 +34,24 @@ function A.seasonNow()
 end
 
 function A.gameSeasonNow()
-	local game=seasonPair()
-	return game
+	return(seasonPair())
 end
 
 function A.seasonPairNow()
 	return seasonPair()
+end
+
+local heldPair=nil
+
+local function seasonPairHeld()
+	if heldPair==nil then
+		local game,display=seasonPair()
+		if game==nil then
+			return nil,nil
+		end
+		heldPair={game,display}
+	end
+	return heldPair[1],heldPair[2]
 end
 
 function A.seasonPairOf(game,display)
@@ -159,6 +167,14 @@ function A.seasonAt(stamp)
 	return nil
 end
 
+local function recordStamp(record)
+	local stamp=record.completedAt
+	if type(stamp)~="string"then
+		stamp=record.openedAt
+	end
+	return stamp
+end
+
 function A.recordSeason(record)
 	if type(record)~="table"then
 		return nil
@@ -166,11 +182,7 @@ function A.recordSeason(record)
 	if type(record.season)=="number"then
 		return record.season,"client"
 	end
-	local stamp=record.completedAt
-	if type(stamp)~="string"then
-		stamp=record.openedAt
-	end
-	local resolved=A.seasonAt(stamp)
+	local resolved=A.seasonAt(recordStamp(record))
 	if resolved==nil then
 		return nil
 	end
@@ -191,7 +203,7 @@ function A.recordInSeason(record,season)
 	if type(record.gameSeason)~="number"then
 		return true
 	end
-	local game,display=A.seasonPairNow()
+	local game,display=seasonPairHeld()
 	if display==nil or display~=season then
 		return true
 	end
@@ -202,10 +214,7 @@ function A.outsideGameSeason(record,display,game)
 	if type(record)~="table"then
 		return false
 	end
-	local stamp=record.completedAt
-	if type(stamp)~="string"then
-		stamp=record.openedAt
-	end
+	local stamp=recordStamp(record)
 	if type(stamp)~="string"then
 		return false
 	end
@@ -448,10 +457,20 @@ local function onSeasonState()
 end
 
 A.on("ARENA_SEASON_WORLD_STATE",function()
+	heldPair=nil
 	local ok,err=pcall(onSeasonState)
 	if not ok then
 		A.noteError(err,"season")
 	end
+end)
+
+A.on("PLAYER_ENTERING_WORLD",function()
+	if heldPair then
+		A.trace("season",{source="zone",game=heldPair[1],n=heldPair[2],reason="held-dropped"},"data")
+	else
+		A.trace("season",{source="zone",reason="nothing-held"},"data")
+	end
+	heldPair=nil
 end)
 
 local function forgetFabricated()
@@ -517,10 +536,7 @@ function A.backfillGameSeason()
 	for i=1,#list do
 		local record=list[i]
 		if type(record)=="table"and record.gameSeason==nil and type(record.season)=="number"then
-			local stamp=record.completedAt
-			if type(stamp)~="string"then
-				stamp=record.openedAt
-			end
+			local stamp=recordStamp(record)
 			local inside=type(stamp)=="string"and stamp>=from and(to==nil or stamp<to)
 			if record.season==display and inside then
 				record.gameSeason=game
@@ -572,13 +588,6 @@ function A.ratedFormats()
 	return out
 end
 
-local function counter(value)
-	if not A.canRead(value)or type(value)~="number"then
-		return nil
-	end
-	return value
-end
-
 function A.ratedCountersNow(format)
 	local index=RATED_INDEX[format]
 	if index==nil or type(GetPersonalRatedInfo)~="function"then
@@ -591,16 +600,16 @@ function A.ratedCountersNow(format)
 		return nil
 	end
 	local out={
-		seasonPlayed=counter(seasonPlayed),
-		seasonWon=counter(seasonWon),
-		weeklyPlayed=counter(weeklyPlayed),
-		weeklyWon=counter(weeklyWon),
+		seasonPlayed=readableNumber(seasonPlayed),
+		seasonWon=readableNumber(seasonWon),
+		weeklyPlayed=readableNumber(weeklyPlayed),
+		weeklyWon=readableNumber(weeklyWon),
 	}
 	if format=="shuffle"then
-		out.roundsSeasonPlayed=counter(roundsSeasonPlayed)
-		out.roundsSeasonWon=counter(roundsSeasonWon)
-		out.roundsWeeklyPlayed=counter(roundsWeeklyPlayed)
-		out.roundsWeeklyWon=counter(roundsWeeklyWon)
+		out.roundsSeasonPlayed=readableNumber(roundsSeasonPlayed)
+		out.roundsSeasonWon=readableNumber(roundsSeasonWon)
+		out.roundsWeeklyPlayed=readableNumber(roundsWeeklyPlayed)
+		out.roundsWeeklyWon=readableNumber(roundsWeeklyWon)
 	end
 	return out
 end
@@ -618,6 +627,124 @@ function A.weekStartEpoch()
 	return time()+seconds-WEEK
 end
 
+A.GOAL_MAX=50
+
+local function goalFigure(value)
+	if type(value)~="number"or value~=value or value%1~=0 or value<1 or value>A.GOAL_MAX then
+		return nil
+	end
+	return value
+end
+
+function A.goalSet()
+	local db=A.db()
+	local ui=db and db.ui
+	if type(ui)~="table"then
+		return nil,nil
+	end
+	return goalFigure(ui.goalPlayed),goalFigure(ui.goalWon)
+end
+
+function A.setGoal(which,value)
+	local db=A.db()
+	if not db then
+		return nil
+	end
+	local key=which=="won"and"goalWon"or"goalPlayed"
+	local n=tonumber(value)
+	if(value~=nil and n==nil)or(n~=nil and(n~=n or n~=math.floor(n)or n<0 or n>A.GOAL_MAX))then
+		return nil,"out-of-range"
+	end
+	db.ui=type(db.ui)=="table"and db.ui or{}
+	n=n~=nil and n>0 and n or nil
+	local lowered
+	if key=="goalWon"and n~=nil then
+		local played=goalFigure(db.ui.goalPlayed)
+		if played~=nil and n>played then
+			return nil,"above-played"
+		end
+	elseif key=="goalPlayed"and n~=nil then
+		local won=goalFigure(db.ui.goalWon)
+		if won~=nil and won>n then
+			db.ui.goalWon=n
+			lowered="won-lowered"
+		end
+	end
+	db.ui[key]=n
+	if type(A.notifyGoalSetting)=="function"then
+		A.notifyGoalSetting()
+	end
+	if type(A.refreshWindow)=="function"then
+		pcall(A.refreshWindow)
+	end
+	return n,lowered
+end
+
+function A.goalRange()
+	return 0,A.GOAL_MAX,1,0
+end
+
+local weekGoalWalk
+
+function A.weekGoal(character)
+	local since=A.weekStartEpoch()
+	if since==nil then
+		return nil,"no-week"
+	end
+	return A.paintHeld("weekGoal",weekGoalWalk,character,since)
+end
+
+weekGoalWalk=function(character,since)
+	local db=A.db()
+	if not(db and type(db.matches)=="table")then
+		return nil,"no-store"
+	end
+	local played,won=0,0
+	local matches=db.matches
+	for i=1,#matches do
+		local record=matches[i]
+		if type(record)=="table"and record.rated==true and A.recordedBy(record,character)
+			and A.recordSince(record,since)then
+			played=played+1
+			if A.recordVerdict(record)=="win"then
+				won=won+1
+			end
+		end
+	end
+	return{played=played,won=won,since=since}
+end
+
+function A.goalResetDay()
+	local since=A.weekStartEpoch()
+	if since==nil then
+		return nil
+	end
+	return date("%A",since+WEEK)
+end
+
+function A.goalProgress(character,count)
+	local played,won=A.goalSet()
+	if played==nil and won==nil then
+		return nil
+	end
+	count=count or A.weekGoal(character)
+	if count==nil then
+		return nil
+	end
+	local lines={}
+	if played~=nil then
+		lines[#lines+1]={text=("played %d of %d"):format(count.played,played),
+			share=math.min(1,count.played/played),met=count.played>=played}
+	end
+	if won~=nil then
+		lines[#lines+1]={text=("won %d of %d"):format(count.won,won),
+			share=math.min(1,count.won/won),met=count.won>=won}
+	end
+	local day=A.goalResetDay()
+	return{lines=lines,reset=day and("resets "..day)or nil,
+		ring=("%d/%d"):format(count.played,count.won)}
+end
+
 local TIER_QUALITY={[0]=0,[1]=1,[6]=1,[2]=2,[7]=2,[3]=3,[8]=3,[4]=4,[5]=5}
 
 local LADDER_STEPS=32
@@ -629,11 +756,7 @@ local ratedAsked,ratedWaiting=false,false
 local ladders={}
 
 local function tierNumber(info,key)
-	local value=info[key]
-	if not A.canRead(value)or type(value)~="number"then
-		return nil
-	end
-	return value
+	return readableNumber(info[key])
 end
 
 local function tierInfo(lookup,tierID)
@@ -793,7 +916,7 @@ local function tierAt(format,rating)
 	end
 	for i=#ladder.tiers,1,-1 do
 		if ladder.tiers[i].entry<=rating then
-			return ladder.tiers[i]
+			return ladder.tiers[i],nil,ladder.tiers[i+1]
 		end
 	end
 	return nil,"out-of-range"
@@ -846,6 +969,17 @@ function A.ratingTierEnum(format,rating)
 		return nil,reason
 	end
 	return tier.enum
+end
+
+function A.tierDistance(format,rating)
+	local tier,why,above=tierAt(format,rating)
+	if tier==nil then
+		return nil,why=="no-rating"and why or"no-ladder",why
+	end
+	if above==nil then
+		return nil,"top"
+	end
+	return{tier=A.tierWord(above.enum,above.name)or tostring(above.enum),points=above.entry-rating}
 end
 
 function A.tierWord(enum,raw)

@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.33
+-- WowPvpHistory 0.75.26
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -122,6 +122,18 @@ local function writeNote(subject,text,source)
 	return true,was
 end
 
+local function repaintTyped(cause)
+	if type(A.overlayRepaint)=="function"then
+		A.overlayRepaint("stored",cause)
+	end
+	if type(A.dropFinderWalk)=="function"then
+		A.dropFinderWalk()
+	end
+	if type(A.dropNotesIndex)=="function"then
+		A.dropNotesIndex()
+	end
+end
+
 function A.editResult(record,value)
 	if type(record)~="table"then
 		traceEdit("result",record,"refused","no-record")
@@ -163,15 +175,7 @@ function A.editResult(record,value)
 		A.noteError(rebuildError,"edit-index")
 	end
 
-	if type(A.overlayRepaint)=="function"then
-		A.overlayRepaint("stored","result")
-	end
-	if type(A.dropFinderWalk)=="function"then
-		A.dropFinderWalk()
-	end
-	if type(A.dropNotesIndex)=="function"then
-		A.dropNotesIndex()
-	end
+	repaintTyped("result")
 
 	if not rebuilt then
 		return true,was,"rebuild-failed",tostring(rebuildError)
@@ -239,15 +243,7 @@ function A.editRound(record,index,value)
 	manual.rounds=next(typed)~=nil and typed or nil
 	count(manual)
 	traceEdit("round",record,value==nil and"cleared"or"filled")
-	if type(A.overlayRepaint)=="function"then
-		A.overlayRepaint("stored","round")
-	end
-	if type(A.dropFinderWalk)=="function"then
-		A.dropFinderWalk()
-	end
-	if type(A.dropNotesIndex)=="function"then
-		A.dropNotesIndex()
-	end
+	repaintTyped("round")
 	return true,was
 end
 
@@ -302,6 +298,30 @@ end
 
 function A.editIncompleteNote(entry,text)
 	return writeNote(entry,text,"incomplete-note")
+end
+
+function A.isStarred(subject)
+	return type(subject)=="table"and typedValue(subject,"starred")==true
+end
+
+function A.editStar(subject,on)
+	if type(subject)~="table"then
+		traceEdit("starred",subject,"refused","no-subject")
+		return false,nil,"no-subject"
+	end
+	local was=A.isStarred(subject)
+	local held=was or nil
+	if on~=true and clearsNothing("starred",subject,held)then
+		return true,false
+	end
+	if on==true and fillsNothing("starred",subject,held,true)then
+		return true,true
+	end
+	local manual=block(subject)
+	manual.starred=on==true or nil
+	count(manual)
+	traceEdit("starred",subject,on==true and"filled"or"cleared")
+	return true,was
 end
 
 function A.supersedeTypedResults(db)

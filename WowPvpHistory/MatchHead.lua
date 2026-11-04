@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.33
+-- WowPvpHistory 0.75.26
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -9,6 +9,7 @@ local LADDER_SLOTS=10
 local CARD_SLOTS=6
 local CARD_NAMES=6
 local TEAM_CARD_PAIRS=4
+local YOUR_LINE_CELLS=4
 
 function A.matchRatingParts(format,from,to)
 	if type(from)~="number"or type(to)~="number"then
@@ -77,8 +78,11 @@ function A.matchRoundCards(record)
 		local row=table_.rounds[i]or{}
 		local mates,foes={},{}
 		local cut=0
+		local ownHealer=false
 		for _,cell in ipairs(row.mates or{})do
-			if type(cell)=="table"and not cell.self then
+			if type(cell)=="table"and cell.self then
+				ownHealer=A.healerCell(cell)
+			elseif type(cell)=="table"then
 				if#mates<CARD_NAMES then
 					mates[#mates+1]=cell
 				else
@@ -108,7 +112,7 @@ function A.matchRoundCards(record)
 			n=i,word=word,tone=row.tone or"dim",state=state,meter=meter,
 			classToken=type(own)=="table"and own.classToken or nil,
 			spec=type(own)=="table"and own.spec or nil,
-			mates=mates,foes=foes,cut=cut,
+			mates=mates,foes=foes,cut=cut,ownHealer=ownHealer,
 			mmrYours=row.mmrYours,mmrTheirs=row.mmrTheirs,
 		}
 	end
@@ -120,8 +124,146 @@ function A.matchTitleStamp(record)
 	if stamp==nil then
 		return nil
 	end
-	local text=tostring(stamp):gsub("^(%d%d%d%d%-%d%d%-%d%d)T","%1 ")
-	return A.stampWords(text)or tostring(stamp)
+	local raw=tostring(stamp)
+	local text=raw:gsub("^(%d%d%d%d%-%d%d%-%d%d)T","%1 ")
+	return A.stampWords(text)or raw
+end
+
+local STRIPE_WIDTH=5
+
+function A.rosterStripeWidth()
+	return STRIPE_WIDTH
+end
+
+function A.rosterStripeMark(guid,isSelf)
+	if isSelf==true or type(guid)~="string"or type(A.noteFor)~="function"then
+		return nil
+	end
+	local entry=A.noteFor(guid)
+	if type(entry)~="table"or(type(entry.rating)~="number"and type(entry.attitude)~="number")then
+		return nil
+	end
+	return(A.noteMark(entry))
+end
+
+function A.healerCell(cell)
+	local word=type(cell)=="table"and cell.roleWord or nil
+	return type(word)=="string"and(" "..word.." "):find(" HEAL ",1,true)~=nil
+end
+
+function A.cardHealers(card)
+	if type(card)~="table"then
+		return 0
+	end
+	local count=card.ownHealer==true and 1 or 0
+	for _,side in ipairs({card.mates or{},card.foes or{}})do
+		for _,cell in ipairs(side)do
+			if A.healerCell(cell)then
+				count=count+1
+			end
+		end
+	end
+	return count
+end
+
+local PLACE_SUFFIX={"st","nd","rd"}
+
+local function placeText(place,of)
+	if type(place)~="number"or type(of)~="number"then
+		return nil
+	end
+	local tens=place%100
+	local suffix=(tens>=11 and tens<=13)and"th"or(PLACE_SUFFIX[place%10]or"th")
+	return("%d%s of %d"):format(place,suffix,of)
+end
+
+local function rankOf(own,rows,field)
+	local mine=type(own)=="table"and own[field]or nil
+	if type(mine)~="number"then
+		return nil,nil
+	end
+	local above,held=0,0
+	for i=1,#rows do
+		local value=rows[i][field]
+		if type(value)=="number"then
+			held=held+1
+			if value>mine then
+				above=above+1
+			end
+		end
+	end
+	return above+1,held
+end
+
+function A.yourLineHead(record)
+	if type(record)~="table"or record.format=="duel"or record.format=="world"
+		or type(record.participants)~="table"or type(record.character)~="string"then
+		return nil
+	end
+	local participants=record.participants
+	local ownRow=participants[record.character]
+	if type(ownRow)~="table"then
+		return nil
+	end
+	local own=A.participantCells(record,{guid=record.character,p=ownRow,quiet=true},nil,nil)
+	if type(own.damage)~="number"and type(own.healing)~="number"and type(own.kb)~="number"then
+		return nil
+	end
+	local healer=A.healerCell(own)
+	local field=healer and"healing"or"damage"
+
+	local lobby={}
+	for guid,p in pairs(participants)do
+		if type(guid)=="string"and type(p)=="table"and not A.isBotGuid(guid)then
+			lobby[#lobby+1]=A.participantCells(record,{guid=guid,p=p,quiet=true},nil,nil)
+		end
+	end
+	local split=A.rosterSplit(record)
+	local side=lobby
+	if type(split)=="table"then
+		side={}
+		for _,entry in ipairs(split.own)do
+			if not A.isBotGuid(entry.guid)then
+				side[#side+1]=A.participantCells(record,{guid=entry.guid,p=entry.p,quiet=true},nil,nil)
+			end
+		end
+	end
+	local sum=0
+	for i=1,#side do
+		local value=side[i][field]
+		if type(value)=="number"then
+			sum=sum+value
+		end
+	end
+	local mine=own[field]
+	local share=(type(mine)=="number"and sum>0)and mine/sum or nil
+
+	local figurePlace,figureOf=rankOf(own,lobby,field)
+	local kbPlace,kbOf=rankOf(own,lobby,"kb")
+	local cells={
+		{key="figure",label=healer and"HEALING"or"DAMAGE",value=A.figureText(mine),
+			place=placeText(figurePlace,figureOf)},
+		{key="share",label=split and"OF YOUR SIDE"or"OF THE LOBBY",value=A.percentText(share)},
+		{key="kb",label="KILLING BLOWS",value=type(own.kb)=="number"and("%d"):format(own.kb)or nil,
+			place=placeText(kbPlace,kbOf)},
+		{key="honor",label="HONOR LEVEL",
+			value=type(own.honorLevel)=="number"and("%d"):format(own.honorLevel)or nil},
+	}
+	local words,drawn={"YOUR LINE"},0
+	for i=1,#cells do
+		local cell=cells[i]
+		if cell.value~=nil then
+			drawn=drawn+1
+		end
+		words[#words+1]=("%s %s%s"):format(cell.label,cell.value or"-",
+			cell.place and(" "..cell.place)or"")
+	end
+	return{kind="yourLine",id=record.id,cells=cells,drawn=drawn,healer=healer,
+		text=table.concat(words,"  ")}
+end
+
+function A.yourLineHeight()
+	return A.metric("roundCardPad")*2+A.fontSize("label")+A.metric("roundCardLine")+A.fontSize("number")
 end
 
 local VERDICT_ROLE="dossierName"
@@ -218,10 +360,11 @@ function A.buildMatchHeadParts(line)
 		card.mmrFoes=text("GameFontDisableSmall","RIGHT")
 		card.mmrMatesLabel=text("GameFontDisableSmall","RIGHT")
 		card.mmrFoesLabel=text("GameFontDisableSmall","RIGHT")
-		card.names,card.icons={},{}
+		card.names,card.icons,card.crosses={},{},{}
 		for n=1,CARD_NAMES+1 do
 			card.icons[n]=keep(line:CreateTexture(nil,"ARTWORK"))
 			card.names[n]=text("GameFontHighlightSmall")
+			card.crosses[n]=text("GameFontHighlightSmall")
 		end
 		line.roundCards[c]=card
 	end
@@ -242,8 +385,14 @@ function A.buildMatchHeadParts(line)
 		line.teamCards[s]=card
 	end
 
+	line.buildBg=keep(line:CreateTexture(nil,"BACKGROUND"))
+	line.buildEdges={}
+	for i=1,4 do
+		line.buildEdges[i]=keep(line:CreateTexture(nil,"BORDER"))
+	end
 	line.buildKey=text("GameFontDisableSmall")
-	line.buildText=text("GameFontHighlightSmall")
+	line.buildLoadout=text("GameFontNormal")
+	line.buildHero=text("GameFontDisableSmall")
 	line.buildIcons={}
 	for i=1,BUILD_ICONS do
 		local icon=keep(CreateFrame("Frame",nil,line))
@@ -274,6 +423,30 @@ function A.buildMatchHeadParts(line)
 				A.copyTalents(self.recordId)
 			end
 		end))
+		line.buildLoad=keep(A.pill(line,"Load this build",function(self)
+			if type(A.loadBuild)=="function"then
+				A.loadBuild(self.recordId)
+			end
+		end))
+		line.buildLoad:HookScript("OnEnter",function(self)
+			A.hoverLine(self,self.hoverText)
+		end)
+		line.buildLoad:HookScript("OnLeave",function(self)
+			A.hideOwnedTooltip(self)
+		end)
+	end
+
+	line.yourBg=keep(line:CreateTexture(nil,"BACKGROUND"))
+	line.yourEdges={}
+	for i=1,4 do
+		line.yourEdges[i]=keep(line:CreateTexture(nil,"BORDER"))
+	end
+	line.yourKey=text("GameFontDisableSmall")
+	line.yourLabels,line.yourValues,line.yourPlaces={},{},{}
+	for i=1,YOUR_LINE_CELLS do
+		line.yourLabels[i]=text("GameFontDisableSmall")
+		line.yourValues[i]=text("GameFontNormalLarge")
+		line.yourPlaces[i]=text("GameFontDisableSmall")
 	end
 
 	line.lobbyIcon=keep(line:CreateTexture(nil,"ARTWORK"))
@@ -345,7 +518,7 @@ local function paintChip(line,h,right,game,dy)
 		local x=right-w
 		line.headChipText:ClearAllPoints()
 		line.headChipText:SetPoint("LEFT",line,"LEFT",x+pad,dy)
-		line.headChipText:SetWidth(room)
+		line.headChipText:SetWidth(0)
 		line.headChipText:Show()
 		local edges={{x,dy+ht/2,w,1},{x,dy-ht/2,w,1},{x,dy,1,ht},
 			{x+w-1,dy,1,ht}}
@@ -386,11 +559,16 @@ function A.matchBannerFit(verdict,ratings,delta,limit)
 	local function after(width)
 		return width>0 and gap+width or 0
 	end
-	if verdict+after(ratings)+after(delta)<=room then
+	local tail=after(delta)
+	if verdict+after(ratings)+tail<=room then
 		return{verdict=verdict,ratings=ratings>0,fits=true}
 	end
-	local cut=math.max(1,math.min(verdict,room-after(delta)))
+	local cut=math.max(1,math.min(verdict,room-tail))
 	return{verdict=cut,ratings=false,fits=cut==verdict}
+end
+
+local function availableWidth(h)
+	return type(h.available)=="number"and h.available or A.detailWindowBody()
 end
 
 local function paintBanner(line,h)
@@ -398,7 +576,7 @@ local function paintBanner(line,h)
 	line.bannerBg:SetAllPoints(line)
 	line.bannerBg:SetColorTexture(A.color("panelDeep"))
 	line.bannerBg:Show()
-	local width=type(h.available)=="number"and h.available or A.detailWindowBody()
+	local width=availableWidth(h)
 	local pad,gap=A.metric("bannerPad"),A.metric("headGap")
 	local lead=A.matchBannerLead()
 	local dy=A.matchBannerHeight()/2-pad-lead/2
@@ -421,7 +599,7 @@ local function paintBanner(line,h)
 		fit=fit.fits and(fit.ratings==(ratings~="")and"whole"or"no-ratings")or"cut"},"ui")
 	line.bannerVerdict:ClearAllPoints()
 	line.bannerVerdict:SetPoint("LEFT",line,"TOPLEFT",pad,-(pad+lead/2))
-	line.bannerVerdict:SetWidth(fit.verdict)
+	line.bannerVerdict:SetWidth(fit.fits and 0 or fit.verdict)
 	line.bannerVerdict:Show()
 	local after=line.bannerVerdict
 	if fit.ratings then
@@ -446,8 +624,9 @@ local function paintBanner(line,h)
 		line.bannerPlace:SetText(place)
 		line.bannerPlace:ClearAllPoints()
 		line.bannerPlace:SetPoint("BOTTOMLEFT",line,"BOTTOMLEFT",pad,pad)
-		line.bannerPlace:SetWidth(math.max(1,math.min(math.ceil(A.textRoom(line.bannerPlace,place)),
-			width-pad*2)))
+		local placeRoom=width-pad*2
+		line.bannerPlace:SetWidth(math.ceil(A.textRoom(line.bannerPlace,place))>(A.unitFigure(placeRoom)or placeRoom)
+			and math.max(1,placeRoom)or 0)
 		line.bannerPlace:Show()
 		line.bannerNote:SetPoint("BOTTOMLEFT",line.bannerPlace,"BOTTOMRIGHT",gap,0)
 	else
@@ -482,7 +661,7 @@ local function paintHeading(line,h,paintCrest,game)
 end
 
 local function paintHeadline(line,h)
-	local width=type(h.available)=="number"and h.available or A.detailWindowBody()
+	local width=availableWidth(h)
 	local left=paintChip(line,h,width-A.metric("rowCellGap"),false)
 	A.style(line.headDetails,"bodyText","dim")
 	line.headDetails:SetText(detailText(h,false))
@@ -505,9 +684,10 @@ end
 
 local function paintLadder(line,h)
 	local ladder=h.ladder
-	local width=type(h.available)=="number"and h.available or A.detailWindowBody()
+	local width=availableWidth(h)
 	local pad,bar,gap=A.metric("ladderPad"),A.metric("ladderBar"),A.metric("ladderGap")
-	local top=-(pad+(A.metric("ladderMark")-bar)/2)
+	local markInset=(A.metric("ladderMark")-bar)/2
+	local top=-(pad+markInset)
 	for i=1,#line.ladderBars do
 		local held=ladder.bars[i]
 		if held then
@@ -528,7 +708,7 @@ local function paintLadder(line,h)
 			word:SetAlpha(held.here and 1 or 0.7)
 			word:SetText(held.word or"")
 			word:ClearAllPoints()
-			word:SetPoint("TOPLEFT",line,"TOPLEFT",x,top-bar-gap-(A.metric("ladderMark")-bar)/2)
+			word:SetPoint("TOPLEFT",line,"TOPLEFT",x,top-bar-gap-markInset)
 			word:Show()
 			A.style(entry,"numberSmall","dim")
 			entry:SetText(tostring(held.entry))
@@ -548,7 +728,19 @@ local function paintLadder(line,h)
 	end
 end
 
-local function paintCardName(card,n,x,y,width,label,classToken,spec,faint)
+local HEALER_CROSS="+"
+
+local function paintCardName(card,n,x,y,width,label,classToken,spec,faint,healer)
+	local cross=card.crosses[n]
+	local crossRoom=0
+	if healer then
+		A.style(cross,"label",faint and"loss"or"win")
+		cross:SetText(HEALER_CROSS)
+		crossRoom=math.ceil(A.textRoom(cross,HEALER_CROSS))+A.metric("rowMarkGap")
+	else
+		cross:SetText("")
+		cross:Hide()
+	end
 	local size=A.metric("compSwatch")
 	local icon,name=card.icons[n],card.names[n]
 	local found=type(A.specIcon)=="function"and A.specIcon(classToken,spec)or nil
@@ -568,9 +760,18 @@ local function paintCardName(card,n,x,y,width,label,classToken,spec,faint)
 	name:SetAlpha(faint and 0.6 or 1)
 	name:SetText(label)
 	name:ClearAllPoints()
-	name:SetPoint("TOPLEFT",card.bg,"TOPLEFT",x+size+A.metric("headCrestGap"),y)
-	name:SetWidth(math.max(1,width-size-A.metric("headCrestGap")))
+	local nameX=x+size+A.metric("headCrestGap")
+	local room=math.max(1,width-size-A.metric("headCrestGap")-crossRoom)
+	name:SetPoint("TOPLEFT",card.bg,"TOPLEFT",nameX,y)
+	name:SetWidth(room)
 	name:Show()
+	if healer then
+		local drawn=math.min(math.ceil(A.textRoom(name,label)),room)
+		cross:ClearAllPoints()
+		cross:SetPoint("TOPLEFT",card.bg,"TOPLEFT",nameX+drawn+A.metric("rowMarkGap"),y)
+		cross:Show()
+	end
+	return healer==true
 end
 
 local function shortName(cell)
@@ -601,9 +802,22 @@ local function placeCardTarget(line,h,held,x,width,height)
 	end
 end
 
+local function paintCardGround(line,card,x,width,height,tone)
+	card.bg:ClearAllPoints()
+	card.bg:SetPoint("TOPLEFT",line,"TOPLEFT",x,0)
+	card.bg:SetSize(width,height)
+	card.bg:SetColorTexture(A.color("panelDeep"))
+	card.bg:Show()
+	card.edge:ClearAllPoints()
+	card.edge:SetPoint("TOPLEFT",card.bg,"TOPLEFT",0,0)
+	card.edge:SetSize(width,A.metric("roundCardEdge"))
+	card.edge:SetColorTexture(A.color(tone))
+	card.edge:Show()
+end
+
 local function paintCards(line,h)
 	local cards=h.cards or{}
-	local width=type(h.available)=="number"and h.available or A.detailWindowBody()
+	local width=availableWidth(h)
 	local gap,pad=A.metric("roundCardGap"),A.metric("roundCardPad")
 	local count=math.min(#cards,#line.roundCards)
 	local cardWidth=count>0 and math.floor((width-gap*(count-1))/count)or 0
@@ -612,16 +826,7 @@ local function paintCards(line,h)
 	for c=1,count do
 		local card,held=line.roundCards[c],cards[c]
 		local x=(c-1)*(cardWidth+gap)
-		card.bg:ClearAllPoints()
-		card.bg:SetPoint("TOPLEFT",line,"TOPLEFT",x,0)
-		card.bg:SetSize(cardWidth,height)
-		card.bg:SetColorTexture(A.color("panelDeep"))
-		card.bg:Show()
-		card.edge:ClearAllPoints()
-		card.edge:SetPoint("TOPLEFT",card.bg,"TOPLEFT",0,0)
-		card.edge:SetSize(cardWidth,A.metric("roundCardEdge"))
-		card.edge:SetColorTexture(A.color(held.tone))
-		card.edge:Show()
+		paintCardGround(line,card,x,cardWidth,height,held.tone)
 		local y=-(A.metric("roundCardEdge")+pad)
 		A.style(card.title,"label","dim")
 		card.title:SetText(("R%d"):format(held.n))
@@ -635,7 +840,7 @@ local function paintCards(line,h)
 		card.word:Show()
 		y=y-A.fontSize("label")-A.metric("roundCardLine")
 		local inner=cardWidth-pad*2
-		local function figure(fs,label,value,at)
+		local function figure(fs,label,value,at,centered)
 			if type(value)~="number"then
 				fs:SetText("")
 				fs:Hide()
@@ -647,7 +852,7 @@ local function paintCards(line,h)
 			A.style(fs,"rowClock","text")
 			fs:SetText(text)
 			fs:ClearAllPoints()
-			fs:SetPoint("TOPRIGHT",card.bg,"TOPRIGHT",-pad,at)
+			fs:SetPoint(centered and"RIGHT"or"TOPRIGHT",card.bg,"TOPRIGHT",-pad,at)
 			fs:Show()
 			A.style(label,"note","dim")
 			label:SetText("avg MMR")
@@ -659,104 +864,216 @@ local function paintCards(line,h)
 		end
 		local n=1
 		local ownRoom=figure(card.mmrMates,card.mmrMatesLabel,held.mmrYours,y)
-		paintCardName(card,n,pad,y,inner-ownRoom,"You",held.classToken,held.spec,false)
+		paintCardName(card,n,pad,y,inner-ownRoom,"You",held.classToken,held.spec,false,
+			held.ownHealer==true)
 		for _,cell in ipairs(held.mates)do
 			n,y=n+1,y-step
-			paintCardName(card,n,pad,y,inner,shortName(cell),cell.classToken,cell.spec,false)
+			paintCardName(card,n,pad,y,inner,shortName(cell),cell.classToken,cell.spec,false,
+				A.healerCell(cell))
 		end
 		y=y-step
 		local band=A.roundCardVsBand()
 		local sides=#held.mates+#held.foes>0
+		local markGap=A.metric("rowMarkGap")
 		A.style(card.vs,"note","dim")
 		card.vs:SetText("VS")
 		local word=math.ceil(A.textRoom(card.vs,"VS"))
-		local half=math.max(1,math.floor((inner-word)/2)-A.metric("rowMarkGap"))
 		local middle=y-band/2
+		local foeRoom=figure(card.mmrFoes,card.mmrFoesLabel,#held.foes>0 and held.mmrTheirs or nil,middle,
+			true)
+		local span=inner
+		local half=math.max(1,math.floor((inner-word)/2)-markGap)
+		local rightWidth=math.max(1,half-foeRoom)
+		if foeRoom>0 and half-foeRoom<1 then
+			span=math.max(word,inner-foeRoom)
+			half=math.max(1,math.floor((span-word)/2)-markGap)
+			rightWidth=half
+		end
 		card.vs:ClearAllPoints()
-		card.vs:SetPoint("CENTER",card.bg,"TOPLEFT",pad+inner/2,middle)
+		card.vs:SetPoint("CENTER",card.bg,"TOPLEFT",pad+span/2,middle)
 		card.vs:SetShown(sides)
 		for r,rule in ipairs({card.rule,card.ruleRight})do
 			rule:ClearAllPoints()
-			rule:SetPoint("TOPLEFT",card.bg,"TOPLEFT",r==1 and pad or(pad+inner-half),middle)
-			rule:SetSize(half,1)
+			rule:SetPoint("TOPLEFT",card.bg,"TOPLEFT",r==1 and pad or(pad+span-half),middle)
+			rule:SetSize(r==1 and half or rightWidth,1)
 			rule:SetColorTexture(A.color("hairline"))
 			rule:SetShown(sides)
 		end
 		y=y-band
-		local foeRoom=figure(card.mmrFoes,card.mmrFoesLabel,#held.foes>0 and held.mmrTheirs or nil,y)
-		for f,cell in ipairs(held.foes)do
+		for _,cell in ipairs(held.foes)do
 			n=n+1
-			paintCardName(card,n,pad,y,f==1 and inner-foeRoom or inner,shortName(cell),
-				cell.classToken,cell.spec,true)
+			paintCardName(card,n,pad,y,inner,shortName(cell),cell.classToken,cell.spec,true,
+				A.healerCell(cell))
 			y=y-step
 		end
 		placeCardTarget(line,h,held,x,cardWidth,height)
 	end
 end
 
+local function paintInset(line,bg,edges,width,height)
+	bg:ClearAllPoints()
+	bg:SetPoint("TOPLEFT",line,"TOPLEFT",0,0)
+	bg:SetSize(width,height)
+	bg:SetColorTexture(A.color("inset"))
+	bg:Show()
+	for i=1,4 do
+		edges[i]:ClearAllPoints()
+		edges[i]:SetColorTexture(A.color("insetEdge"))
+		edges[i]:Show()
+	end
+	edges[1]:SetPoint("TOPLEFT",bg,"TOPLEFT",0,0)
+	edges[1]:SetSize(width,1)
+	edges[2]:SetPoint("BOTTOMLEFT",bg,"BOTTOMLEFT",0,0)
+	edges[2]:SetSize(width,1)
+	edges[3]:SetPoint("TOPLEFT",bg,"TOPLEFT",0,0)
+	edges[3]:SetSize(1,height)
+	edges[4]:SetPoint("TOPRIGHT",bg,"TOPRIGHT",0,0)
+	edges[4]:SetSize(1,height)
+end
+
 local function paintBuild(line,h)
 	if not line.buildKey then
 		return
 	end
-	local pad=A.metric("rowLabelPad")
+	local width,height=availableWidth(h),A.buildCardHeight()
+	local pad,gap=A.metric("roundCardPad"),A.metric("chipGap")
+	local size=A.metric("buildIcon")
+	paintInset(line,line.buildBg,line.buildEdges,width,height)
+
+	local first=A.fontSize("label")
+	local firstMiddle=-(pad+first/2)
+	local secondMiddle=-(pad+first+A.metric("roundCardLine")
+		+math.max(size,A.fontSize("heading"),A.metric("controlHeight"))/2)
+
 	line.buildKey:ClearAllPoints()
-	line.buildKey:SetPoint("LEFT",line,"LEFT",pad,0)
-	A.style(line.buildKey,"label","dim")
+	line.buildKey:SetPoint("LEFT",line.buildBg,"TOPLEFT",pad,firstMiddle)
+	A.style(line.buildKey,"label","label")
 	line.buildKey:SetText("BUILD")
 	line.buildKey:Show()
-	line.buildText:ClearAllPoints()
-	line.buildText:SetPoint("LEFT",line.buildKey,"RIGHT",A.metric("chipGap"),0)
-	A.style(line.buildText,"bodyText",h.unnamed and"dim"or"text")
-	line.buildText:SetText(h.label or"")
-	line.buildText:Show()
-	local size=A.metric("rowHeight")
-	local after,drawn=line.buildText,0
+	local pillRoom=0
+	if line.buildCopy then
+		line.buildCopy.recordId=h.id
+		line.buildCopy:ClearAllPoints()
+		line.buildCopy:SetPoint("RIGHT",line.buildBg,"TOPRIGHT",-pad,secondMiddle)
+		line.buildCopy:Show()
+		pillRoom=math.ceil(line.buildCopy:GetWidth())+gap
+	end
+	if line.buildLoad then
+		line.buildLoad.recordId=h.id
+		line.buildLoad.hoverText=type(h.spec)=="string"
+			and("Saves this build as a loadout and switches to it. For %s."):format(h.spec)
+			or"Saves this build as a loadout and switches to it."
+		line.buildLoad:ClearAllPoints()
+		line.buildLoad:SetPoint("RIGHT",line.buildCopy,"LEFT",-gap,0)
+		line.buildLoad:Show()
+		pillRoom=pillRoom+math.ceil(line.buildLoad:GetWidth())+gap
+	end
+
+	local talents=type(h.pvp)=="table"and h.pvp or{}
+	local drawn=0
+	for i=1,#line.buildIcons do
+		local talent=talents[i]
+		if talent and talent.icon~=nil then
+			drawn=drawn+1
+		end
+	end
+	local hero=type(h.hero)=="string"and h.hero or nil
+	A.style(line.buildHero,"bodyText","dim")
+	local heroRoom=hero and math.ceil(A.textRoom(line.buildHero,hero))+gap or 0
+	local loadout=h.loadout or""
+	A.style(line.buildLoadout,"heading",h.unnamed and"dim"or"text")
+	local room=width-pad*2-heroRoom-drawn*(size+gap)-pillRoom
+	line.buildLoadout:ClearAllPoints()
+	line.buildLoadout:SetPoint("LEFT",line.buildBg,"TOPLEFT",pad,secondMiddle)
+	local nameCut=math.ceil(A.textRoom(line.buildLoadout,loadout))>(A.unitFigure(room)or room)
+	line.buildLoadout:SetWidth(nameCut and math.max(1,room)or 0)
+	line.buildLoadout:SetText(loadout)
+	line.buildLoadout:Show()
+	local after=line.buildLoadout
+	if hero then
+		line.buildHero:ClearAllPoints()
+		line.buildHero:SetPoint("LEFT",line.buildLoadout,"RIGHT",gap,0)
+		line.buildHero:SetText(hero)
+		line.buildHero:Show()
+		after=line.buildHero
+	else
+		line.buildHero:SetText("")
+		line.buildHero:Hide()
+	end
 	for i=1,#line.buildIcons do
 		local icon=line.buildIcons[i]
-		local talent=type(h.pvp)=="table"and h.pvp[i]or nil
+		local talent=talents[i]
 		icon.recordId=h.id
 		icon.talentName=talent and talent.name or nil
 		if talent and talent.icon~=nil then
 			icon:ClearAllPoints()
-			icon:SetPoint("LEFT",after,"RIGHT",A.metric("chipGap"),0)
+			icon:SetPoint("LEFT",after,"RIGHT",gap,0)
 			icon:SetSize(size,size)
 			icon.texture:SetTexture(talent.icon)
 			icon:Show()
 			after=icon
-			drawn=drawn+1
 		else
 			icon:Hide()
 		end
 	end
-	if line.buildCopy then
-		line.buildCopy.recordId=h.id
-		line.buildCopy:ClearAllPoints()
-		line.buildCopy:SetPoint("RIGHT",line,"RIGHT",-pad,0)
-		line.buildCopy:Show()
-	end
 	A.trace("matchbuild",{id=h.id,pvpTalents=type(h.pvp)=="table"and#h.pvp or 0,icons=drawn,
-		copyShown=line.buildCopy~=nil},"ui")
+		copyShown=line.buildCopy~=nil,loadShown=line.buildLoad~=nil,pillRoom=pillRoom,
+		nameCut=nameCut and 1 or 0},"ui")
+end
+
+local function paintYourLine(line,h)
+	local width,height=availableWidth(h),A.yourLineHeight()
+	local pad,gap=A.metric("roundCardPad"),A.metric("headGap")
+	paintInset(line,line.yourBg,line.yourEdges,width,height)
+
+	A.style(line.yourKey,"label","label")
+	line.yourKey:SetText("YOUR LINE")
+	line.yourKey:ClearAllPoints()
+	line.yourKey:SetPoint("TOPLEFT",line.yourBg,"TOPLEFT",pad,-pad)
+	line.yourKey:SetWidth(0)
+	line.yourKey:Show()
+	local lead=pad+math.ceil(A.textRoom(line.yourKey,"YOUR LINE"))+gap
+	local cells=type(h.cells)=="table"and h.cells or{}
+	local count=math.min(#cells,#line.yourLabels)
+	local cellWidth=count>0 and math.floor((width-lead-pad)/count)or 0
+	local figureTop=-(pad+A.fontSize("label")+A.metric("roundCardLine"))
+	for i=1,count do
+		local cell,x=cells[i],lead+(i-1)*cellWidth
+		local label,value,place=line.yourLabels[i],line.yourValues[i],line.yourPlaces[i]
+		A.style(label,"label","dim")
+		label:SetText(cell.label)
+		label:ClearAllPoints()
+		label:SetPoint("TOPLEFT",line.yourBg,"TOPLEFT",x,-pad)
+		label:SetWidth(math.max(1,cellWidth-gap))
+		label:Show()
+		A.style(value,"number",cell.value~=nil and"text"or"dim")
+		value:SetText(cell.value or"-")
+		value:ClearAllPoints()
+		value:SetPoint("TOPLEFT",line.yourBg,"TOPLEFT",x,figureTop)
+		value:Show()
+		if cell.place~=nil then
+			A.style(place,"note","dim")
+			place:SetText(cell.place)
+			place:ClearAllPoints()
+			place:SetPoint("BOTTOMLEFT",value,"BOTTOMRIGHT",A.metric("rowMarkGap"),0)
+			place:Show()
+		else
+			place:SetText("")
+			place:Hide()
+		end
+	end
 end
 
 local function paintTally(line,h)
 	local cells=type(h.cells)=="table"and h.cells or{}
-	local width=type(h.available)=="number"and h.available or A.detailWindowBody()
+	local width=availableWidth(h)
 	local gap,pad=A.metric("roundCardGap"),A.metric("roundCardPad")
 	local count=math.min(#cells,#line.roundCards)
 	local cardWidth=count>0 and math.floor((width-gap*(count-1))/count)or 0
 	local height=A.outingCellsHeight()
 	for c=1,count do
 		local card,held=line.roundCards[c],cells[c]
-		card.bg:ClearAllPoints()
-		card.bg:SetPoint("TOPLEFT",line,"TOPLEFT",(c-1)*(cardWidth+gap),0)
-		card.bg:SetSize(cardWidth,height)
-		card.bg:SetColorTexture(A.color("panelDeep"))
-		card.bg:Show()
-		card.edge:ClearAllPoints()
-		card.edge:SetPoint("TOPLEFT",card.bg,"TOPLEFT",0,0)
-		card.edge:SetSize(cardWidth,A.metric("roundCardEdge"))
-		card.edge:SetColorTexture(A.color(held.tone or"dim"))
-		card.edge:Show()
+		paintCardGround(line,card,(c-1)*(cardWidth+gap),cardWidth,height,held.tone or"dim")
 		local y=-(A.metric("roundCardEdge")+pad)
 		A.style(card.title,"label","dim")
 		card.title:SetText(held.label)
@@ -792,6 +1109,8 @@ function A.paintMatchHead(line,h,paintCrest)
 		paintTally(line,h)
 	elseif h.kind=="build"then
 		paintBuild(line,h)
+	elseif h.kind=="yourLine"then
+		paintYourLine(line,h)
 	end
 end
 
@@ -819,7 +1138,7 @@ function A.paintTeamCards(line,h)
 	local totals=type(h.totals)=="table"and h.totals or{}
 	local columns=type(totals.columns)=="table"and totals.columns or{}
 	local words=type(h.words)=="table"and h.words or{}
-	local width=type(h.available)=="number"and h.available or A.detailWindowBody()
+	local width=availableWidth(h)
 	local gap,pad=A.metric("roundCardGap"),A.metric("roundCardPad")
 	local cardWidth=math.max(1,math.floor((width-gap)/2))
 	local height=A.objectiveCardsHeight()
@@ -828,16 +1147,7 @@ function A.paintTeamCards(line,h)
 		local card=line.teamCards[s]
 		local side,tone=sides[s][1],sides[s][2]
 		local values=type(sides[s][3])=="table"and sides[s][3]or{}
-		card.bg:ClearAllPoints()
-		card.bg:SetPoint("TOPLEFT",line,"TOPLEFT",(s-1)*(cardWidth+gap),0)
-		card.bg:SetSize(cardWidth,height)
-		card.bg:SetColorTexture(A.color("panelDeep"))
-		card.bg:Show()
-		card.edge:ClearAllPoints()
-		card.edge:SetPoint("TOPLEFT",card.bg,"TOPLEFT",0,0)
-		card.edge:SetSize(cardWidth,A.metric("roundCardEdge"))
-		card.edge:SetColorTexture(A.color(tone))
-		card.edge:Show()
+		paintCardGround(line,card,(s-1)*(cardWidth+gap),cardWidth,height,tone)
 
 		local y=-(A.metric("roundCardEdge")+pad)
 		A.style(card.title,"label","dim")
@@ -931,7 +1241,92 @@ function A.paintTeamLegend(line)
 	return x
 end
 
-function A.traceMatchHead(id,rows,height)
+local STEP_SIZE=22
+local STEP_ARROWS={
+	{direction="prev",label="Previous match",glyph="<"},
+	{direction="next",label="Next match",glyph=">"},
+}
+
+function A.matchStepSize()
+	return STEP_SIZE
+end
+
+function A.matchStepPlaces()
+	local inset=A.metric("titleInset")
+	local gap=math.max(0,math.floor((inset-STEP_SIZE*2)/3))
+	return gap,gap*2+STEP_SIZE,gap
+end
+
+function A.buildMatchStep(frame,step)
+	frame.stepArrows={}
+	local size=A.matchStepSize()
+	for _,arrow in ipairs(STEP_ARROWS)do
+		local direction=arrow.direction
+		local button=A.pill(frame,arrow.glyph,function()
+			step(frame,direction)
+		end,size)
+		button:SetSize(size,size)
+		button.direction=direction
+		button.stepLabel=arrow.label
+		button:HookScript("OnEnter",function(self)
+			A.hoverLine(self,self.stepLabel)
+		end)
+		button:HookScript("OnLeave",function(self)
+			A.hideOwnedTooltip(self)
+		end)
+		frame.stepArrows[direction]=button
+	end
+	A.seatMatchSteps(frame)
+end
+
+function A.seatMatchSteps(frame)
+	local arrows=type(frame)=="table"and frame.stepArrows or nil
+	if arrows==nil then
+		return false
+	end
+	local firstX,secondX=A.matchStepPlaces()
+	local size=A.matchStepSize()
+	local _,_,middle=A.titleBarSpan()
+	local top=math.min(0,-math.floor(middle-size/2))
+	for i,direction in ipairs({"prev","next"})do
+		local button=arrows[direction]
+		if button then
+			button:ClearAllPoints()
+			button:SetPoint("TOPLEFT",frame,"TOPLEFT",i==1 and firstX or secondX,top)
+		end
+	end
+	return true
+end
+
+function A.paintMatchStep(frame,before,after)
+	local arrows=type(frame)=="table"and frame.stepArrows or nil
+	if arrows==nil then
+		return false
+	end
+	pcall(arrows.prev.SetEnabled,arrows.prev,before~=nil)
+	pcall(arrows.next.SetEnabled,arrows.next,after~=nil)
+	return true
+end
+
+function A.rosterGuids(rows)
+	local set={}
+	local function take(c)
+		if type(c)=="table"and type(c.guid)=="string"then
+			set[c.guid]=true
+		end
+	end
+	for _,row in ipairs(type(rows)=="table"and rows or{})do
+		local h=type(row)=="table"and row.head or nil
+		take(type(row)=="table"and row.cells or nil)
+		if type(h)=="table"and(h.kind=="lobbyRow"or h.kind=="lobbyYou")then
+			local joined=type(h.row)=="table"and h.row.joined or nil
+			take(type(joined)=="table"and joined.cells or nil)
+		end
+	end
+	return set
+end
+
+function A.traceMatchHead(id,rows,height,box)
 	if type(A.trace)~="function"then
 		return false
 	end
@@ -939,9 +1334,28 @@ function A.traceMatchHead(id,rows,height)
 	local team,teamCards=false,false
 	local cut=0
 	local counts={spec=0,class=0,square=0,blank=0,rows=0,bots=0}
+	local lineCells,honor,stripes,healers=nil,0,0,0
+	local function player(c)
+		if type(c)~="table"then
+			return
+		end
+		if type(c.honorLevel)=="number"then
+			honor=honor+1
+		end
+		if A.rosterStripeMark(c.guid,c.self)~=nil then
+			stripes=stripes+1
+		end
+	end
 	for _,row in ipairs(type(rows)=="table"and rows or{})do
 		local h=type(row)=="table"and row.head or nil
 		local c=type(row)=="table"and row.cells or nil
+		player(c)
+		if type(h)=="table"and(h.kind=="lobbyRow"or h.kind=="lobbyYou")then
+			local joined=type(h.row)=="table"and h.row.joined or nil
+			player(type(joined)=="table"and joined.cells or nil)
+		elseif type(h)=="table"and h.kind=="yourLine"then
+			lineCells=h.drawn or 0
+		end
 		if type(c)=="table"and c.look=="team"then
 			team=true
 			if c.bot then
@@ -967,9 +1381,20 @@ function A.traceMatchHead(id,rows,height)
 				cards=true
 				for _,card in ipairs(type(h.cards)=="table"and h.cards or{})do
 					cut=cut+(type(card)=="table"and tonumber(card.cut)or 0)
+					healers=healers+A.cardHealers(card)
 				end
 			end
 		end
+	end
+	local drawn=nil
+	if type(box)=="table"and type(box.ForEachFrame)=="function"then
+		drawn=0
+		pcall(box.ForEachFrame,box,function(element)
+			local stripe=type(element)=="table"and element.rateStripe or nil
+			if stripe~=nil and stripe:IsShown()then
+				drawn=drawn+1
+			end
+		end)
 	end
 	local parts=heading or headline or{}
 	local chip=parts.chip
@@ -993,6 +1418,11 @@ function A.traceMatchHead(id,rows,height)
 		classIcons=team and(counts.class+counts.square)or nil,
 		blankIcons=team and counts.blank or nil,
 		bots=team and counts.bots or nil,
+		lineCells=lineCells,
+		honor=honor,
+		stripes=drawn,
+		stripesStored=stripes,
+		healers=healers,
 	},"ui")
 	return true
 end

@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.33
+-- WowPvpHistory 0.75.26
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -104,9 +104,7 @@ local function allWithheld(read)
 end
 
 local function figure(read,entry,key)
-	if entry==nil then
-		return nil,"no-source"
-	end
+	entry=entry or{}
 	if entry[key.."Secret"]then
 		return nil,"secret"
 	end
@@ -548,12 +546,8 @@ local function contained(fn,source)
 	end
 end
 
-A.on("PLAYER_REGEN_ENABLED",function()
-	contained(onRegen,"meter-regen")()
-end)
-A.on("DAMAGE_METER_RESET",function()
-	contained(onReset,"meter-reset")()
-end)
+A.on("PLAYER_REGEN_ENABLED",contained(onRegen,"meter-regen"))
+A.on("DAMAGE_METER_RESET",contained(onReset,"meter-reset"))
 
 function A.meterState(record)
 	local meter=type(record)=="table"and record.meter or nil
@@ -719,10 +713,13 @@ function A.meterLines(record)
 		end
 	end
 	table.sort(rows,function(a,b)return a.name<b.name end)
-	local names={}
+	local names,seats={},{}
 	for i=1,#rows do
 		local row=rows[i]
 		if type(row.seat)=="number"then
+			if names[row.seat]==nil then
+				seats[#seats+1]=row.seat
+			end
 			names[row.seat]=row.name
 		end
 		local dispels,reason=A.participantMeter(record,row.guid)
@@ -732,6 +729,7 @@ function A.meterLines(record)
 		end
 		out[#out+1]=text
 	end
+	table.sort(seats)
 
 	local rounds=type(record.rounds)=="table"and record.rounds or{}
 	for r=1,#rounds do
@@ -739,10 +737,11 @@ function A.meterLines(record)
 		local label=("  round %d%s: "):format(r,derived and" (worked out)"or"")
 		if type(byseat)=="table"then
 			local parts={}
-			for seat=1,#rows do
+			for s=1,#seats do
+				local seat=seats[s]
 				local held=byseat[seat]
 				if type(held)=="table"then
-					parts[#parts+1]=("%s %s"):format(names[seat]or("seat "..seat),
+					parts[#parts+1]=("%s %s"):format(names[seat],
 						held.dispels~=nil and tostring(held.dispels)or"-")
 				end
 			end
