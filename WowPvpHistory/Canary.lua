@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.33
+-- WowPvpHistory 0.75.26
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -77,10 +77,17 @@ local PRUNE_WORDS={
 	import="import",
 	restore="restore",
 	csv="CSV import",
+	tidy="players-list tidy",
+	room="move of older seasons out of the history",
+	["import-add"]="import of older seasons",
 }
 
 local function pruneWord(op)
 	return PRUNE_WORDS[op]or"deliberate change"
+end
+
+local function matchWord(n)
+	return n==1 and"match"or"matches"
 end
 
 function A.canaryState()
@@ -136,7 +143,7 @@ end
 function A.canaryLossLines(state)
 	local lines={}
 
-	local held=("%d %s"):format(state.held,state.held==1 and"match"or"matches")
+	local held=("%d %s"):format(state.held,matchWord(state.held))
 	local now=state.stored==0 and"empty"or("down to "..state.stored)
 	if state.via then
 		lines[#lines+1]=("the stored history is %s and held %s after the last %s")
@@ -178,30 +185,29 @@ function A.canaryReading(state)
 
 	local text
 	if state.state=="agreeing"then
-		text=("%d %s, agreeing"):format(state.held,
-			state.held==1 and"match"or"matches")
+		text=("%d %s, agreeing"):format(state.held,matchWord(state.held))
 		if state.at then
 			text=text..(", stamped %s"):format(tostring(state.at))
 		end
 	elseif state.state=="short"then
 		text=("%d %s held against %d stored, which is short rather than lost. The file loaded "
 			.."and holds fewer matches than %s")
-			:format(state.held,state.held==1 and"match"or"matches",state.stored,
+			:format(state.held,matchWord(state.held),state.stored,
 				state.via and("the last "..pruneWord(state.via).." left")
 					or"this character last saw")
 	elseif state.state=="unknown"then
 		text=("%d %s held against %d stored, beside a deliberate change to the history that "
 			.."carries no time. Whether it came after this character's count cannot be told, so "
 			.."neither a loss nor agreement is claimed")
-			:format(state.held,state.held==1 and"match"or"matches",state.stored)
+			:format(state.held,matchWord(state.held),state.stored)
 	else
 		text=("%d %s held against %d stored. THE HISTORY WAS LOST")
-			:format(state.held,state.held==1 and"match"or"matches",state.stored)
+			:format(state.held,matchWord(state.held),state.stored)
 	end
 
 	if state.lost and state.state~="lost"and state.state~="short"then
 		text=text..(". A loss of %d %s was recorded %s"):format(state.lost.matches,
-			state.lost.matches==1 and"match"or"matches",
+			matchWord(state.lost.matches),
 			state.lost.at and tostring(state.lost.at)or"at a login whose clock did not answer")
 	end
 

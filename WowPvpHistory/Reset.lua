@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.33
+-- WowPvpHistory 0.75.26
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -120,14 +120,13 @@ local function redrive()
 	end)
 	attempt(A.applyWindowGeometry)
 	attempt(A.replaceOtherWindows)
+	attempt(A.replaceAnnouncements)
 	attempt(A.applyChrome)
 	attempt(A.storeReplaced)
 
 	attempt(A.notifyEverySetting)
 
-	if type(A.refreshOptionsWindow)=="function"then
-		pcall(A.refreshOptionsWindow)
-	end
+	attempt(A.refreshOptionsWindow)
 end
 
 function A.applyReset()
@@ -272,6 +271,8 @@ function A.openResetConfirm()
 				result.matches==1 and"match"or"matches"))
 			if result.pin.ok then
 				A.say("a copy is pinned. /pvph restore pinned brings it back")
+			elseif result.pin.reason=="smaller"and result.pin.promoted then
+				A.say(("the %d-match backup copy was larger and is now the pin"):format(result.pin.promoted))
 			elseif result.pin.reason=="smaller"then
 				A.say("the larger pin already held was kept rather than overwritten")
 			end

@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.33
+-- WowPvpHistory 0.75.26
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -27,7 +27,7 @@ local walked
 
 local finderHooked,panelHooked,showHooked=false,false,false
 
-local pending=false
+local pending
 
 function A.finderEnabled()
 	local db=A.db()
@@ -329,26 +329,10 @@ function A.finderRows(prior)
 	return rows
 end
 
-local function shownFrame(value)
-	if type(value)~="table"or type(value.IsShown)~="function"then
-		return false
-	end
-	local ok,shown=pcall(value.IsShown,value)
-	return ok and shown==true
-end
-
 local function hideTip()
 	if tip then
 		pcall(tip.Hide,tip)
 	end
-end
-
-local function text(parent,role,justify)
-	local fs=parent:CreateFontString(nil,"OVERLAY")
-	A.style(fs,role)
-	fs:SetJustifyH(justify or"LEFT")
-	fs:SetWordWrap(false)
-	return fs
 end
 
 local function uiRatio(frame)
@@ -434,11 +418,11 @@ local function tipOrNil()
 		f.edges=A.cardEdges(f)
 		f.rule=f:CreateTexture(nil,"ARTWORK")
 		f.rule:Hide()
-		f.title=text(f,TITLE_ROLE)
-		f.scope=text(f,"bodyText","RIGHT")
+		f.title=A.lineText(f,TITLE_ROLE)
+		f.scope=A.lineText(f,"bodyText","RIGHT")
 		f.heads={}
 		for i=1,#HEADS do
-			f.heads[i]=text(f,"label","RIGHT")
+			f.heads[i]=A.lineText(f,"label","RIGHT")
 		end
 		f.rows={}
 		f:EnableMouse(false)
@@ -466,9 +450,9 @@ end
 local function rowStrings(f,index)
 	local held=f.rows[index]
 	if not held then
-		held={name=text(f,"bodyText"),cells={}}
+		held={name=A.lineText(f,"bodyText"),cells={}}
 		for i=1,#HEADS do
-			held.cells[i]=text(f,"numberSmall","RIGHT")
+			held.cells[i]=A.lineText(f,"numberSmall","RIGHT")
 		end
 		f.rows[index]=held
 	end
@@ -631,14 +615,16 @@ local function placeDocked(tooltip)
 
 	local bottom=screenEdge(tooltip,"GetBottom")
 	local top=screenEdge(PVEFrame,"GetTop")
-	if bottom~=nil and top~=nil and bottom==top then
-		check="clear"
-	elseif bottom~=nil and top~=nil then
-		check="clamped"
-		anchor="beside"
-		tooltip:ClearAllPoints()
-		tooltip:SetPoint("TOPLEFT",PVEFrame,"TOPRIGHT",0,0)
-		tooltip:Show()
+	if bottom~=nil and top~=nil then
+		if bottom==top then
+			check="clear"
+		else
+			check="clamped"
+			anchor="beside"
+			tooltip:ClearAllPoints()
+			tooltip:SetPoint("TOPLEFT",PVEFrame,"TOPRIGHT",0,0)
+			tooltip:Show()
+		end
 	end
 	return anchor,check,bottom,top
 end
@@ -685,31 +671,29 @@ local function paint(rows)
 	return true,anchor,check,bottom,top,sizeOf(tooltip,"GetWidth"),sizeOf(tooltip,"GetHeight")
 end
 
-local function pass(reason)
+local REUSE_REASONS={rated=true,moved=true}
+
+local function pass(reasons)
+	local reason=table.concat(reasons,",")
+	local reuse=true
+	for i=1,#reasons do
+		reuse=reuse and REUSE_REASONS[reasons[i]]==true
+	end
 	local decision,anchor,check,bottom,top,width,height,via
 	local rows={}
 	local on=session=="on"or(session==nil and A.finderEnabled())
 	if not on then
 		decision=session=="off"and"session-off"or"setting-off"
-	elseif not shownFrame(PVEFrame)then
+	elseif not A.frameShown(PVEFrame)then
 		decision="closed"
 	elseif PVPUIFrame==nil then
 		decision="unloaded"
-	elseif not shownFrame(PVPUIFrame)then
+	elseif not A.frameShown(PVPUIFrame)then
 		decision="other-tab"
 	else
-		local db=A.db()
-		local stamp={
-			guid=subject().guid,
-			season=currentSeason(),
-			db=db,
-			matches=db and type(db.matches)=="table"and db.matches or nil,
-			count=db and type(db.matches)=="table"and#db.matches or nil,
-		}
-		local reuse=reason=="rated"or reason=="moved"
+		local stamp={guid=subject().guid,season=currentSeason(),mark=A.storeMark()}
 		if reuse and walked~=nil and walked.guid==stamp.guid
-			and walked.season==stamp.season and walked.db==stamp.db
-			and walked.matches==stamp.matches and walked.count==stamp.count then
+			and walked.season==stamp.season and A.storeMarkSame(walked.mark,stamp.mark)then
 			rows,via=A.finderRows(walked.rows),"kept"
 		else
 			rows=A.finderRows()
@@ -774,15 +758,22 @@ end
 
 schedule=function(reason)
 	if pending then
+		for i=1,#pending do
+			if pending[i]==reason then
+				return
+			end
+		end
+		pending[#pending+1]=reason
 		return
 	end
 	if not(C_Timer and type(C_Timer.After)=="function")then
 		return
 	end
-	pending=true
+	pending={reason}
 	C_Timer.After(0,function()
-		pending=false
-		local ok,err=pcall(pass,reason)
+		local reasons=pending
+		pending=nil
+		local ok,err=pcall(pass,reasons)
 		if not ok then
 			A.noteError(err,"finder-pass")
 		end
@@ -790,7 +781,7 @@ schedule=function(reason)
 end
 
 A.on("PVP_RATED_STATS_UPDATE",function()
-	if shownFrame(tip)then
+	if A.frameShown(tip)then
 		schedule("rated")
 	end
 end)
@@ -800,14 +791,14 @@ function A.finderHeardRated()
 end
 
 function A.finderRecordStored()
-	if shownFrame(PVEFrame)then
+	if A.frameShown(PVEFrame)then
 		schedule("stored")
 	end
 end
 
 function A.dropFinderWalk()
 	walked=nil
-	if shownFrame(PVEFrame)then
+	if A.frameShown(PVEFrame)then
 		schedule("stored")
 	end
 end
@@ -830,7 +821,7 @@ local function install(source)
 		PVPUIFrame:HookScript("OnHide",function()schedule("panel-hide")end)
 	end
 	local inPlace=(finderHooked and 1 or 0)+(showHooked and 1 or 0)+(panelHooked and 1 or 0)
-	A.trace("finder",{state="install",source=source,kept=inPlace})
+	A.trace("finder",{state="install",source=source,kept=inPlace},"ui")
 end
 
 A.on("PLAYER_LOGIN",function()
@@ -855,7 +846,7 @@ function A.finderReadout()
 			A.finderEnabled()and"on"or"off",
 			session or"none",
 			PVPUIFrame~=nil and"loaded"or"not loaded",
-			shownFrame(tip)and"shown"or"hidden"),
+			A.frameShown(tip)and"shown"or"hidden"),
 		("last pass: %s, anchor %s%s, %d row(s)%s"):format(
 			tostring(last.decision),last.anchor or"none",
 			last.check and(" ("..last.check..")")or"",#last.rows,

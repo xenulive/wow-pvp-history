@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.33
+-- WowPvpHistory 0.75.26
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -23,8 +23,7 @@ local FLAT={
 	faint={0.239,0.263,0.290},
 
 	accent={1,0.820,0},
-	win={0.310,0.780,0.470},
-	loss={0.880,0.360,0.340},
+	repBad={0.880,0.360,0.340},
 	level={0.620,0.640,0.670},
 
 	horde={0.784,0.180,0.220},
@@ -66,13 +65,9 @@ local FLAT={
 	sessionOpen={0.102,0.114,0.137},
 
 	underText={0.357,0.384,0.420},
-	underWin={0.310,0.780,0.470,0.30},
-	underLoss={0.880,0.360,0.340,0.30},
 	barMid={1,1,1,0.25},
 
-	heatLoss={0.878,0.361,0.341},
 	heatMid={0.165,0.180,0.208},
-	heatWin={0.310,0.780,0.471},
 	heatBlank={1,1,1,0.10},
 
 	tierBand={1,1,1,0.045},
@@ -130,16 +125,69 @@ BLIZZARD.chat="00ff00"
 local PALETTES={flat=FLAT,blizzard=BLIZZARD}
 local DEFAULT_THEME="blizzard"
 
+local RESULT_PAIRS={
+	green={
+		win={0.310,0.780,0.470},
+		loss={0.880,0.360,0.340},
+		heatWin={0.310,0.780,0.471},
+		heatLoss={0.878,0.361,0.341},
+		underWin={0.310,0.780,0.470,0.30},
+		underLoss={0.880,0.360,0.340,0.30},
+	},
+	blue={
+		win={0.486,0.765,1.000},
+		loss={0.851,0.400,0.102},
+		heatWin={0.486,0.765,1.000},
+		heatLoss={0.851,0.400,0.102},
+		underWin={0.486,0.765,1.000,0.30},
+		underLoss={0.851,0.400,0.102,0.30},
+	},
+	white={
+		win={1,1,1},
+		loss={0.451,0.478,0.518},
+		heatWin={1,1,1},
+		heatLoss={0.451,0.478,0.518},
+		underWin={1,1,1,0.30},
+		underLoss={0.451,0.478,0.518,0.30},
+	},
+}
+local DEFAULT_PAIR="green"
+
+local builtPalettes={flat={},blizzard={}}
+
+local function storedChoice(key,known,default)
+	local db=A.db and A.db()
+	local ui=db and db.ui
+	local stored=type(ui)=="table"and ui[key]or nil
+	if type(stored)=="string"and known[stored]then
+		return stored
+	end
+	return default
+end
+
+local function storedPairName()
+	return storedChoice("resultPair",RESULT_PAIRS,DEFAULT_PAIR)
+end
+
+local function builtPalette(theme,pair)
+	local held=builtPalettes[theme][pair]
+	if held==nil then
+		held={}
+		for name,value in pairs(PALETTES[theme])do
+			held[name]=value
+		end
+		for name,value in pairs(RESULT_PAIRS[pair])do
+			held[name]=value
+		end
+		builtPalettes[theme][pair]=held
+	end
+	return held
+end
+
 local heldTheme
 
 local function storedThemeName()
-	local db=A.db and A.db()
-	local ui=db and db.ui
-	local stored=type(ui)=="table"and ui.theme or nil
-	if type(stored)=="string"and PALETTES[stored]then
-		return stored
-	end
-	return DEFAULT_THEME
+	return storedChoice("theme",PALETTES,DEFAULT_THEME)
 end
 
 function A.theme()
@@ -149,8 +197,25 @@ function A.theme()
 	return storedThemeName()
 end
 
+local lockedTheme
+
+local function unlockTheme(before,ok,...)
+	lockedTheme=before
+	if not ok then
+		error((...),0)
+	end
+	return...
+end
+
+function A.withTheme(theme,fn,...)
+	local before=lockedTheme
+	lockedTheme=PALETTES[theme]and theme or nil
+	return unlockTheme(before,pcall(fn,...))
+end
+
 function A.palette()
-	return PALETTES[A.theme()]or BLIZZARD
+	local theme=lockedTheme or A.theme()
+	return builtPalette(PALETTES[theme]and theme or DEFAULT_THEME,storedPairName())
 end
 
 function A.color(name)
@@ -335,6 +400,11 @@ function A.chipShortText(cell)
 	return A.specShortName(cell.classToken,cell.spec)or A.chipText(cell)
 end
 
+function A.chipFormText(member,form)
+	local spelled={spec=member.spec,class=member.class,classToken=member.classToken}
+	return form=="short"and A.chipShortText(spelled)or A.chipText(spelled)
+end
+
 function A.specIcon(classToken,spec)
 	if type(classToken)~="string"or type(spec)~="string"or spec==""then
 		return nil
@@ -453,7 +523,7 @@ function A.drawSpec(cell,classToken,spec,room,opts)
 		return kind,size
 	end
 	local drawn=math.min(wide,nameRoom)
-	name:SetWidth(drawn)
+	name:SetWidth(wide>nameRoom and nameRoom or 0)
 	name:Show()
 	return kind,size+gap+drawn
 end
@@ -464,7 +534,7 @@ function A.drawComp(cells,members,room,opts)
 	end
 	members=type(members)=="table"and members or{}
 	local count=math.min(#members,#cells)
-	local gap=A.metric("compChipGap")
+	local gap=opts and type(opts.between)=="number"and opts.between or A.metric("compChipGap")
 	local each=nil
 	if type(room)=="number"and count>0 then
 		each=math.floor((room-gap*(count-1))/count)
@@ -509,7 +579,22 @@ function A.chatPrefix()
 	return"|cff"..A.chatColor().."PvPHistory:|r "
 end
 
-local function repaintTheme()
+local function repaintOthers()
+	if type(A.refreshNotes)=="function"then
+		pcall(A.refreshNotes)
+	end
+	if type(A.refreshCompareWindow)=="function"then
+		pcall(A.refreshCompareWindow)
+	end
+	if type(A.overlayRepaint)=="function"then
+		pcall(A.overlayRepaint,"setting","palette")
+	end
+	if type(A.tallyPlateRefresh)=="function"then
+		pcall(A.tallyPlateRefresh,"palette")
+	end
+end
+
+local function repaintTheme(notify)
 	pcall(function()
 		if A.applyChrome then
 			A.applyChrome()
@@ -520,8 +605,12 @@ local function repaintTheme()
 		if A.refreshWindow then
 			A.refreshWindow()
 		end
-		if A.notifyThemeSetting then
-			A.notifyThemeSetting()
+	end)
+	repaintOthers()
+	pcall(function()
+		local told=notify or A.notifyThemeSetting
+		if told then
+			told()
 		end
 	end)
 end
@@ -592,6 +681,48 @@ function A.themeChoices()
 	}
 end
 
+function A.resultPair()
+	return storedPairName()
+end
+
+function A.resultPairChoices()
+	return{
+		{value="green",label="Green and red",tooltip="Wins in green, losses in red."},
+		{value="blue",label="Blue and orange",tooltip="Wins in blue, losses in orange."},
+		{value="white",label="White and gray",tooltip="Wins in white, losses in gray."},
+	}
+end
+
+function A.resultPairColor(pair,entry)
+	local held=RESULT_PAIRS[pair]
+	local c=held and held[entry]
+	if c==nil then
+		return nil
+	end
+	return c[1],c[2],c[3],c[4]
+end
+
+function A.setResultPair(name,via)
+	if type(name)~="string"or RESULT_PAIRS[name]==nil then
+		return false
+	end
+	local db=A.db and A.db()
+	if not(db and type(db.ui)=="table")then
+		return false
+	end
+
+	local moved=storedPairName()~=name
+	if moved then
+		db.ui.resultPair=name~=DEFAULT_PAIR and name or nil
+		repaintTheme(A.notifyResultPairSetting)
+	end
+	if type(A.trace)=="function"then
+		A.trace("palette",{pair=name,largeText=A.largeText(),dense=A.denseRows(),via=via or"call",
+			state=moved and"moved"or"drawn"},"ui")
+	end
+	return moved
+end
+
 local SIZES={
 	huge={size=34,flags=""},
 	bannerName={size=16,flags="OUTLINE"},
@@ -607,6 +738,7 @@ local SIZES={
 	medium={size=15,flags=""},
 	body={size=12,flags=""},
 	section={size=13,flags=""},
+	windowTitle={size=12,flags=""},
 	label={size=11,flags=""},
 	tiny={size=10,flags="OUTLINE"},
 	micro={size=9,flags="OUTLINE"},
@@ -628,6 +760,8 @@ local ROLES={
 	label={file="IBMPlexMono-SemiBold.ttf",scale="label",fallback="GameFontDisableSmall"},
 	heading={file="BarlowSemiCondensed-SemiBold.ttf",scale="medium",fallback="GameFontNormal"},
 	section={file="BarlowSemiCondensed-SemiBold.ttf",scale="section",fallback="GameFontNormal"},
+	windowTitle={file="BarlowSemiCondensed-SemiBold.ttf",scale="windowTitle",fallback="GameFontNormal",
+		clientSize=true},
 	headingLarge={file="BarlowSemiCondensed-SemiBold.ttf",scale="large",fallback="GameFontNormalLarge"},
 	announceName={file="BarlowSemiCondensed-SemiBold.ttf",scale="bannerName",fallback="GameFontNormalLargeOutline",
 		names=true},
@@ -707,23 +841,27 @@ local function gatedFace(spec)
 	return false
 end
 
-local function build(role,spec)
+local function roleFlags(spec)
+	if spec.flags~=nil then
+		return spec.flags
+	end
+	return(SIZES[spec.scale]or SIZES.body).flags
+end
+
+local function build(role,spec,key)
 	if type(CreateFont)~="function"then
 		return _G[spec.fallback]
 	end
 
-	local object=CreateFont("WowPvpHistoryFont_"..role)
+	local object=CreateFont("WowPvpHistoryFont_"..(key or role))
 	if type(object)~="table"then
 		return _G[spec.fallback]
 	end
 
-	local scale=SIZES[spec.scale]or SIZES.body
-	local flags=scale.flags
-	if spec.flags~=nil then
-		flags=spec.flags
-	end
+	local flags=roleFlags(spec)
+	local size=A.fontSize(role)
 	local ok=pcall(function()
-		object:SetFont(ADDON_PATH.."fonts\\"..spec.file,scale.size,flags)
+		object:SetFont(ADDON_PATH.."fonts\\"..spec.file,size,flags)
 	end)
 
 	local path=ok and object.GetFont and object:GetFont()or nil
@@ -756,16 +894,16 @@ local function alphabetFile(alphabet)
 	return nil
 end
 
-local function buildFamily(role,spec)
+local function buildFamily(role,spec,key)
 	local held={created=false,game={},own={}}
-	familyBuilds[role]=held
+	familyBuilds[key]=held
 
 	local face
 	if gatedFace(spec)then
 		face=_G[spec.fallback]
 		held.reason="gated"
 	else
-		face=build(role,spec)or _G[spec.fallback]
+		face=build(role,spec,key)or _G[spec.fallback]
 		if face==_G[spec.fallback]then
 			held.reason="face-fallback"
 		end
@@ -778,11 +916,8 @@ local function buildFamily(role,spec)
 
 	local object=face
 	if held.reason==nil then
-		local scale=SIZES[spec.scale]or SIZES.body
-		local flags=scale.flags
-		if spec.flags~=nil then
-			flags=spec.flags
-		end
+		local size=A.fontSize(role)
+		local flags=roleFlags(spec)
 		local own=ADDON_PATH.."fonts\\"..spec.file
 		local members={}
 		for i=1,#NAME_ALPHABETS do
@@ -796,10 +931,10 @@ local function buildFamily(role,spec)
 					held.own[#held.own+1]=alphabet
 				end
 			end
-			members[i]={alphabet=alphabet,file=file,height=scale.size,flags=flags}
+			members[i]={alphabet=alphabet,file=file,height=size,flags=flags}
 		end
 
-		local ok,family=pcall(createFamily,"WowPvpHistoryFamily_"..role,members)
+		local ok,family=pcall(createFamily,"WowPvpHistoryFamily_"..(key or role),members)
 		local path=nil
 		if ok and type(family)=="table"and type(family.GetFont)=="function"then
 			local read,file=pcall(family.GetFont,family)
@@ -833,16 +968,17 @@ function A.font(role)
 	if not spec then
 		return _G[DEFAULT_FALLBACK]
 	end
-	if fonts[role]==nil then
+	local key=A.fontRaised(role)and(role.."Large")or role
+	if fonts[key]==nil then
 		if spec.names then
-			fonts[role]=buildFamily(role,spec)or _G[spec.fallback]
+			fonts[key]=buildFamily(role,spec,key)or _G[spec.fallback]
 		elseif gatedFace(spec)then
-			fonts[role]=_G[spec.fallback]
+			fonts[key]=_G[spec.fallback]
 		else
-			fonts[role]=build(role,spec)or _G[spec.fallback]
+			fonts[key]=build(role,spec,key)or _G[spec.fallback]
 		end
 	end
-	return fonts[role]
+	return fonts[key]
 end
 
 function A.fontFamily(role)
@@ -900,12 +1036,15 @@ function A.askCardOverRoom(room)
 	return math.max(0,math.floor(room))
 end
 
+local function positiveOrNought(value)
+	return(type(value)=="number"and value>0)and value or 0
+end
+
 function A.askCardRow(parts,room)
 	parts=type(parts)=="table"and parts or{}
 	local held=(type(room)=="number"and room>0)and room or 0
 	local function need(key)
-		local value=parts[key]
-		return(type(value)=="number"and value>0)and value or 0
+		return positiveOrNought(parts[key])
 	end
 
 	local gap=A.metric("cardHeadGap")
@@ -978,7 +1117,8 @@ function A.fittedForm(fontString,room,forms)
 	if type(forms)~="table"or#forms==0 then
 		return nil,nil,false
 	end
-	if type(room)~="number"or room<=0 then
+	room=A.unitFigure(room)
+	if room==nil or room<=0 then
 		return nil,nil,false
 	end
 	for i=1,#forms do
@@ -1118,6 +1258,14 @@ function A.style(fontString,role,colorName)
 	return true
 end
 
+function A.lineText(parent,role,justify,colorName)
+	local fs=parent:CreateFontString(nil,"OVERLAY")
+	A.style(fs,role,colorName)
+	fs:SetJustifyH(justify or"LEFT")
+	fs:SetWordWrap(false)
+	return fs
+end
+
 A.GRIP_ART={
 	up="Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up",
 	hover="Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight",
@@ -1168,7 +1316,8 @@ local METRICS={
 
 	titleInset=56,
 
-	titleTop=6,
+	titleBarTop={blizzard=1,flat=0},
+	titleBarBottom={blizzard=21,flat=24},
 
 	rowHeight=16,
 
@@ -1182,6 +1331,8 @@ local METRICS={
 
 	rowPip=6,
 	rowPipGap=2,
+
+	rowStar=12,
 
 	rowChangeHalf=18,
 	rowChangeBar=6,
@@ -1214,6 +1365,7 @@ local METRICS={
 	roundCardMin=120,
 	roundCardLine=2,
 	roundCardEdge=2,
+	buildIcon=22,
 
 	classEdge=3,
 
@@ -1224,6 +1376,8 @@ local METRICS={
 	rowRole=34,
 
 	rowDispels=33,
+
+	rowHonor=44,
 
 	rowDamageValue=52,
 
@@ -1325,6 +1479,10 @@ local METRICS={
 	standingSquare=12,
 	duelPanel=260,
 	duelPanelRow=38,
+	partnerPanel=300,
+	partnerWl=44,
+	partnerRating=44,
+	partnerLast=70,
 
 	rowLabelPad=4,
 
@@ -1382,6 +1540,7 @@ local METRICS={
 	playerLane=3,
 	playerLaneGap=10,
 	playerColMet=40,
+	playerColTrend=44,
 	playerColSide=92,
 
 	standPad=8,
@@ -1435,6 +1594,16 @@ local METRICS={
 	announceSideGap=14,
 	announceSideRule=1,
 	announceSideRuleHeight=26,
+	announceCardWidth=320,
+	announceCardPad=10,
+	announceCardBar=5,
+	announceCardBarGap=8,
+	announceCardHead=18,
+	announceCardRowGap=4,
+	announceCardRunGap=8,
+	announceCardSubGap=2,
+	announceHeadlinePadX=12,
+	announceHeadlinePadY=7,
 
 	compShareBar=66,
 	compShareAlpha=0.22,
@@ -1504,7 +1673,7 @@ local METRICS={
 	tileLabelGap=2,
 	tileValueGap=1,
 
-	notesListWidth=400,
+	notesListWidth=450,
 
 	searchHeight=20,
 
@@ -1555,6 +1724,7 @@ local METRICS={
 
 	cardHead=30,
 	cardRow=28,
+	templateBox=240,
 	setCardPad=12,
 	cardIndent=16,
 	setCardGap=8,
@@ -1563,8 +1733,8 @@ local METRICS={
 	toggleHeight=18,
 	toggleKnob=14,
 
-	announceCardPreviewW=160,
-	announceCardPreviewH=74,
+	announceCardPreviewW=190,
+	announceCardPreviewH=116,
 	paneHeader=34,
 
 	meterBar=10,
@@ -1613,6 +1783,11 @@ local METRICS={
 
 	stepMin=26,
 	stepFigure=44,
+
+	pairSwatch=12,
+	pairSwatchGap=2,
+	pairSwatchPad=3,
+	pairSwatchEdge=1,
 
 	tabUnderline=2,
 
@@ -1685,6 +1860,10 @@ METRICS.rowColCrest=METRICS.rowColCrest+METRICS.rowLeadInset
 METRICS.rowColPick=METRICS.compareBox+METRICS.rowLeadInset
 METRICS.compareBoxInset=METRICS.rowLabelPad+METRICS.rowLeadInset
 
+METRICS.rowColStar=METRICS.rowStar+METRICS.rowLeadInset
+
+A.STAR_TEXTURE="Interface\\TargetingFrame\\UI-RaidTargetingIcon_1"
+
 METRICS.compareFoot=METRICS.controlHeight+METRICS.paneGap
 METRICS.compareFloorHeight=METRICS.headerHeight+METRICS.compareHead+METRICS.paneGap
 	+METRICS.compareFoot+METRICS.margin
@@ -1740,19 +1919,26 @@ end
 function A.rosterRowWidth(look,objectives)
 	local gap=METRICS.rowCellGap
 	local left=METRICS.classEdge+METRICS.rowNamePad+METRICS.rowName
+	local honor=gap+A.rosterHonorWidth()
 	if look=="team"then
 		local cells=type(objectives)=="number"and math.max(0,math.min(objectives,
 			METRICS.rowObjectiveMax))or 0
-		local right=gap+METRICS.rowDispels+gap+METRICS.rowKb+gap+METRICS.rowHeal
+		local right=honor+gap+METRICS.rowDispels+gap+METRICS.rowKb+gap+METRICS.rowHeal
 			+gap+METRICS.rowHealBar+gap+METRICS.rowDamageValue+gap+METRICS.rowDamageBar
 			+cells*(gap+METRICS.rowObjective)
 			+gap+METRICS.rowRole+gap+METRICS.rowSpec
 		return left+METRICS.rowIcon+METRICS.headCrestGap+gap+right
 	end
-	local right=gap+METRICS.rowDispels
+	local right=honor+gap+METRICS.rowDispels
 		+gap+METRICS.rowKb+gap+METRICS.rowHeal+gap+METRICS.rowBar
 		+gap+METRICS.rowRole+gap+METRICS.rowSpec
 	return left+gap+right
+end
+
+function A.rosterHonorWidth()
+	local floor=A.headerFloor("HONOR")
+	local cell=A.metric("rowHonor")
+	return floor>cell and floor or cell
 end
 
 function A.objectiveCellWidth(short)
@@ -1820,12 +2006,124 @@ function A.barSplit(bar,share)
 	return win,bar-win
 end
 
+local LARGE_ROLES={
+	bodyText=true,bodyMedium=true,nameText=true,nameMedium=true,rowClock=true,
+	rowNote=true,number=true,numberSmall=true,label=true,
+}
+
+local LARGE_STEP=1
+
+local ROW_LINES={
+	rowListRow={lines={"bodyText"},gap=0},
+	gridRow={lines={"numberSmall"},gap=0},
+	gridRowFold={lines={"label","rowClock"},gap=math.floor(METRICS.rowExpandPad*0.5)},
+	rowDayRow={lines={"label"},gap=0},
+	playerRow={lines={"bodyMedium","rowNote"},gap=2},
+}
+
+local DENSE_MARKS={rowChip="rowClock",gridTickHeight=true,compareBox=true}
+
+local DENSE_FACTOR=2/3
+local DENSE_PAD=4
+
+local function lookStored(key)
+	local db=A.db and A.db()
+	local ui=db and db.ui
+	return type(ui)=="table"and ui[key]==true
+end
+
+function A.largeText()
+	return lookStored("largeText")
+end
+
+function A.denseRows()
+	return lookStored("denseRows")
+end
+
+function A.fontRaised(role)
+	return LARGE_ROLES[role]==true and lookStored("largeText")
+end
+
+function A.largeTextRoles()
+	local out={}
+	for role in pairs(LARGE_ROLES)do
+		out[#out+1]=role
+	end
+	table.sort(out)
+	return out
+end
+
+function A.denseFloor(name)
+	local spec=ROW_LINES[name]
+	if spec~=nil then
+		local block=spec.gap*(#spec.lines-1)+DENSE_PAD
+		for i=1,#spec.lines do
+			block=block+A.fontSize(spec.lines[i])
+		end
+		return block
+	end
+	local mark=DENSE_MARKS[name]
+	if mark==nil then
+		return nil
+	end
+	return mark==true and 1 or(A.fontSize(mark)+DENSE_PAD)
+end
+
+local function lookMetric(name,value)
+	local spec=ROW_LINES[name]
+	if spec~=nil and lookStored("largeText")then
+		for i=1,#spec.lines do
+			if LARGE_ROLES[spec.lines[i]]then
+				value=value+LARGE_STEP
+			end
+		end
+	end
+	if lookStored("denseRows")then
+		value=math.max(math.floor(value*DENSE_FACTOR+0.5),A.denseFloor(name))
+	end
+	return value
+end
+
+function A.listRowTwoLine()
+	local line=A.fontSize("bodyText")+2
+	return math.max(A.metric("rowListRow"),line*2+DENSE_PAD)
+end
+
+local function setLook(key,on,via,notify)
+	local db=A.db and A.db()
+	if not(db and type(db.ui)=="table")then
+		return false
+	end
+	local moved=lookStored(key)~=(on==true)
+	if moved then
+		db.ui[key]=on==true or nil
+		repaintTheme(notify)
+	end
+	if type(A.trace)=="function"then
+		A.trace("palette",{pair=storedPairName(),largeText=A.largeText(),dense=A.denseRows(),
+			via=via or"call",state=moved and"moved"or"drawn"},"ui")
+	end
+	return moved
+end
+
+function A.setLargeText(on,via)
+	return setLook("largeText",on,via,A.notifyLargeTextSetting)
+end
+
+function A.setDenseRows(on,via)
+	return setLook("denseRows",on,via,A.notifyDenseRowsSetting)
+end
+
 function A.metric(name)
 	local share=ASK_SHARES[name]
 	if share~=nil then
 		return(select(share,A.askColumnShares()))
 	end
-	return A.themeMetric(name,A.theme())
+	local value=A.themeMetric(name,lockedTheme or A.theme())
+	if ROW_LINES[name]~=nil or DENSE_MARKS[name]~=nil then
+		return lookMetric(name,value)
+	end
+	return value
 end
 
 function A.themeMetric(name,theme)
@@ -1852,6 +2150,12 @@ function A.fontSize(role)
 	local scale=spec and SIZES[spec.scale]
 	if not scale then
 		return SIZES.body.size
+	end
+	if spec.clientSize then
+		return A.clientTitleSize(scale.size)
+	end
+	if A.fontRaised(role)then
+		return scale.size+LARGE_STEP
 	end
 	return scale.size
 end
@@ -1977,16 +2281,13 @@ end
 
 function A.compColumnTop(parts)
 	parts=type(parts)=="table"and parts or{}
-	local function held(value)
-		return(type(value)=="number"and value>0)and value or 0
-	end
-	local band=held(parts.band)
+	local band=positiveOrNought(parts.band)
 
 	local noteTop
-	local headingFoot=2+held(parts.heading)
+	local headingFoot=2+positiveOrNought(parts.heading)
 	local anchorFoot,anchorDrop=headingFoot,4
 	if parts.head~=nil then
-		anchorFoot,anchorDrop=headingFoot+4+held(parts.head),2
+		anchorFoot,anchorDrop=headingFoot+4+positiveOrNought(parts.head),2
 	end
 	if band>0 then
 		noteTop=anchorFoot+anchorDrop+band+6
@@ -1995,18 +2296,15 @@ function A.compColumnTop(parts)
 	else
 		noteTop=anchorFoot+anchorDrop+6
 	end
-	local noteFoot=noteTop+held(parts.note)
+	local noteFoot=noteTop+positiveOrNought(parts.note)
 
-	return noteFoot+8+held(parts.title),noteFoot
+	return noteFoot+8+positiveOrNought(parts.title),noteFoot
 end
 
 function A.specViewStack(parts)
 	parts=type(parts)=="table"and parts or{}
-	local function held(value)
-		return(type(value)=="number"and value>0)and value or 0
-	end
-	local foot=held(parts.foot)
-	return 2+held(parts.heading),foot>0 and(foot+A.metric("paneGap"))or 0
+	local foot=positiveOrNought(parts.foot)
+	return 2+positiveOrNought(parts.heading),foot>0 and(foot+A.metric("paneGap"))or 0
 end
 
 function A.askPaneRoom(parts)
@@ -2014,29 +2312,28 @@ function A.askPaneRoom(parts)
 	if type(parts.host)~="number"then
 		return nil
 	end
-	local function held(value)
-		return(type(value)=="number"and value>0)and value or 0
-	end
-	local room=parts.host-2-held(parts.heading)-4-held(parts.head)
-		-METRICS.paneGap-held(parts.note)-held(parts.band)
+	local room=parts.host-2-positiveOrNought(parts.heading)-4-positiveOrNought(parts.head)
+		-METRICS.paneGap-positiveOrNought(parts.note)-positiveOrNought(parts.band)
 	if room<0 then
 		room=0
 	end
 	return room
 end
 
+function A.askTableRow(key)
+	return A.metric(key=="builds"and"rowListRow"or"rowHeight")
+end
+
 function A.askBandRoom(host,parts)
 	parts=type(parts)=="table"and parts or{}
-	local function held(value)
-		return(type(value)=="number"and value>0)and value or 0
-	end
-	local wanted=held(parts.wanted)
+	local wanted=positiveOrNought(parts.wanted)
 	if type(host)~="number"or host<=0 or wanted<=0 then
 		return 0
 	end
 
-	local spare=host-2-held(parts.heading)-4-held(parts.head)
-		-METRICS.paneGap-held(parts.note)-METRICS.paneGap-METRICS.rowHeight
+	local tableRow=positiveOrNought(parts.tableRow)>0 and parts.tableRow or METRICS.rowHeight
+	local spare=host-2-positiveOrNought(parts.heading)-4-positiveOrNought(parts.head)
+		-METRICS.paneGap-positiveOrNought(parts.note)-METRICS.paneGap-tableRow
 	local room=wanted
 	local share=math.floor(host*0.5)
 	if share<room then
@@ -2105,6 +2402,17 @@ local function rowDays(rows)
 	return days
 end
 
+local function landingTop(rows,tops,days,pin,i)
+	if pin>0 and days[i]~=nil and days[i]~=i then
+		if type(rows[i])=="table"and rows[i].names then
+			return tops[days[i]]
+		end
+		local top=tops[i]-pin
+		return top>0 and top or 0
+	end
+	return tops[i]
+end
+
 function A.rowEdges(rows,offset,visible,base,pin,cut)
 	base=(type(base)=="number"and base>0)and base or 1
 	pin=(type(pin)=="number"and pin>0)and pin or 0
@@ -2124,17 +2432,6 @@ function A.rowEdges(rows,offset,visible,base,pin,cut)
 		offset=0
 	end
 
-	local function target(i)
-		if pin>0 and days[i]~=nil and days[i]~=i then
-			if type(rows[i])=="table"and rows[i].names then
-				return tops[days[i]]
-			end
-			local top=tops[i]-pin
-			return top>0 and top or 0
-		end
-		return tops[i]
-	end
-
 	if range>0 then
 		out.atEnd=offset>=range-EDGE_SLACK
 		if out.atEnd then
@@ -2145,7 +2442,7 @@ function A.rowEdges(rows,offset,visible,base,pin,cut)
 				if tops[i]>range+pin+EDGE_SLACK then
 					break
 				end
-				local at=target(i)
+				local at=landingTop(rows,tops,days,pin,i)
 				if at<=range+EDGE_SLACK then
 					local gap=math.abs(at-offset)
 					if gap<bestGap then
@@ -2229,9 +2526,9 @@ function A.rowGap(rows,index,edges,base)
 	local offset=type(edges.offset)=="number"and edges.offset or 0
 	local visible=type(edges.visible)=="number"and edges.visible or 0
 	local top=offset+(edges.pinned~=nil and(edges.pin or 0)or 0)
-	if(edges.first~=nil and index<edges.first)
-		or(edges.first==nil and(tops[index+1]or content)<=top)then
-		return"above",top-(tops[index+1]or content),edges.first and(edges.first-index)or 0
+	local below=tops[index+1]or content
+	if(edges.first~=nil and index<edges.first)or(edges.first==nil and below<=top)then
+		return"above",top-below,edges.first and(edges.first-index)or 0
 	end
 	return"below",tops[index]-(offset+visible),edges.last and(index-edges.last)or 0
 end
@@ -2261,18 +2558,6 @@ function A.rowStep(rows,offset,visible,base,steps,pin)
 		offset=0
 	end
 
-	local function landing(i)
-		local row=type(rows[i])=="table"and rows[i]or{}
-		if pin>0 and days[i]~=nil and days[i]~=i then
-			if row.names then
-				return tops[days[i]]
-			end
-			local top=tops[i]-pin
-			return top>0 and top or 0
-		end
-		return tops[i]
-	end
-
 	local sign=steps<0 and-1 or 1
 	local index=from+steps
 	while true do
@@ -2282,7 +2567,7 @@ function A.rowStep(rows,offset,visible,base,steps,pin)
 		if tops[index]==nil then
 			return range
 		end
-		local target=landing(index)
+		local target=landingTop(rows,tops,days,pin,index)
 		if target>range then
 			target=range
 		end
@@ -2337,6 +2622,11 @@ function A.objectiveCardsHeight()
 		+A.fontSize("label")+A.metric("roundCardLine")+A.fontSize("number")
 end
 
+function A.buildCardHeight()
+	return A.metric("roundCardPad")*2+A.fontSize("label")+A.metric("roundCardLine")
+		+math.max(A.metric("buildIcon"),A.fontSize("heading"),A.metric("controlHeight"))
+end
+
 function A.paceHeight(rounds)
 	if type(rounds)~="number"or rounds<1 then
 		return 0
@@ -2387,9 +2677,96 @@ local TEMPLATE_ART={
 
 local TITLE_SUBLEVEL=7
 
+local clientTitle=nil
+
+local TITLE_SOURCE="GameFontNormal"
+
+function A.clientTitleSize(fallback)
+	if clientTitle==nil then
+		local object=_G[TITLE_SOURCE]
+		local ok,_,size=pcall(function()
+			return object:GetFont()
+		end)
+		if ok and type(size)=="number"and size>=8 and size<=24 then
+			clientTitle=size
+		else
+			return fallback
+		end
+	end
+	return clientTitle
+end
+
+function A.titleBarSpan()
+	local top,bottom=A.metric("titleBarTop"),A.metric("titleBarBottom")
+	return top,bottom,(top+bottom)/2
+end
+
+function A.seatWindowTitle(frame)
+	local title=type(frame)=="table"and frame.windowTitleText or nil
+	if type(title)~="table"then
+		return false
+	end
+	local _,_,middle=A.titleBarSpan()
+	local inset=A.metric("titleInset")
+	title:ClearAllPoints()
+	title:SetPoint("LEFT",frame,"TOPLEFT",inset,-middle)
+	title:SetPoint("RIGHT",frame,"TOPRIGHT",-inset,-middle)
+	if type(A.seatMatchSteps)=="function"then
+		A.seatMatchSteps(frame)
+	end
+	return true
+end
+
+function A.traceWindowTitle(frame)
+	local title=type(frame)=="table"and frame.windowTitleText or nil
+	if type(title)~="table"then
+		return false
+	end
+	local function read(region,method)
+		local ok,value=pcall(region[method],region)
+		if ok and A.canRead(value)and type(value)=="number"then
+			return A.unitFigure(value)
+		end
+		return nil
+	end
+	local top,bottom=A.titleBarSpan()
+	local frameTop=read(frame,"GetTop")
+	local barTop=frameTop and A.unitFigure(frameTop-top)or nil
+	local barBottom=frameTop and A.unitFigure(frameTop-bottom)or nil
+	local boxTop,boxBottom=read(title,"GetTop"),read(title,"GetBottom")
+	local above=boxTop and barTop and A.unitFigure(barTop-boxTop)or nil
+	local below=boxBottom and barBottom and A.unitFigure(boxBottom-barBottom)or nil
+	local measured=above~=nil and below~=nil and bottom-top>0 and boxTop>boxBottom
+	A.trace("title",{
+		kind=frame.windowName or(frame.GetName and frame:GetName())or"window",theme=A.theme(),
+		titleSize=A.fontSize("windowTitle"),titleBoxTop=boxTop,titleBoxBottom=boxBottom,
+		barTop=barTop,barBottom=barBottom,clearAbove=above,clearBelow=below,
+		titleMeasured=measured,titleFit=measured and above>=0 and below>=0,
+	},"ui")
+	return measured
+end
+
+function A.setWindowTitle(frame,text)
+	local title=type(frame)=="table"and frame.windowTitleText or nil
+	if type(title)~="table"then
+		return false
+	end
+	title:SetText(text)
+	if frame:IsShown()then
+		A.traceWindowTitle(frame)
+	end
+	return true
+end
+
 function A.windowTitle(frame)
 	local title=frame:CreateFontString(nil,"OVERLAY","GameFontNormal")
 	title:SetDrawLayer("OVERLAY",TITLE_SUBLEVEL)
+	title:SetJustifyH("CENTER")
+	title:SetWordWrap(false)
+	A.style(title,"windowTitle","bright")
+	frame.windowTitleText=title
+	A.seatWindowTitle(frame)
+	frame:HookScript("OnShow",A.traceWindowTitle)
 	return title
 end
 
@@ -2408,23 +2785,7 @@ local function ensureTextures(frame)
 	frame.styleTitle:SetPoint("TOPRIGHT",frame,"TOPRIGHT",0,0)
 	frame.styleTitle:SetHeight(24)
 
-	frame.styleEdges={}
-	for i=1,4 do
-		frame.styleEdges[i]=frame:CreateTexture(nil,"BORDER")
-	end
-	local e=frame.styleEdges
-	e[1]:SetPoint("TOPLEFT",frame,"TOPLEFT",0,0)
-	e[1]:SetPoint("TOPRIGHT",frame,"TOPRIGHT",0,0)
-	e[1]:SetHeight(1)
-	e[2]:SetPoint("BOTTOMLEFT",frame,"BOTTOMLEFT",0,0)
-	e[2]:SetPoint("BOTTOMRIGHT",frame,"BOTTOMRIGHT",0,0)
-	e[2]:SetHeight(1)
-	e[3]:SetPoint("TOPLEFT",frame,"TOPLEFT",0,0)
-	e[3]:SetPoint("BOTTOMLEFT",frame,"BOTTOMLEFT",0,0)
-	e[3]:SetWidth(1)
-	e[4]:SetPoint("TOPRIGHT",frame,"TOPRIGHT",0,0)
-	e[4]:SetPoint("BOTTOMRIGHT",frame,"BOTTOMRIGHT",0,0)
-	e[4]:SetWidth(1)
+	frame.styleEdges=A.hairlineEdges(frame)
 end
 
 function A.hairlineEdges(host)
@@ -2496,6 +2857,8 @@ function A.applyChrome()
 					frame.styleEdges[i]:SetColorTexture(r,g,b,a)
 				end
 			end
+
+			A.seatWindowTitle(frame)
 		end)
 
 		if ok then

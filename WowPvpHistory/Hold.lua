@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.33
+-- WowPvpHistory 0.75.26
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -28,6 +28,10 @@ local lastText
 local savedDrawn=false
 
 local lastRate,lastSign=false,nil
+
+local lastTier=nil
+
+local lastWidth,lastRoom=nil,nil
 
 local preview
 local standIn
@@ -174,6 +178,20 @@ local function layout(wordsText,wordsTone,secondsText,secondsTone)
 	pcall(seconds.ClearAllPoints,seconds)
 	pcall(seconds.SetPoint,seconds,"LEFT",words,"RIGHT",gap,0)
 	pcall(seconds.Show,seconds)
+	return wordsWidth+gap+secondsWidth
+end
+
+local function tierSuffix(record)
+	local own=type(record.participants)=="table"and record.character and record.participants[record.character]
+	local before,change=type(own)=="table"and own.rating or nil,type(own)=="table"and own.ratingChange or nil
+	if record.rated~=true or type(before)~="number"or type(change)~="number"then
+		return nil,"unrated"
+	end
+	local ok,distance,why=pcall(A.tierDistance,record.format,before+change)
+	if not ok or distance==nil then
+		return nil,ok and why or"no-ladder"
+	end
+	return("%d to %s"):format(distance.points,distance.tier),distance.points
 end
 
 local function drawSaving(elapsed)
@@ -221,11 +239,25 @@ local function drawSaved(record)
 	if delta~=nil then
 		lastSign=tone=="win"and"up"or(tone=="loss"and"down"or"flat")
 	end
+	local change=delta and(A.colorEscape(tone or"text")..delta.."|r")or nil
 	local drawn=number
 	if number and delta then
-		drawn=number.."  "..A.colorEscape(tone or"text")..delta.."|r"
+		drawn=number.."  "..change
 	end
-	layout(SAVED_TEXT,"win",drawn,"win")
+	local suffix=nil
+	lastTier,lastWidth,lastRoom="unrated",nil,nil
+	if number and delta then
+		suffix,lastTier=tierSuffix(record)
+	end
+	local full=layout(SAVED_TEXT,"win",suffix and(change.." "..A.colorEscape("dim")..suffix.."|r")or drawn,"win")
+	local room=coverWidth()
+	if suffix then
+		lastWidth,lastRoom=A.unitFigure(full),A.unitFigure(room)
+	end
+	if suffix and lastWidth and lastRoom and lastWidth>lastRoom then
+		suffix,lastTier=nil,"no-room"
+		layout(SAVED_TEXT,"win",drawn,"win")
+	end
 	if type(overlay.line)=="table"then
 		pcall(overlay.line.Hide,overlay.line)
 	end
@@ -233,11 +265,38 @@ local function drawSaved(record)
 	if number and delta then
 		lastText=lastText.."  "..delta
 	end
+	if suffix then
+		lastText=lastText.." "..suffix
+	end
 	return lastText
+end
+
+local function savedFields()
+	return lastRate,lastSign,lastTier,lastWidth,lastRoom
+end
+
+local function paintStandIn(made)
+	if type(made.ground)=="table"then
+		local r,g,b=A.color("field")
+		pcall(made.ground.SetColorTexture,made.ground,r,g,b,1)
+	end
+	local okWord,word=pcall(rawget,_G,"PVP_MATCH_LEAVE_BUTTON")
+	if not(okWord and type(word)=="string"and word~="")then
+		word="Leave Match"
+	end
+	local width=A.metric("holdStandInMargin")
+	local label=made.label
+	if type(label)=="table"then
+		pcall(A.style,label,"label","text")
+		pcall(label.SetText,label,word)
+		width=width+A.textRoom(label,word)
+	end
+	pcall(made.SetSize,made,width,A.metric("holdStandInHeight"))
 end
 
 local function standInFrame()
 	if standIn then
+		paintStandIn(standIn)
 		return standIn
 	end
 	if type(CreateFrame)~="function"or UIParent==nil then
@@ -252,22 +311,14 @@ local function standInFrame()
 	local ground=made.CreateTexture and made:CreateTexture(nil,"BACKGROUND")
 	if type(ground)=="table"then
 		pcall(ground.SetAllPoints,ground,made)
-		local r,g,b=A.color("field")
-		pcall(ground.SetColorTexture,ground,r,g,b,1)
+		made.ground=ground
 	end
-	local okWord,word=pcall(rawget,_G,"PVP_MATCH_LEAVE_BUTTON")
-	if not(okWord and type(word)=="string"and word~="")then
-		word="Leave Match"
-	end
-	local width=A.metric("holdStandInMargin")
 	local label=made.CreateFontString and made:CreateFontString(nil,"ARTWORK")
 	if type(label)=="table"then
-		pcall(A.style,label,"label","text")
 		pcall(label.SetPoint,label,"CENTER",made,"CENTER",0,0)
-		pcall(label.SetText,label,word)
-		width=width+A.textRoom(label,word)
+		made.label=label
 	end
-	pcall(made.SetSize,made,width,A.metric("holdStandInHeight"))
+	paintStandIn(made)
 	standIn=made
 	return standIn
 end
@@ -285,6 +336,30 @@ local function endPreview(why)
 	end
 	A.trace("hold/preview",{state="off",reason=why})
 	return true
+end
+
+local function newestRated()
+	local db=A.db()
+	if not(db and type(db.matches)=="table")then
+		return nil
+	end
+	local formats={}
+	for _,format in ipairs(A.ratedFormats())do
+		formats[format]=true
+	end
+	local best,bestAt,bestClass,bestNumber=nil,nil,-1,0
+	for i=1,#db.matches do
+		local record=db.matches[i]
+		if type(record)=="table"and record.rated==true and formats[record.format]then
+			local at=A.recordEpoch(record)
+			local class,number=A.matchIdRank(record.id)
+			if at~=nil and(bestAt==nil or at>bestAt
+				or(at==bestAt and(class>bestClass or(class==bestClass and number>bestNumber))))then
+				best,bestAt,bestClass,bestNumber=record,at,class,number
+			end
+		end
+	end
+	return best
 end
 
 function A.holdPreview(word,seconds)
@@ -305,14 +380,16 @@ function A.holdPreview(word,seconds)
 	end
 
 	local left
-	local newest
+	local newest,pick
 	if word=="saving"then
 		left=seconds==nil and PREVIEW_SECONDS or tonumber(seconds)
 		if left==nil or left~=left or left<0 or left>CAP then
 			return nil,"seconds"
 		end
 	else
-		newest=A.lastMatch()
+		newest=newestRated()
+		pick=newest~=nil and"rated"or"newest"
+		newest=newest or A.lastMatch()
 		if newest==nil or newest.id==nil then
 			return nil,"no-match"
 		end
@@ -326,16 +403,17 @@ function A.holdPreview(word,seconds)
 	lift(frame)
 
 	local text
-	local rateClause,rateSign
+	local rateClause,rateSign,tierDistance,width,room
 	if word=="saving"then
 		text=drawSaving(CAP-left)
 	else
 		text=drawSaved(newest)
-		rateClause,rateSign=lastRate,lastSign
+		rateClause,rateSign,tierDistance,width,room=savedFields()
 	end
-	preview={state=word,text=text}
+	preview={state=word,text=text,pick=pick}
 	pcall(overlay.Show,overlay)
-	A.trace("hold/preview",{state=word,text=text,rateClause=rateClause,rateSign=rateSign})
+	A.trace("hold/preview",{state=word,text=text,rateClause=rateClause,rateSign=rateSign,
+		tierDistance=tierDistance,width=width,room=room,pick=pick})
 	return word
 end
 
@@ -361,20 +439,20 @@ local function release(why)
 	end
 	local from=heldFrom
 	local text,saved=lastText,savedDrawn
-	local rateClause,rateSign
+	local rateClause,rateSign,tierDistance,width,room
 	if saved then
-		rateClause,rateSign=lastRate,lastSign
+		rateClause,rateSign,tierDistance,width,room=savedFields()
 	end
 	held,heldFrom,savedUntil=nil,nil,nil
 	lastText,savedDrawn=nil,false
-	lastRate,lastSign=false,nil
+	lastRate,lastSign,lastTier,lastWidth,lastRoom=false,nil,nil,nil,nil
 
 	if overlay then
 		pcall(overlay.Hide,overlay)
 	end
 
 	A.trace("hold/release",{source=why,off=A.unitFigure(since(from)),text=text,saved=saved,
-		rateClause=rateClause,rateSign=rateSign})
+		rateClause=rateClause,rateSign=rateSign,tierDistance=tierDistance,width=width,room=room})
 	return true
 end
 

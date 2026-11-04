@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.33
+-- WowPvpHistory 0.75.26
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -80,9 +80,13 @@ local function ownRow(record)
 	return type(row)=="table"and row or nil
 end
 
+local function onOneLadder(record)
+	return type(record)=="table"and A.movesRating(record.format)and A.oneLadder(record.format)
+		and record.rated~=false
+end
+
 function A.recordLadderPair(record)
-	if type(record)~="table"or not A.movesRating(record.format)or not A.oneLadder(record.format)
-		or record.rated==false then
+	if not onOneLadder(record)then
 		return nil
 	end
 	local row=ownRow(record)
@@ -99,8 +103,7 @@ function A.recordLadderPair(record)
 end
 
 function A.recordMmrPair(record)
-	if type(record)~="table"or not A.movesRating(record.format)or not A.oneLadder(record.format)
-		or record.rated==false then
+	if not onOneLadder(record)then
 		return nil
 	end
 	local row=ownRow(record)
@@ -191,6 +194,37 @@ function A.buildSessions(entries)
 	return sessions,unplaced
 end
 
+function A.sessionNeighbours(kind,id,format,character)
+	if id==nil or type(A.listEntries)~="function"then
+		return nil,nil,nil
+	end
+	local want=kind=="incomplete"and"incomplete"or"match"
+	local sessions=A.buildSessions((A.listEntries(format,character)))
+	for s=1,#sessions do
+		local list=sessions[s].entries
+		for i=1,#list do
+			local entry=list[i]
+			if entry.kind==want and entry.subject.id==id then
+				local before,after=nil,nil
+				for j=i+1,#list do
+					if list[j].kind=="match"then
+						before=list[j]
+						break
+					end
+				end
+				for j=i-1,1,-1 do
+					if list[j].kind=="match"then
+						after=list[j]
+						break
+					end
+				end
+				return before,after,sessions[s]
+			end
+		end
+	end
+	return nil,nil,nil
+end
+
 function A.sessionsFlat(sessions)
 	if type(sessions)~="table"then
 		return true
@@ -201,6 +235,16 @@ function A.sessionsFlat(sessions)
 		end
 	end
 	return true
+end
+
+local function dayKeyNoon(key,shift)
+	local y,m,d=tostring(key):match("^(%d+)%-(%d+)%-(%d+)$")
+	if y==nil then
+		return nil
+	end
+	local okAt,noon=pcall(time,{year=tonumber(y),month=tonumber(m),day=tonumber(d)+(shift or 0),
+		hour=12})
+	return okAt and type(noon)=="number"and noon or nil
 end
 
 local EVENING_HOUR=17
@@ -242,9 +286,8 @@ function A.sessionDayForms(stamp,now)
 		return{long}
 	end
 	local forms={long}
-	local y,m,d=tostring(A.dayKey(stamp)):match("^(%d+)%-(%d+)%-(%d+)$")
-	local okAt,noon=pcall(time,{year=tonumber(y),month=tonumber(m),day=tonumber(d),hour=12})
-	if y and okAt and type(noon)=="number"then
+	local noon=dayKeyNoon(A.dayKey(stamp))
+	if noon~=nil then
 		local okParts,weekday,day,month=pcall(function()
 			return date("%a",noon),tonumber(date("%d",noon)),date("%b",noon)
 		end)
@@ -274,19 +317,24 @@ function A.sessionDayParts()
 	return out
 end
 
+local function previousDayKey(key)
+	local before=dayKeyNoon(key,-1)
+	if before==nil then
+		return nil
+	end
+	local okKey,previous=pcall(date,"%Y-%m-%d",before)
+	return okKey and type(previous)=="string"and previous or nil
+end
+
 local function sessionDayPart(stamp)
 	local key=A.dayKey(stamp)
 	local hour=tonumber(tostring(A.clockKey(stamp)):match("^(%d%d):"))
-	if key==nil or hour==nil then
-		return nil
-	end
-	local y,m,d=key:match("^(%d+)%-(%d+)%-(%d+)$")
-	local okAt,noon=pcall(time,{year=tonumber(y),month=tonumber(m),day=tonumber(d),hour=12})
-	if not okAt or type(noon)~="number"then
+	if key==nil or hour==nil or dayKeyNoon(key)==nil then
 		return nil
 	end
 	if hour<DAY_PARTS[1].from then
-		return noon-86400,"night"
+		local previous=previousDayKey(key)
+		return previous,previous~=nil and"night"or nil
 	end
 	local part=DAY_PARTS[1].part
 	for i=1,#DAY_PARTS do
@@ -294,7 +342,7 @@ local function sessionDayPart(stamp)
 			part=DAY_PARTS[i].part
 		end
 	end
-	return noon,part
+	return key,part
 end
 
 function A.shortDayForms(stamp)
@@ -311,12 +359,8 @@ function A.shortDayForms(stamp)
 end
 
 function A.sessionHeadForms(stamp)
-	local day=sessionDayPart(stamp)
-	if day==nil then
-		return nil
-	end
-	local okKey,key=pcall(date,"%Y-%m-%d",day)
-	if not okKey then
+	local key=sessionDayPart(stamp)
+	if key==nil then
 		return nil
 	end
 	return A.shortDayForms(key)
@@ -371,16 +415,8 @@ function A.sessionSpanText(session)
 	if type(session)~="table"then
 		return nil
 	end
-	local from=A.clockKey(session.startStamp)
-	if from==nil and type(session.startEpoch)=="number"then
-		local ok,text=pcall(date,"%H:%M",session.startEpoch)
-		from=ok and text or nil
-	end
-	local to=nil
-	if type(session.endEpoch)=="number"then
-		local ok,text=pcall(date,"%H:%M",session.endEpoch)
-		to=ok and text or nil
-	end
+	local from=A.clockWords(session.startStamp)or A.clockWords(session.startEpoch)
+	local to=A.clockWords(session.endEpoch)
 	if from==nil then
 		return to
 	end
@@ -488,6 +524,12 @@ local GRID_NAMES={
 	rbg="RATED BG",
 	arena="ARENA",
 }
+
+local MMR_ORDER={}
+for i=1,#GRID_FORMATS do
+	MMR_ORDER[i]=GRID_FORMATS[i]
+end
+MMR_ORDER[#MMR_ORDER+1]="arena"
 
 local GRID_COLUMNS_MAX=4
 
@@ -597,12 +639,7 @@ function A.sessionMmrCell(listed,format)
 		return nil
 	end
 	local out={format=format,formats={},read=0}
-	local order={}
-	for _,played in ipairs(GRID_FORMATS)do
-		order[#order+1]=played
-	end
-	order[#order+1]="arena"
-	for _,played in ipairs(order)do
+	for _,played in ipairs(MMR_ORDER)do
 		local cell=by[played]
 		if cell~=nil then
 			local held=cell.held
@@ -712,10 +749,9 @@ function A.sessionGridSummary(listed,format)
 					out.counted=out.counted+1
 				end
 			elseif out.kind=="kills"then
-				if type(record.kills)=="number"or type(record.deaths)=="number"then
-					out.won=out.won+(type(record.kills)=="number"and record.kills or 0)
-					out.lost=out.lost+(type(record.deaths)=="number"and record.deaths or 0)
-					out.any=true
+				local kills,deaths=A.worldCounts(record)
+				if kills~=nil and deaths~=nil then
+					out.won,out.lost,out.any=out.won+kills,out.lost+deaths,true
 				end
 			else
 				local tone=A.resultTone(record)
@@ -774,39 +810,92 @@ function A.sessionColumnNeed(labelNeed,caretWidth)
 	return math.ceil(labelNeed+caret+A.metric("rowCellGap")+2)
 end
 
-function A.sessionGrid(entries,room,format,sessionWidth)
+local function sessionFigureText(column,listed,rest,format)
+	if column.key=="format"then
+		local text=A.sessionGridCellText(A.sessionGridCell(listed,column.format))
+		if text==nil and format~=nil then
+			return A.colorEscape("dim").."-|r"
+		end
+		return text
+	elseif column.key=="summary"then
+		return A.sessionGridSummaryText(A.sessionGridSummary(listed,format))
+	elseif column.key=="mmr"then
+		return A.sessionMmrCellText(A.sessionMmrCell(listed,format))
+	elseif column.key=="more"then
+		local played=0
+		for _,other in ipairs(rest)do
+			if A.sessionGridCell(listed,other)~=nil then
+				played=played+1
+			end
+		end
+		return played>0 and("+%d"):format(played)or nil
+	end
+	return nil
+end
+
+function A.sessionFigureNeeds(columns,rest,sessions,format,face)
+	local needs={}
+	for _,column in ipairs(columns)do
+		local id
+		if column.key=="format"then
+			id="format:"..tostring(column.format)
+		elseif column.key=="more"or column.key=="summary"or column.key=="mmr"then
+			id=column.key
+		end
+		if id~=nil then
+			for _,listed in ipairs(sessions)do
+				local text=sessionFigureText(column,listed,rest or{},format)
+				if type(text)=="string"then
+					text=text:gsub("|c%x%x%x%x%x%x%x%x",""):gsub("|r","")
+					local width=A.clientTextWidth(face,text)
+					if width~=nil and(needs[id]==nil or width>needs[id])then
+						needs[id]=width
+					end
+				end
+			end
+		end
+	end
+	return needs
+end
+
+function A.sessionGrid(entries,room,format,sessionWidth,needs)
 	local shown,rest={},{}
 	if format==nil then
 		shown,rest=A.sessionGridFormats(entries)
 	end
 	local summaryName=A.sessionGridSummaryName(format)
-	local function fixed(metric,name)
-		return math.max(A.metric(metric),A.headerFloor(name))
+	local rated=format~=nil and A.movesRating(format)
+	needs=type(needs)=="table"and needs or{}
+	local function fixed(metric,name,need)
+		return math.max(A.metric(metric),A.headerFloor(name),need or 0)
 	end
 	local function build(fold)
 		local columns={{key="session",name="SESSION",
 			width=math.max(fixed("gridSession","SESSION"),sessionWidth or 0)}}
 		if not fold then
-			columns[#columns+1]={key="time",name="TIME",width=fixed("gridTime","TIME")}
+			columns[#columns+1]={key="time",name="TIME",
+				width=fixed("gridTime","TIME")+2*A.clockExtra()}
 		end
 		for _,played in ipairs(shown)do
 			local name=A.sessionGridName(played)
-			columns[#columns+1]={key="format",format=played,name=name,width=fixed("gridFormat",name)}
+			columns[#columns+1]={key="format",format=played,name=name,
+				width=fixed("gridFormat",name,needs["format:"..played])}
 		end
 		if#rest>0 then
 			local name=("+%d"):format(#rest)
-			columns[#columns+1]={key="more",name=name,width=fixed("gridFormat",name)}
+			columns[#columns+1]={key="more",name=name,width=fixed("gridFormat",name,needs.more)}
 		end
-		if format~=nil and A.movesRating(format)then
+		if rated then
 			columns[#columns+1]={key="format",format=format,name="RATING",
-				width=fixed("gridRating","RATING")}
+				width=fixed("gridRating","RATING",needs["format:"..format])}
 		end
 		columns[#columns+1]={key="results",name="RESULTS",width=0}
 		if summaryName~=nil then
-			columns[#columns+1]={key="summary",name=summaryName,width=fixed("gridRecord",summaryName)}
+			columns[#columns+1]={key="summary",name=summaryName,
+				width=fixed("gridRecord",summaryName,needs.summary)}
 		end
-		if#shown>0 or#rest>0 or(format~=nil and A.movesRating(format))then
-			columns[#columns+1]={key="mmr",name="MMR",width=fixed("gridMmr","MMR")}
+		if#shown>0 or#rest>0 or rated then
+			columns[#columns+1]={key="mmr",name="MMR",width=fixed("gridMmr","MMR",needs.mmr)}
 		end
 		columns[#columns+1]={key="matches",name="MATCHES",align="RIGHT",
 			width=fixed("gridMatches","MATCHES")}
@@ -975,17 +1064,23 @@ end
 
 local heldScoped={}
 
+local function seasonHolds(subject,season,where)
+	if season==nil then
+		return true
+	end
+	local ok,inSeason=pcall(A.recordInSeason,subject,season)
+	if not ok then
+		A.noteError(inSeason,where)
+	end
+	return ok and inSeason
+end
+
 local function walkScoped(format,season,character,bound)
 	local out={}
 	local list=A.matches(format,character)
 	for i=1,#list do
 		local record=list[i]
-		local held=season==nil
-		if not held then
-			local ok,inSeason=pcall(A.recordInSeason,record,season)
-			held=ok and inSeason
-		end
-		if held and A.recordSince(record,bound)then
+		if seasonHolds(record,season,"season-walk")and A.recordSince(record,bound)then
 			out[#out+1]=record
 		end
 	end
@@ -1093,12 +1188,12 @@ function A.duelReading(records,character,season,bound)
 			end
 		end
 		local day=A.shortDay(stamp)
-		local clock=day and A.clockKey(stamp)
+		local clock=day and A.clockWords(stamp)
 		hero.last={
 			result=verdict=="win"and"won"or verdict=="loss"and"lost"or nil,
 			tone=A.resultTone(last),
 			name=bare~=""and bare or nil,
-			realm=realm,
+			realm=A.realmDrawn(realm),
 			classToken=key and hero.classes[key]or nil,
 			how=#how>0 and table.concat(how,", ")or nil,
 			when=(day and clock)and(day.." "..clock)or nil,
@@ -1149,7 +1244,7 @@ function A.otherReading(records,entries)
 	if newest then
 		hero.lastForms=A.shortDayForms(newest)
 		hero.lastPlayed=hero.lastForms and hero.lastForms[1]or nil
-		local clock=A.clockKey(newest)
+		local clock=A.clockWords(newest)
 		hero.lastSub=clock and newestMap and(clock..", "..newestMap)or clock
 	end
 	return hero
@@ -1172,8 +1267,9 @@ function A.worldReading(records)
 				best={margin=margin,kills=kills,deaths=deaths,zone=A.recordZone(record)}
 			end
 		end
-		if type(record.duration)=="number"and record.duration>=0 then
-			hero.seconds,hero.timed=hero.seconds+record.duration,hero.timed+1
+		local seconds=A.recordSeconds(record)
+		if seconds~=nil then
+			hero.seconds,hero.timed=hero.seconds+seconds,hero.timed+1
 		end
 	end
 	for i=1,#records do
@@ -1256,7 +1352,9 @@ function A.standingReading(format,season,character,bound,summary,_,listed)
 	local newestKeys={}
 	if sessions[1]then
 		for _,entry in ipairs(sessions[1].entries)do
-			newestKeys[entry.subject.id]=true
+			if entry.subject.id~=nil then
+				newestKeys[entry.subject.id]=true
+			end
 		end
 	end
 	local reading={shape=shape,format=format,season=season,matches=#records}
@@ -1407,6 +1505,7 @@ function A.standingReading(format,season,character,bound,summary,_,listed)
 		reading.bars=bars
 		local last=records[1]
 		local lastStamp=last and(last.openedAt or last.completedAt)or nil
+		local lastForms=lastStamp and A.shortDayForms(lastStamp)or nil
 		local matchesSub=avgText
 		if summary.mmr~=nil then
 			matchesSub=(avgText and(avgText..", ")or"").."MMR "..tostring(summary.mmr)
@@ -1414,9 +1513,8 @@ function A.standingReading(format,season,character,bound,summary,_,listed)
 		reading.figures={
 			{label="MATCHES",value=tostring(summary.matches or 0),
 				sub=matchesSub},
-			{label="LAST PLAYED",value=lastStamp and A.shortDay(lastStamp)or"-",
-				forms=lastStamp and A.shortDayForms(lastStamp)or nil,
-				sub=lastStamp and A.clockKey(lastStamp)or nil},
+			{label="LAST PLAYED",value=lastForms and lastForms[1]or"-",forms=lastForms,
+				sub=lastStamp and A.clockWords(lastStamp)or nil},
 		}
 		if format=="world"then
 			reading.hero=A.worldReading(type(listed)=="table"and listed or records)
@@ -1427,12 +1525,7 @@ function A.standingReading(format,season,character,bound,summary,_,listed)
 			local left={}
 			local ok,held=pcall(A.incompleteList,character)
 			for _,entry in ipairs(ok and type(held)=="table"and held or{})do
-				local inScope=season==nil
-				if not inScope then
-					local okSeason,inSeason=pcall(A.recordInSeason,entry,season)
-					inScope=okSeason and inSeason
-				end
-				if inScope and A.recordSince(entry,bound)then
+				if seasonHolds(entry,season,"season-left-early")and A.recordSince(entry,bound)then
 					left[#left+1]=entry
 				end
 			end
@@ -1441,4 +1534,384 @@ function A.standingReading(format,season,character,bound,summary,_,listed)
 		end
 	end
 	return reading
+end
+
+local RECAP_CELLS={
+	{key="record",label="RECORD"},
+	{key="rating",label="RATING"},
+	{key="best",label="BEST WIN"},
+	{key="worst",label="WORST COMP MET"},
+	{key="with",label="PLAYED MOST WITH"},
+}
+
+function A.sessionRecapLabels()
+	local out={}
+	for i=1,#RECAP_CELLS do
+		out[i]=RECAP_CELLS[i].label
+	end
+	return out
+end
+
+local function recapCompText(members)
+	if type(members)~="table"or#members==0 then
+		return nil
+	end
+	local parts={}
+	for i=1,#members do
+		parts[i]=tostring(members[i].spec)
+	end
+	return table.concat(parts,"/")
+end
+
+local function countComp(tally,order,key,members,won)
+	local row=tally[key]
+	if row==nil then
+		row={key=key,members=members,wins=0,losses=0,draws=0,games=0}
+		tally[key]=row
+		order[#order+1]=row
+	end
+	row.games=row.games+1
+	if won==true then
+		row.wins=row.wins+1
+	elseif won==false then
+		row.losses=row.losses+1
+	else
+		row.draws=row.draws+1
+	end
+end
+
+local function countRecordComps(record,tally,order)
+	if A.compRounds(record.format)then
+		local rounds=type(record.rounds)=="table"and record.rounds or{}
+		local ok,outcomes=pcall(A.roundOutcomes,record)
+		outcomes=(ok and type(outcomes)=="table")and outcomes or{}
+		for i=1,#rounds do
+			local key,members=nil,nil
+			if type(rounds[i])=="table"then
+				key,members=A.roundCompKey(record,rounds[i])
+			end
+			local won=nil
+			if type(outcomes[i])=="table"then
+				won=outcomes[i].won
+			end
+			if key~=nil and type(won)=="boolean"then
+				countComp(tally,order,key,members,won)
+			end
+		end
+		return
+	end
+	local key,members=A.compKey(record)
+	if key==nil then
+		return
+	end
+	local tone=A.resultTone(record)
+	if tone=="win"or tone=="loss"then
+		countComp(tally,order,key,members,tone=="win")
+	elseif A.effectiveResult(record)=="draw"then
+		countComp(tally,order,key,members,nil)
+	end
+end
+
+local function recordMates(record)
+	local out={}
+	local rounds=type(record.rounds)=="table"and record.rounds or nil
+	if A.compRounds(record.format)then
+		for i=1,rounds and#rounds or 0 do
+			local mates=A.roundSides(record,rounds[i])
+			for _,entry in ipairs(type(mates)=="table"and mates or{})do
+				if entry.guid~=record.character then
+					out[entry.guid]=entry.p
+				end
+			end
+		end
+	elseif type(record.participants)=="table"then
+		for guid,row in pairs(record.participants)do
+			if guid~=record.character and A.matchSide(record,guid)=="with"then
+				out[guid]=row
+			end
+		end
+	end
+	return out
+end
+
+local function countResult(held,record)
+	local tone=A.resultTone(record)
+	if tone=="win"then
+		held.wins=held.wins+1
+	elseif tone=="loss"then
+		held.losses=held.losses+1
+	elseif A.effectiveResult(record)=="draw"then
+		held.draws=held.draws+1
+	end
+end
+
+function A.recapReads(format)
+	return format~="world"and format~="unknown"
+end
+
+function A.sessionRecap(session,format,character)
+	if type(session)~="table"or type(session.entries)~="table"then
+		return nil
+	end
+	local entries,records={},{}
+	for _,entry in ipairs(session.entries)do
+		local record=type(entry)=="table"and entry.kind~="incomplete"and entry.subject or nil
+		if type(record)=="table"and record.format~="world"and A.recordInFormat(record,format)
+			and A.recordedBy(record,character)then
+			entries[#entries+1]=entry
+			records[#records+1]=record
+		end
+	end
+	if#records<2 then
+		return nil
+	end
+	local out={key=session.key,matches=#records,
+		record={wins=0,losses=0,draws=0,matches=#records}}
+	local tally,order,mates={},{},{}
+	local best,mmr=0,nil
+	for i=1,#records do
+		local record=records[i]
+		countResult(out.record,record)
+		local _,_,change=A.recordLadderPair(record)
+		if type(change)=="number"and change>best then
+			best=change
+			local comp,members=A.compKey(record)
+			out.bestWin={id=record.id,change=change,comp=comp,compText=recapCompText(members),
+				members=members}
+		end
+		local pre,post=A.recordMmrPair(record)
+		if pre~=nil then
+			if mmr==nil then
+				mmr={format=record.format,character=record.character,from=pre,to=post}
+			elseif record.format==mmr.format and record.character==mmr.character then
+				mmr.from=pre
+			end
+		end
+		countRecordComps(record,tally,order)
+		for guid,row in pairs(recordMates(record))do
+			local held=mates[guid]
+			if held==nil then
+				held={guid=guid,name=row.name,wins=0,losses=0,draws=0,matches=0}
+				mates[guid]=held
+			end
+			held.matches=held.matches+1
+			countResult(held,record)
+		end
+	end
+
+	out.rating={}
+	for _,ladder in ipairs(sessionLadders(entries))do
+		out.rating[#out.rating+1]={format=ladder.format,from=ladder.from,to=ladder.to,
+			change=ladder.change}
+	end
+	if#out.rating==1 then
+		out.change=out.rating[1].change
+	end
+	if mmr~=nil then
+		out.mmr={format=mmr.format,from=mmr.from,to=mmr.to,change=mmr.to-mmr.from}
+	end
+
+	for _,row in ipairs(order)do
+		local rate=row.wins/row.games
+		local held=out.worstComp
+		local heldRate=held and held.wins/held.games or nil
+		if row.games>=2 and(held==nil or rate<heldRate
+			or(rate==heldRate and(row.games>held.games
+				or(row.games==held.games and row.key<held.key))))then
+			out.worstComp={key=row.key,compText=recapCompText(row.members),members=row.members,
+				wins=row.wins,
+				losses=row.losses,draws=row.draws,games=row.games}
+		end
+	end
+
+	for _,held in pairs(mates)do
+		local top=out.mostWith
+		if held.matches>=2 and(top==nil or held.matches>top.matches
+			or(held.matches==top.matches and(held.wins-held.losses>top.wins-top.losses
+				or(held.wins-held.losses==top.wins-top.losses and held.guid<top.guid))))then
+			out.mostWith=held
+		end
+	end
+	return out
+end
+
+local function recapRecordText(held)
+	local text=("%d-%d"):format(held.wins,held.losses)
+	if(held.draws or 0)>0 then
+		text=text..("-%d"):format(held.draws)
+	end
+	return text
+end
+A.sessionRecapRecordText=recapRecordText
+
+local function pairTone(won,lost)
+	return won>lost and"win"or won<lost and"loss"or"dim"
+end
+
+function A.sessionRecapCells(recap)
+	local out={}
+	if type(recap)~="table"then
+		return out
+	end
+	local values={}
+	local record=recap.record
+	values.record={text=recapRecordText(record),tone=pairTone(record.wins,record.losses)}
+
+	local ladders=type(recap.rating)=="table"and recap.rating or{}
+	if#ladders==1 then
+		local ladder=ladders[1]
+		local text=ladder.change==0 and("%d"):format(ladder.to)
+			or("%d %s"):format(ladder.to,A.signedText(ladder.change))
+		values.rating={text=text,tone=pairTone(ladder.change,0)}
+	elseif#ladders>1 then
+		local parts={}
+		for i=1,#ladders do
+			parts[i]=("%s %s"):format(A.signedText(ladders[i].change),A.formatShortLabel(ladders[i].format))
+		end
+		values.rating={text=table.concat(parts,", "),tone="dim"}
+	end
+
+	local bestWin=recap.bestWin
+	if bestWin~=nil then
+		local lead=A.signedText(bestWin.change)
+		local compText=recapCompText(bestWin.members)
+		values.best={text=compText and lead.." vs"or lead,tone="win",members=bestWin.members,
+			readout=compText and("%s vs %s"):format(lead,compText)or lead,match=bestWin.id}
+	end
+
+	local worst=recap.worstComp
+	if worst~=nil then
+		local lead=recapRecordText(worst)
+		values.worst={text=lead,tone=pairTone(worst.wins,worst.losses),members=worst.members,
+			readout=("%s %s"):format(recapCompText(worst.members)or"?",lead)}
+	end
+
+	local with=recap.mostWith
+	if with~=nil then
+		values.with={text=("%s %s"):format(A.bareName(with.name)or"Unknown",recapRecordText(with)),
+			tone=pairTone(with.wins,with.losses),role="nameMedium"}
+	end
+
+	for i=1,#RECAP_CELLS do
+		local cell=RECAP_CELLS[i]
+		local value=values[cell.key]
+		out[i]={key=cell.key,label=cell.label,text=value and value.text or"-",
+			tone=value and value.tone or"dim",read=value~=nil,members=value and value.members or nil,
+			readout=value and value.readout or nil,match=value and value.match or nil,
+			role=value and value.role or nil}
+	end
+	return out
+end
+
+function A.sessionRecapHeading(session,now)
+	local label=type(session)=="table"and A.sessionDayLabel(session.endStamp,now)or nil
+	return label and label:upper()or nil
+end
+
+local function closedNewest(now,db)
+	local _,session=A.newestSession(db)
+	if type(session)~="table"or type(session.endEpoch)~="number"or type(now)~="number"
+		or now-session.endEpoch<=SESSION_GAP_MINUTES*60 then
+		return nil
+	end
+	return session
+end
+
+function A.sessionRecapLoginText(recap,session)
+	local parts={recapRecordText(recap.record)}
+	for _,ladder in ipairs(recap.rating or{})do
+		parts[#parts+1]=("%s %s"):format(A.signedText(ladder.change),A.formatLabel(ladder.format))
+	end
+	local key,part=sessionDayPart(type(session)=="table"and session.startStamp or nil)
+	local noon=key~=nil and dayKeyNoon(key)or nil
+	if noon~=nil then
+		local ok,day=pcall(date,"%a",noon)
+		if ok and type(day)=="string"then
+			parts[#parts+1]=day.." "..part
+		end
+	end
+	return"Last session: "..table.concat(parts,", ")
+end
+
+function A.sessionRecapLogin(now)
+	local db=A.db and A.db()
+	if not db then
+		return nil,"no-store"
+	end
+	if type(A.postGameEnabled)=="function"and not A.postGameEnabled()then
+		return nil,"off"
+	end
+	local session=closedNewest(now)
+	if session==nil then
+		return nil,"open"
+	end
+	local seen=type(db.ui)=="table"and db.ui.recapSeenEpoch or nil
+	if type(seen)=="number"and session.endEpoch<=seen then
+		return nil,"seen"
+	end
+	local recap=A.sessionRecap(session)
+	if recap==nil then
+		return nil,"one-match"
+	end
+	db.ui=type(db.ui)=="table"and db.ui or{}
+	db.ui.recapSeenEpoch=session.endEpoch
+	A.trace("recap",{key=tostring(recap.key),matches=recap.matches,
+		record=recapRecordText(recap.record),change=recap.change,reason="login"},"ui")
+	return A.sessionRecapLoginText(recap,session)
+end
+
+function A.sessionRecapLogout(now)
+	local db=A.savedDB()
+	local session=db and closedNewest(now,db)or nil
+	if session==nil then
+		return false
+	end
+	local seen=type(db.ui)=="table"and db.ui.recapSeenEpoch or nil
+	if type(seen)=="number"and seen>=session.endEpoch then
+		return false
+	end
+	db.ui=type(db.ui)=="table"and db.ui or{}
+	db.ui.recapSeenEpoch=session.endEpoch
+	return true
+end
+
+A.on("PLAYER_LOGOUT",function()
+	local ok,err=pcall(A.sessionRecapLogout,time())
+	if not ok then
+		A.noteError(err,"recap-logout")
+	end
+end)
+
+function A.recapSessionFor(format,character)
+	local entries={}
+	for _,record in ipairs(A.matches(format,character))do
+		entries[#entries+1]={kind="match",subject=record}
+	end
+	local sessions=A.buildSessions(entries)
+	return sessions[1]
+end
+
+function A.sessionRecapReadout(format,character,now)
+	local name=A.formatLabel(format)
+	if not A.recapReads(format)then
+		return{("%s has no session recap: it counts no matches a recap reads"):format(name)}
+	end
+	local session=A.recapSessionFor(format,character)
+	if session==nil then
+		return{("no %s session is stored"):format(name)}
+	end
+	local recap=A.sessionRecap(session,format,character)
+	if recap==nil then
+		return{("the newest %s session holds one match, so it has no recap"):format(name)}
+	end
+	local lines={("%s, %s %s, %d matches"):format(name,A.sessionDayLabel(session.endStamp,now)or"?",
+		A.sessionSpanText(session)or"",recap.matches)}
+	for _,cell in ipairs(A.sessionRecapCells(recap))do
+		lines[#lines+1]=("%s  %s"):format(cell.label,cell.readout or cell.text)
+	end
+	local mmr=recap.mmr
+	if mmr~=nil then
+		lines[#lines+1]=("MMR  %d to %d %s"):format(mmr.from,mmr.to,A.signedText(mmr.change))
+	end
+	return lines
 end

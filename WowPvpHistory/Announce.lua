@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.33
+-- WowPvpHistory 0.75.26
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -12,11 +12,6 @@ local TOP_DROP=SCREEN_UNITS/6
 local RISE_SECONDS=0.5
 local FALL_SECONDS=0.5
 
-local BASE_SECONDS=4
-local LINE_SECONDS=1
-
-local SECONDS_LINE_CEILING=15
-
 local FIRST_READ=2
 local RETRY_EVERY=3
 local SETTLE_READS=3
@@ -27,6 +22,8 @@ local firedFor
 local reported=false
 
 local banner
+
+local lastShown
 
 local reconsider
 
@@ -57,7 +54,53 @@ function A.setAnnounce(enabled)
 	return true
 end
 
-local TIME_MIN,TIME_MAX,TIME_STEP,TIME_DEFAULT=50,300,10,100
+local function readingOn(key)
+	local db=A.db()
+	if not db then
+		return false
+	end
+	return type(db.ui)~="table"or db.ui[key]~=false
+end
+
+local function storeReading(key,enabled,notify)
+	local db=A.db()
+	if not db then
+		return false
+	end
+	db.ui=db.ui or{}
+	if enabled==false then
+		db.ui[key]=false
+	else
+		db.ui[key]=nil
+	end
+	if type(notify)=="function"then
+		notify()
+	end
+	if A.announcePreviewActive and A.announcePreviewActive()then
+		pcall(A.announcePreview)
+	end
+	return true
+end
+
+function A.announceCompEnabled()
+	return readingOn("announceComp")
+end
+
+function A.setAnnounceComp(enabled)
+	return storeReading("announceComp",enabled,A.notifyAnnounceCompSetting)
+end
+
+function A.announceRematchEnabled()
+	return readingOn("announceRematch")
+end
+
+function A.setAnnounceRematch(enabled)
+	return storeReading("announceRematch",enabled,A.notifyAnnounceRematchSetting)
+end
+
+local TIME_MIN,TIME_MAX,TIME_STEP,TIME_DEFAULT=2,30,1,5
+
+local OLD_TIME_ONE_NAME=5
 
 local SIZE_MIN,SIZE_MAX,SIZE_STEP,SIZE_DEFAULT=75,150,5,100
 
@@ -83,42 +126,81 @@ local function rounded(value,min,max,step)
 	return percentage(math.floor(value+0.5),min,max,step)
 end
 
-function A.announceTime()
+local function storedFigure(key,min,max,step,default)
 	local db=A.db()
 	if not db or type(db.ui)~="table"then
-		return TIME_DEFAULT
+		return default
 	end
-	return percentage(db.ui.announceTime,TIME_MIN,TIME_MAX,TIME_STEP)or TIME_DEFAULT
+	return percentage(db.ui[key],min,max,step)or default
+end
+
+local function storeFigure(key,value,min,max,step,default,notify,redraw)
+	local db=A.db()
+	if not db then
+		return false
+	end
+	local want=rounded(value,min,max,step)
+	if want==nil then
+		return false
+	end
+	db.ui=db.ui or{}
+	db.ui[key]=want~=default and want or nil
+
+	if notify then
+		notify()
+	end
+	if redraw and A.announcePreviewActive and A.announcePreviewActive()then
+		pcall(A.announcePreview)
+	end
+	return true
+end
+
+function A.announceTime()
+	return storedFigure("announceSeconds",TIME_MIN,TIME_MAX,TIME_STEP,TIME_DEFAULT)
 end
 
 function A.announceTimeRange()
 	return TIME_MIN,TIME_MAX,TIME_STEP,TIME_DEFAULT
 end
 
-function A.setAnnounceTime(value)
-	local db=A.db()
-	if not db then
-		return false
+function A.announceSecondsFromPercent(percent)
+	if type(percent)~="number"or percent~=percent or percent==math.huge or percent==-math.huge then
+		return nil
 	end
-	local want=rounded(value,TIME_MIN,TIME_MAX,TIME_STEP)
-	if want==nil then
-		return false
-	end
-	db.ui=db.ui or{}
-	db.ui.announceTime=want~=TIME_DEFAULT and want or nil
+	local seconds=math.floor(percent*OLD_TIME_ONE_NAME/100+0.5)
+	return math.max(TIME_MIN,math.min(TIME_MAX,seconds))
+end
 
-	if A.notifyAnnounceTimeSetting then
-		A.notifyAnnounceTimeSetting()
+function A.convertAnnounceTime()
+	local db=A.db()
+	if not db or type(db.ui)~="table"or db.ui.announceTime==nil then
+		return false
 	end
+	local percent=db.ui.announceTime
+	db.ui.announceTime=nil
+	local seconds=A.announceSecondsFromPercent(percent)
+	if seconds and db.ui.announceSeconds==nil then
+		db.ui.announceSeconds=seconds~=TIME_DEFAULT and seconds or nil
+	end
+	A.trace("settings",{
+		source="announce-time-converted",
+		from=type(percent)=="number"and percent or nil,
+		seconds=A.announceTime(),
+	},"ui")
 	return true
 end
 
+A.on("PLAYER_LOGIN",function()
+	A.convertAnnounceTime()
+end)
+
+function A.setAnnounceTime(value)
+	return storeFigure("announceSeconds",value,TIME_MIN,TIME_MAX,TIME_STEP,TIME_DEFAULT,
+		A.notifyAnnounceTimeSetting)
+end
+
 function A.announceSize()
-	local db=A.db()
-	if not db or type(db.ui)~="table"then
-		return SIZE_DEFAULT
-	end
-	return percentage(db.ui.announceSize,SIZE_MIN,SIZE_MAX,SIZE_STEP)or SIZE_DEFAULT
+	return storedFigure("announceSize",SIZE_MIN,SIZE_MAX,SIZE_STEP,SIZE_DEFAULT)
 end
 
 function A.announceSizeRange()
@@ -126,32 +208,12 @@ function A.announceSizeRange()
 end
 
 function A.setAnnounceSize(value)
-	local db=A.db()
-	if not db then
-		return false
-	end
-	local want=rounded(value,SIZE_MIN,SIZE_MAX,SIZE_STEP)
-	if want==nil then
-		return false
-	end
-	db.ui=db.ui or{}
-	db.ui.announceSize=want~=SIZE_DEFAULT and want or nil
-
-	if A.notifyAnnounceSizeSetting then
-		A.notifyAnnounceSizeSetting()
-	end
-	if A.announcePreviewActive and A.announcePreviewActive()then
-		pcall(A.announcePreview)
-	end
-	return true
+	return storeFigure("announceSize",value,SIZE_MIN,SIZE_MAX,SIZE_STEP,SIZE_DEFAULT,
+		A.notifyAnnounceSizeSetting,true)
 end
 
 function A.announceOpacity()
-	local db=A.db()
-	if not db or type(db.ui)~="table"then
-		return OPACITY_DEFAULT
-	end
-	return percentage(db.ui.announceOpacity,OPACITY_MIN,OPACITY_MAX,OPACITY_STEP)or OPACITY_DEFAULT
+	return storedFigure("announceOpacity",OPACITY_MIN,OPACITY_MAX,OPACITY_STEP,OPACITY_DEFAULT)
 end
 
 function A.announceOpacityRange()
@@ -159,32 +221,33 @@ function A.announceOpacityRange()
 end
 
 function A.setAnnounceOpacity(value)
-	local db=A.db()
-	if not db then
-		return false
-	end
-	local want=rounded(value,OPACITY_MIN,OPACITY_MAX,OPACITY_STEP)
-	if want==nil then
-		return false
-	end
-	db.ui=db.ui or{}
-	db.ui.announceOpacity=want~=OPACITY_DEFAULT and want or nil
+	return storeFigure("announceOpacity",value,OPACITY_MIN,OPACITY_MAX,OPACITY_STEP,OPACITY_DEFAULT,
+		A.notifyAnnounceOpacitySetting,true)
+end
 
-	if A.notifyAnnounceOpacitySetting then
-		A.notifyAnnounceOpacitySetting()
-	end
-	if A.announcePreviewActive and A.announcePreviewActive()then
-		pcall(A.announcePreview)
-	end
-	return true
+local CROWD_MIN,CROWD_MAX,CROWD_STEP,CROWD_DEFAULT=2,15,1,6
+
+function A.announceCrowd()
+	return storedFigure("announceCrowd",CROWD_MIN,CROWD_MAX,CROWD_STEP,CROWD_DEFAULT)
+end
+
+function A.announceCrowdRange()
+	return CROWD_MIN,CROWD_MAX,CROWD_STEP,CROWD_DEFAULT
+end
+
+function A.setAnnounceCrowd(value)
+	return storeFigure("announceCrowd",value,CROWD_MIN,CROWD_MAX,CROWD_STEP,CROWD_DEFAULT,
+		A.notifyAnnounceCrowdSetting,true)
 end
 
 local SHAPES={
+	{value="card",label="Card",said="as a card"},
+	{value="headline",label="Headline",said="as a headline"},
 	{value="split",label="Side by side",said="side by side"},
 	{value="stacked",label="One column",said="in one column"},
 }
 
-local SHAPE_DEFAULT="split"
+local SHAPE_DEFAULT="card"
 
 local function isShape(value)
 	for i=1,#SHAPES do
@@ -309,30 +372,8 @@ function A.announceHeldLocked()
 	return heldLocked
 end
 
-local function timedLines(composed)
-	local lines=0
-	if type(composed)=="table"then
-		if type(composed.names)=="table"then
-			lines=#composed.names
-		end
-		if type(composed.tagLines)=="number"then
-			lines=lines+composed.tagLines
-		end
-	end
-	return lines
-end
-
-function A.announceSeconds(composed)
-	local seconds=BASE_SECONDS+math.min(timedLines(composed),SECONDS_LINE_CEILING)*LINE_SECONDS
-	return seconds*A.announceTime()/100
-end
-
-function A.announceFullSeconds()
-	local names={}
-	for i=1,SECONDS_LINE_CEILING do
-		names[i]=true
-	end
-	return A.announceSeconds({names=names,tagLines=0})
+function A.announceSeconds()
+	return A.announceTime()
 end
 
 function A.announceFit(width,room,chosen)
@@ -382,9 +423,13 @@ local function contained(fn,...)
 end
 
 local SIDES={
-	{side="against",label="VS",tone="loss"},
-	{side="with",label="WITH",tone="win"},
+	{side="against",label="VS",tone="loss",heading="ENEMIES"},
+	{side="with",label="WITH",tone="win",heading="ALLIES"},
 }
+
+local UNSIDED_HEADING="KNOWN"
+
+local COMP_HEADING="ENEMY COMP"
 
 local NO_RECORD="-"
 
@@ -413,8 +458,15 @@ local function recordText(held,side)
 	return A.winRecordText({wins=wins,decided=decided,draws=draws})or NO_RECORD
 end
 
+local function worstStep(it)
+	if it.rating~=nil and it.attitude~=nil then
+		return math.min(it.rating,it.attitude)
+	end
+	return it.rating or it.attitude
+end
+
 local function worstFirst(a,b)
-	local ra,rb=a.rating,b.rating
+	local ra,rb=worstStep(a),worstStep(b)
 	if ra~=rb then
 		if ra==nil then
 			return false
@@ -468,7 +520,7 @@ local function compose(found,selfFaction,everyoneWith)
 
 	local noted=0
 	for i=1,#found do
-		if found[i].text~=nil or found[i].rating~=nil then
+		if found[i].text~=nil or found[i].rating~=nil or found[i].attitude~=nil then
 			noted=noted+1
 		end
 	end
@@ -479,15 +531,21 @@ local function compose(found,selfFaction,everyoneWith)
 		local it=found[i]
 		local side=everyoneWith and"with"or sideOf(selfFaction,it.faction)
 		read[side or"summed"]=read[side or"summed"]+1
+		local hasNote=isNoted(it)
+		local _,scale,step=A.noteMark(it)
 		names[i]={
 			name=it.name,
 			classToken=it.classToken,
 			rating=it.rating,
+			attitude=it.attitude,
 			mark=it.mark,
+			word=A.ratingText(step,scale),
 			side=side,
 			record=recordText(it.held,side),
 			tags=type(it.tags)=="table"and it.tags or{},
-			noted=isNoted(it),
+			noted=hasNote,
+			note=hasNote and it.text:match("^[^\r\n]*")or nil,
+			lastMet=it.lastMet,
 		}
 	end
 
@@ -505,6 +563,7 @@ local function compose(found,selfFaction,everyoneWith)
 				side=want,
 				label=SIDES[s]and SIDES[s].label or nil,
 				tone=SIDES[s]and SIDES[s].tone or nil,
+				heading=SIDES[s]and SIDES[s].heading or UNSIDED_HEADING,
 				names=members,
 			}
 		end
@@ -529,14 +588,15 @@ local function compose(found,selfFaction,everyoneWith)
 	}
 end
 
-local function foundEntry(guid,name,classToken,faction,rating,text,tags,met,held)
+local function foundEntry(guid,name,classToken,faction,rating,text,tags,met,held,attitude)
 	return{
 		guid=guid,
 		name=name,
 		classToken=classToken,
 		faction=faction,
 		rating=rating,
-		mark=A.ratingMark(rating),
+		attitude=attitude,
+		mark=(A.noteMark({rating=rating,attitude=attitude})),
 		text=text,
 		tags=tags,
 		met=met,
@@ -544,7 +604,255 @@ local function foundEntry(guid,name,classToken,faction,rating,text,tags,met,held
 	}
 end
 
-function A.announceKnown(rows,selfName,selfQualified,nameIndex)
+local COMP_FLOOR=5
+
+local REMATCH_FLOOR=2
+
+function A.announceCompFloor()
+	return COMP_FLOOR
+end
+
+function A.announceRematchFloor()
+	return REMATCH_FLOOR
+end
+
+local RESULT_SAID={win="won",loss="lost",draw="drew"}
+local RESULT_TONE={win="win",loss="loss"}
+
+local MINUTE,HOUR,DAY=60,3600,86400
+
+local function dayNumber(epoch)
+	local ok,parts=pcall(date,"*t",epoch)
+	if not ok or type(parts)~="table"then
+		return nil
+	end
+	local okNoon,noon=pcall(time,{year=parts.year,month=parts.month,day=parts.day,hour=12})
+	if not okNoon or type(noon)~="number"then
+		return nil
+	end
+	return math.floor(noon/DAY)
+end
+
+function A.announceWhenText(epoch,now)
+	if type(epoch)~="number"or type(now)~="number"or epoch>now then
+		return nil
+	end
+	local seconds=now-epoch
+	if seconds<MINUTE then
+		return"just now"
+	end
+	if seconds<HOUR then
+		return("%d min ago"):format(math.floor(seconds/MINUTE))
+	end
+	local today,that=dayNumber(now),dayNumber(epoch)
+	local days=(today~=nil and that~=nil)and(today-that)or math.floor(seconds/DAY)
+	if days<=0 then
+		return("%d h ago"):format(math.floor(seconds/HOUR))
+	end
+	if days==1 then
+		return"yesterday"
+	end
+	if days<14 then
+		return("%d d ago"):format(days)
+	end
+	return("%d wk ago"):format(math.floor(days/7))
+end
+
+local function lastMetText(lastMet)
+	if type(lastMet)~="table"or type(lastMet.when)~="string"then
+		return nil
+	end
+	local said=RESULT_SAID[lastMet.result]
+	return said and(lastMet.when..", "..said)or lastMet.when,RESULT_TONE[lastMet.result]or"dim"
+end
+
+local function rematchText(rematch)
+	if type(rematch)~="table"or type(rematch.when)~="string"then
+		return nil
+	end
+	local said=RESULT_SAID[rematch.result]
+	return"Met this lobby "..rematch.when..(said and(", you "..said)or""),
+		RESULT_TONE[rematch.result]or"dim"
+end
+
+local function endedAt(record)
+	return A.recordEpoch(record)or A.stampEpoch(record.completedAt)or A.stampEpoch(record.openedAt)
+end
+
+local function strongMatch(players,key)
+	local held=type(key)=="string"and players[key]or nil
+	if type(held)~="table"then
+		return false
+	end
+	return type(held.names)~="table"or held.names[1]~=key
+end
+
+local function weakName(index,name)
+	if index[name]==false then
+		return true
+	end
+	local bare=A.bareName(name)
+	return bare~=nil and bare~=name and index[bare]==false
+end
+
+local function lastMetFor(found,now,subject)
+	local wanted,left={},0
+	for i=1,#found do
+		local guid=found[i].guid
+		if type(guid)=="string"and wanted[guid]==nil then
+			wanted[guid]=false
+			left=left+1
+		end
+	end
+	local db=A.db()
+	local matches=(db and type(db.matches)=="table")and db.matches or{}
+	for i=#matches,1,-1 do
+		if left==0 then
+			break
+		end
+		local record=matches[i]
+		local participants=type(record)=="table"and record~=subject and record.participants or nil
+		if type(participants)=="table"then
+			for guid,held in pairs(wanted)do
+				if held==false and participants[guid]~=nil then
+					wanted[guid]=record
+					left=left-1
+				end
+			end
+		end
+	end
+	for i=1,#found do
+		local record=wanted[found[i].guid]
+		if type(record)=="table"then
+			local result=A.effectiveResult(record)
+			local when=A.announceWhenText(endedAt(record),now)
+			found[i].lastMet=when and{when=when,result=result}or nil
+		end
+	end
+end
+
+local function compReading(enemy,format,character,reading)
+	reading.comp="-"
+	local reason
+	if not A.announceCompEnabled()then
+		reason="off"
+	elseif enemy.rows==0 then
+		reason="no-side"
+	elseif#enemy.tokens<enemy.rows then
+		reason="secret"
+	elseif format~=nil and not A.compFormat(format)then
+		reason="no-format"
+	end
+	if reason then
+		reading.compReason=reason
+		return nil
+	end
+
+	local signature=A.classSignatureFrom(enemy.tokens)
+	reading.comp=signature or"-"
+	local season=A.seasonNow()
+	local held=nil
+	local rows=A.classCompTally(format,season,character)
+	for i=1,#rows do
+		if rows[i].signature==signature then
+			held=rows[i]
+			break
+		end
+	end
+	if held~=nil then
+		reading.compGames=held.decided
+		reading.compRecord=("%d-%d"):format(held.wins,held.losses)
+	end
+	if held==nil or held.decided<COMP_FLOOR then
+		reading.compReason="under-floor"
+		return nil
+	end
+	if held.wins>held.losses then
+		reading.compReason="winning"
+		return nil
+	end
+	reading.compReason="none"
+	return{
+		signature=signature,
+		games=held.games,
+		wins=held.wins,
+		losses=held.losses,
+		scope=season~=nil and"this season"or"every season",
+	}
+end
+
+local function rematchReading(enemy,format,now,reading,subject)
+	reading.rematchWeak=enemy.weak
+	local reason
+	if not A.announceRematchEnabled()then
+		reason="off"
+	elseif enemy.rows==0 then
+		reason="no-side"
+	elseif enemy.strongCount==0 then
+		reason="nobody"
+	end
+	if reason then
+		reading.rematchReason=reason
+		return nil
+	end
+
+	local db=A.db()
+	local matches=(db and type(db.matches)=="table")and db.matches or{}
+	local entries={}
+	for i=#matches,1,-1 do
+		local record=matches[i]
+		if type(record)=="table"and record~=subject and record.format~=nil
+			and(format==nil or record.format==format)
+		then
+			entries[#entries+1]={kind="match",subject=record}
+		end
+	end
+	local newest=A.buildSessions(entries)[1]
+	if newest==nil or type(now)~="number"then
+		reading.rematchReason="no-session"
+		return nil
+	end
+
+	local met,latest={},nil
+	local count=0
+	for i=1,#newest.entries do
+		local record=newest.entries[i].subject
+		local participants=type(record.participants)=="table"and record.participants or{}
+		for guid in pairs(enemy.strong)do
+			if participants[guid]~=nil then
+				latest=latest or record
+				if not met[guid]then
+					met[guid]=true
+					count=count+1
+				end
+			end
+		end
+	end
+	reading.rematch=count
+	if now-newest.endEpoch>A.sessionGapMinutes()*MINUTE then
+		reading.rematchReason="earlier"
+		return nil
+	end
+	if count<REMATCH_FLOOR then
+		reading.rematchReason="under-two"
+		return nil
+	end
+	local ended=endedAt(latest)
+	local when=A.announceWhenText(ended,now)
+	if when==nil then
+		reading.rematchReason="no-session"
+		return nil
+	end
+	reading.rematchReason="none"
+	return{
+		count=count,
+		minutesAgo=math.floor((now-ended)/MINUTE),
+		when=when,
+		result=(A.effectiveResult(latest)),
+	}
+end
+
+function A.announceKnown(rows,selfName,selfQualified,nameIndex,record)
 	if type(rows)~="table"or#rows==0 then
 		return nil
 	end
@@ -554,30 +862,6 @@ function A.announceKnown(rows,selfName,selfQualified,nameIndex)
 
 	local index=type(nameIndex)=="table"and nameIndex or A.playerNameIndex()
 	local found,seen={},{}
-
-	for i=1,#rows do
-		local row=rows[i]
-		local name=type(row)=="table"and row.name or nil
-		if type(name)=="string"and name~=""
-			and name~=selfName and name~=selfQualified
-		then
-			local guid=A.playerByName(index,name)
-			if guid and not seen[guid]then
-				seen[guid]=true
-				local note=A.noteFor(guid)
-				local text=type(note)=="table"and note.text or nil
-				local rating=type(note)=="table"and note.rating or nil
-				local tags=type(note)=="table"and note.tags or nil
-				local held=players[guid]
-				local met=(type(held)=="table"and type(held.matches)=="number")
-					and held.matches or 0
-				if text~=nil or rating~=nil or met>0 then
-					found[#found+1]=foundEntry(guid,name,row.classToken,row.faction,rating,text,tags,
-						met,held)
-				end
-			end
-		end
-	end
 
 	local selfFaction=nil
 	for i=1,#rows do
@@ -589,7 +873,60 @@ function A.announceKnown(rows,selfName,selfQualified,nameIndex)
 		end
 	end
 
-	return compose(found,selfFaction)
+	local enemy={tokens={},rows=0,strong={},strongCount=0,weak=0}
+
+	for i=1,#rows do
+		local row=rows[i]
+		local name=type(row)=="table"and row.name or nil
+		if type(name)=="string"and name~=""
+			and name~=selfName and name~=selfQualified
+		then
+			local guid=A.playerByName(index,name)
+			if sideOf(selfFaction,row.faction)=="against"then
+				enemy.rows=enemy.rows+1
+				if type(row.classToken)=="string"and row.classToken~=""then
+					enemy.tokens[#enemy.tokens+1]=row.classToken
+				end
+				if strongMatch(players,guid)then
+					if not enemy.strong[guid]then
+						enemy.strong[guid]=true
+						enemy.strongCount=enemy.strongCount+1
+					end
+				elseif guid~=nil or weakName(index,name)then
+					enemy.weak=enemy.weak+1
+				end
+			end
+			if guid and not seen[guid]then
+				seen[guid]=true
+				local note=A.noteFor(guid)
+				local text=type(note)=="table"and note.text or nil
+				local rating=type(note)=="table"and note.rating or nil
+				local attitude=type(note)=="table"and note.attitude or nil
+				local tags=type(note)=="table"and note.tags or nil
+				local held=players[guid]
+				local met=(type(held)=="table"and type(held.matches)=="number")
+					and held.matches or 0
+				if text~=nil or rating~=nil or attitude~=nil or met>0 then
+					found[#found+1]=foundEntry(guid,name,row.classToken,row.faction,rating,text,tags,
+						met,held,attitude)
+				end
+			end
+		end
+	end
+
+	if#found==0 then
+		return nil
+	end
+	local now=type(time)=="function"and time()or nil
+	lastMetFor(found,now,record)
+	local composed=compose(found,selfFaction)
+	local format=type(record)=="table"and(record.format or record.liveFormat)or nil
+	local character=type(record)=="table"and record.character or nil
+	local reading={}
+	composed.comp=compReading(enemy,format,character,reading)
+	composed.rematch=rematchReading(enemy,format,now,reading,record)
+	composed.reading=reading
+	return composed
 end
 
 local function classFor(guid)
@@ -624,6 +961,7 @@ function A.announceGroup(guids,selfGuid)
 			local note=A.noteFor(guid)
 			local text=type(note)=="table"and note.text or nil
 			local rating=type(note)=="table"and note.rating or nil
+			local attitude=type(note)=="table"and note.attitude or nil
 			local tags=type(note)=="table"and note.tags or nil
 			local met=(held and type(held.matches)=="number")and held.matches or 0
 
@@ -632,9 +970,10 @@ function A.announceGroup(guids,selfGuid)
 				name=type(note)=="table"and note.name or nil
 			end
 
-			if(text~=nil or rating~=nil or met>0)and type(name)=="string"and name~=""then
+			if(text~=nil or rating~=nil or attitude~=nil or met>0)and type(name)=="string"and name~=""then
 				qualified[#qualified+1]=guid
-				found[#found+1]=foundEntry(guid,name,classFor(guid),nil,rating,text,tags,met,held)
+				found[#found+1]=foundEntry(guid,name,classFor(guid),nil,rating,text,tags,met,held,
+					attitude)
 			end
 		end
 	end
@@ -655,9 +994,15 @@ local drawnScale=1
 local fadeStarted
 local dragFrom
 
+local dragging=false
+
 local NOTHING_READ={}
 
 local drawnPercent
+
+local drawCount=0
+
+local REFIT_AFTER={0,1}
 
 local drawnTall
 
@@ -755,12 +1100,13 @@ local function applyScale(frame,percent,tall)
 	placeAt(frame,scale)
 end
 
-local function escapeList(on)
+local function escapeList(on,name)
+	name=name or FRAME_NAME
 	if type(UISpecialFrames)~="table"then
 		return
 	end
 	for i=#UISpecialFrames,1,-1 do
-		if UISpecialFrames[i]==FRAME_NAME then
+		if UISpecialFrames[i]==name then
 			if on then
 				return
 			end
@@ -768,7 +1114,7 @@ local function escapeList(on)
 		end
 	end
 	if on then
-		UISpecialFrames[#UISpecialFrames+1]=FRAME_NAME
+		UISpecialFrames[#UISpecialFrames+1]=name
 	end
 end
 
@@ -779,6 +1125,7 @@ local function release(frame)
 		pcall(frame.word.Hide,frame.word)
 	end
 	dragFrom=nil
+	dragging=false
 	escapeList(false)
 	if type(A.refreshOptionsWindow)=="function"then
 		pcall(A.refreshOptionsWindow)
@@ -879,11 +1226,7 @@ local function hideAll(list)
 end
 
 local function text(frame,role,colorName)
-	local fs=frame:CreateFontString(nil,"OVERLAY")
-	A.style(fs,role,colorName)
-	fs:SetJustifyH("LEFT")
-	fs:SetWordWrap(false)
-	return fs
+	return A.lineText(frame,role,nil,colorName)
 end
 
 local attachStrip
@@ -923,6 +1266,7 @@ local function build()
 		if not pcall(self.StartMoving,self)then
 			return
 		end
+		dragging=true
 		if fadeStarted~=nil and not previewUp and type(GetTime)=="function"then
 			dragFrom=GetTime()
 			self:SetAlpha(1)
@@ -930,6 +1274,7 @@ local function build()
 	end)
 	frame:SetScript("OnDragStop",function(self)
 		A.stopDrag(self)
+		dragging=false
 		local paused
 		if dragFrom~=nil and fadeStarted~=nil then
 			local now=GetTime()
@@ -995,6 +1340,26 @@ attachStrip=function(frame)
 
 	frame.pills={}
 
+	frame.rows={}
+	frame.heads={}
+
+	frame.headline=text(frame,"announceName","bright")
+	frame.headline:Hide()
+
+	frame.band={
+		head=text(frame,"announceLabel","loss"),
+		record=text(frame,"announceRecord","loss"),
+		classes=text(frame,"announceName","bright"),
+		sub=text(frame,"announceTag","dim"),
+	}
+	frame.band.record:SetJustifyH("RIGHT")
+	frame.rematch=text(frame,"announceTag","dim")
+	frame.band.head:Hide()
+	frame.band.record:Hide()
+	frame.band.classes:Hide()
+	frame.band.sub:Hide()
+	frame.rematch:Hide()
+
 	frame.word=frame:CreateFontString(nil,"OVERLAY")
 	A.style(frame.word,"label","text")
 	frame.word:SetJustifyH("CENTER")
@@ -1055,8 +1420,7 @@ local function hidePill(pill)
 end
 
 local function pillName(name)
-	local bare=A.nameParts(name,name)
-	return bare
+	return(A.nameParts(name,name))
 end
 
 local function paint(frame,composed,shape,cap)
@@ -1151,7 +1515,7 @@ local function paint(frame,composed,shape,cap)
 			and oneLineWidth(against)+sideGap*2+ruleWidth+oneLineWidth(with)<=cap
 	end
 
-	local cut,marks,nameCut=0,0,0
+	local cut,marks,nameCut,partCut=0,0,0,0
 	local pills={against=0,with=0,unsided=0}
 	local lineCounts={against=0,with=0,unsided=0}
 	local lines={}
@@ -1197,14 +1561,28 @@ local function paint(frame,composed,shape,cap)
 		pill.name:SetPoint("LEFT",origin,"TOPLEFT",x+padLeft,middle)
 		pill.name:SetWidth(nameWidth)
 		pill.name:Show()
+		local inner=x+width-padRight
 		local at=x+padLeft+nameWidth+partGap
+		local recordWidth=math.max(math.min(item.recordWidth,inner-at),0)
 		pill.record:ClearAllPoints()
 		pill.record:SetPoint("LEFT",origin,"TOPLEFT",at,middle)
-		pill.record:Show()
-		if it.noted then
-			at=at+item.recordWidth+partGap
+		if recordWidth<1 then
+			pill.record:Hide()
+		else
+			pill.record:SetWidth(recordWidth<item.recordWidth and recordWidth or 0)
+			pill.record:Show()
+		end
+		if recordWidth<item.recordWidth then
+			partCut=partCut+1
+		end
+		local markAt=at+recordWidth+partGap
+		if it.noted and markAt+markSide>inner then
+			partCut=partCut+1
+			pill.mark:Hide()
+			pill.markText:Hide()
+		elseif it.noted then
 			pill.mark:ClearAllPoints()
-			pill.mark:SetPoint("TOPLEFT",origin,"TOPLEFT",at,-(top+padY+(lineHeight-markSide)/2))
+			pill.mark:SetPoint("TOPLEFT",origin,"TOPLEFT",markAt,-(top+padY+(lineHeight-markSide)/2))
 			pill.mark:SetSize(markSide,markSide)
 			pill.mark:Show()
 			pill.markText:Show()
@@ -1341,6 +1719,7 @@ local function paint(frame,composed,shape,cap)
 		sides=table.concat(drawnSides,","),
 		tagCut=cut,
 		nameCut=nameCut,
+		partCut=partCut,
 		noteMarks=marks,
 		pillsAgainst=pills.against,
 		pillsWith=pills.with,
@@ -1349,7 +1728,478 @@ local function paint(frame,composed,shape,cap)
 		linesWith=lineCounts.with,
 		linesUnsided=lineCounts.unsided,
 		shared=shared,
+		compBand=false,
+		rematchLine=false,
+		metLines=0,
 	}
+end
+
+local function rowAt(frame,i)
+	local row=frame.rows[i]
+	if row then
+		return row
+	end
+	row={}
+	row.bar=frame:CreateTexture(nil,"ARTWORK")
+	row.name=text(frame,"announceName","bright")
+	row.word=text(frame,"announceTag")
+	row.word:SetJustifyH("RIGHT")
+	row.record=text(frame,"announceRecord","dim")
+	row.record:SetJustifyH("RIGHT")
+	row.sub=text(frame,"announceTag","chipText")
+	row.met=text(frame,"announceTag","dim")
+	row.met:SetJustifyH("RIGHT")
+	frame.rows[i]=row
+	return row
+end
+
+local function hideRow(row)
+	row.bar:Hide()
+	row.name:Hide()
+	row.word:Hide()
+	row.record:Hide()
+	row.sub:Hide()
+	row.met:Hide()
+end
+
+local function hideBand(frame)
+	frame.band.head:Hide()
+	frame.band.record:Hide()
+	frame.band.classes:Hide()
+	frame.band.sub:Hide()
+	frame.rematch:Hide()
+end
+
+local function headAt(frame,i)
+	local head=frame.heads[i]
+	if head then
+		return head
+	end
+	head={label=text(frame,"announceLabel"),count=text(frame,"announceRecord","dim")}
+	frame.heads[i]=head
+	return head
+end
+
+local function hideCard(frame)
+	for i=1,#frame.rows do
+		hideRow(frame.rows[i])
+	end
+	for i=1,#frame.heads do
+		frame.heads[i].label:Hide()
+		frame.heads[i].count:Hide()
+	end
+	frame.headline:Hide()
+	hideBand(frame)
+end
+
+local function hideStrip(frame)
+	for i=1,#frame.pills do
+		hidePill(frame.pills[i])
+	end
+	frame.labels.against:Hide()
+	frame.labels.with:Hide()
+	frame.divider:Hide()
+end
+
+local function showPlate(frame,width,tall)
+	frame.plate:ClearAllPoints()
+	frame.plate:SetPoint("TOP",frame,"TOP",0,0)
+	frame.plate:SetSize(width,tall)
+	frame.plate:Show()
+	for i=1,#frame.edges do
+		frame.edges[i]:Show()
+	end
+end
+
+local function subLine(it)
+	if type(it.note)=="string"and it.note~=""then
+		return it.note,"noteWord"
+	end
+	if#it.tags>0 then
+		local words={}
+		for j=1,#it.tags do
+			words[j]=tostring(it.tags[j])
+		end
+		return table.concat(words,", "),"chipText"
+	end
+	return nil
+end
+
+local function paintCard(frame,composed,cap)
+	cap=math.min(type(cap)=="number"and cap>0 and cap or math.huge,A.metric("announceCardWidth"))
+	local pad,barWidth,barGap=A.metric("announceCardPad"),A.metric("announceCardBar"),
+		A.metric("announceCardBarGap")
+	local lineHeight,partGap=A.metric("announcePillLine"),A.metric("announcePillPartGap")
+	local subHeight,subGap=A.metric("announceTagHeight"),A.metric("announceCardSubGap")
+	local headHeight,rowGap,runGap=A.metric("announceCardHead"),A.metric("announceCardRowGap"),
+		A.metric("announceCardRunGap")
+	local origin=frame.plate
+	hideStrip(frame)
+	frame.headline:Hide()
+
+	local textLeft=pad+barWidth+barGap
+	local width=0
+
+	local band=frame.band
+	local comp=type(composed.comp)=="table"and composed.comp or nil
+	local said,rematchTone=rematchText(composed.rematch)
+	local bandWide,rematchWide={},0
+	if comp then
+		local plain,coloured={},{}
+		for _,part in ipairs(A.classSignatureNames(comp.signature)or{})do
+			plain[#plain+1]=part.name
+			coloured[#coloured+1]=A.channelEscape(A.classColor(part.token))..part.name.."|r"
+		end
+		local plainClasses=table.concat(plain," + ")
+		local recordWords=("%d-%d against you"):format(comp.wins,comp.losses)
+		local subWords=comp.scope..", by class"
+		band.head:SetText(COMP_HEADING)
+		band.record:SetText(recordWords)
+		band.classes:SetText(table.concat(coloured," + "))
+		band.sub:SetText(subWords)
+		bandWide.head=A.textRoom(band.head,COMP_HEADING)
+		bandWide.record=A.textRoom(band.record,recordWords)
+		bandWide.classes=A.textRoom(band.classes,plainClasses)
+		bandWide.sub=A.textRoom(band.sub,subWords)
+		width=math.max(width,pad+bandWide.head+partGap+bandWide.record+pad,
+			pad+bandWide.classes+pad,pad+bandWide.sub+pad)
+	end
+	if said then
+		frame.rematch:SetText(said)
+		frame.rematch:SetTextColor(A.color(rematchTone))
+		rematchWide=A.textRoom(frame.rematch,said)
+		width=math.max(width,pad+rematchWide+pad)
+	end
+
+	local runs,n,drawnSides={},0,{}
+	for r=1,#(composed.runs or{})do
+		local run=composed.runs[r]
+		local head=headAt(frame,r)
+		head.label:SetText(run.heading)
+		head.label:SetTextColor(A.color(run.tone or"dim"))
+		local count=tostring(#run.names)
+		head.count:SetText(count)
+		width=math.max(width,pad+A.textRoom(head.label,run.heading)+partGap
+			+A.textRoom(head.count,count)+pad)
+		local items={}
+		for k=1,#run.names do
+			local it=run.names[k]
+			n=n+1
+			local row=rowAt(frame,n)
+			local shown=pillName(it.name)
+			row.name:SetText(shown)
+			row.name:SetTextColor(A.classColor(it.classToken))
+			row.word:SetText(it.word or"")
+			row.word:SetTextColor(A.color(it.mark))
+			row.record:SetText(it.record)
+			local sub,subColour=subLine(it)
+			row.sub:SetText(sub or"")
+			if sub then
+				row.sub:SetTextColor(A.color(subColour))
+			end
+			local met,metTone=lastMetText(it.lastMet)
+			row.met:SetText(met or"")
+			if met then
+				row.met:SetTextColor(A.color(metTone))
+			end
+			local item={
+				it=it,
+				row=row,
+				sub=sub,
+				met=met,
+				noteLine=subColour=="noteWord",
+				nameWidth=A.textRoom(row.name,shown),
+				wordWidth=A.textRoom(row.word,it.word),
+				recordWidth=A.textRoom(row.record,it.record),
+				subWidth=A.textRoom(row.sub,sub),
+				metWidth=A.textRoom(row.met,met),
+			}
+			item.after=(item.wordWidth>0 and(partGap+item.wordWidth)or 0)+partGap+item.recordWidth
+			item.metRoom=met and(partGap+item.metWidth)or 0
+			width=math.max(width,textLeft+item.nameWidth+item.after+pad,
+				(sub or met)and(textLeft+item.subWidth+item.metRoom+pad)or 0)
+			items[k]=item
+		end
+		runs[r]={run=run,head=head,items=items}
+		drawnSides[r]=run.side or"unsided"
+	end
+	for i=n+1,#frame.rows do
+		hideRow(frame.rows[i])
+	end
+	for i=#runs+1,#frame.heads do
+		frame.heads[i].label:Hide()
+		frame.heads[i].count:Hide()
+	end
+	width=math.min(width,cap)
+	local right=width-pad
+	local lineRoom=width-textLeft-pad
+
+	local y,nameCut,tagCut,noteLines,rows,metLines,partCut=pad,0,0,0,0,0,0
+	local count={against=0,with=0,unsided=0}
+	local bandRoom=width-pad*2
+
+	local function bound(fs,wide,room)
+		room=math.max(room,1)
+		if wide>room then
+			partCut=partCut+1
+			fs:SetWidth(room)
+		else
+			fs:SetWidth(0)
+		end
+		return math.min(wide,room)
+	end
+
+	hideBand(frame)
+	if comp then
+		band.head:ClearAllPoints()
+		band.head:SetPoint("LEFT",origin,"TOPLEFT",pad,-(y+headHeight/2))
+		local headDrawn=bound(band.head,bandWide.head,bandRoom)
+		band.head:Show()
+		band.record:ClearAllPoints()
+		band.record:SetPoint("RIGHT",origin,"TOPLEFT",right,-(y+headHeight/2))
+		bound(band.record,bandWide.record,bandRoom-headDrawn-partGap)
+		band.record:Show()
+		y=y+headHeight+rowGap
+		band.classes:ClearAllPoints()
+		band.classes:SetPoint("LEFT",origin,"TOPLEFT",pad,-(y+lineHeight/2))
+		bound(band.classes,bandWide.classes,bandRoom)
+		band.classes:Show()
+		y=y+lineHeight+subGap
+		band.sub:ClearAllPoints()
+		band.sub:SetPoint("LEFT",origin,"TOPLEFT",pad,-(y+subHeight/2))
+		bound(band.sub,bandWide.sub,bandRoom)
+		band.sub:Show()
+		y=y+subHeight
+	end
+	if said then
+		y=y+(comp and rowGap or 0)
+		frame.rematch:ClearAllPoints()
+		frame.rematch:SetPoint("LEFT",origin,"TOPLEFT",pad,-(y+subHeight/2))
+		bound(frame.rematch,rematchWide,bandRoom)
+		frame.rematch:Show()
+		y=y+subHeight
+	end
+	local opened=comp~=nil or said~=nil
+	for r=1,#runs do
+		local entry=runs[r]
+		if r>1 or opened then
+			y=y+runGap
+		end
+		local middle=-(y+headHeight/2)
+		entry.head.label:ClearAllPoints()
+		entry.head.label:SetPoint("LEFT",origin,"TOPLEFT",pad,middle)
+		entry.head.label:Show()
+		entry.head.count:ClearAllPoints()
+		entry.head.count:SetPoint("LEFT",entry.head.label,"RIGHT",partGap,0)
+		entry.head.count:Show()
+		y=y+headHeight
+		for k=1,#entry.items do
+			local item=entry.items[k]
+			local row,it=item.row,item.it
+			y=y+rowGap
+			local rowHeight=lineHeight+((item.sub or item.met)and(subGap+subHeight)or 0)
+			row.bar:ClearAllPoints()
+			row.bar:SetPoint("TOPLEFT",origin,"TOPLEFT",pad,-y)
+			row.bar:SetSize(barWidth,rowHeight)
+			row.bar:SetColorTexture(A.color(it.mark))
+			row.bar:Show()
+
+			local nameRoom=math.max(lineRoom-item.after,1)
+			local lineMiddle=-(y+lineHeight/2)
+			row.name:ClearAllPoints()
+			row.name:SetPoint("LEFT",origin,"TOPLEFT",textLeft,lineMiddle)
+			if item.nameWidth>nameRoom then
+				nameCut=nameCut+1
+				row.name:SetWidth(nameRoom)
+			else
+				row.name:SetWidth(0)
+			end
+			row.name:Show()
+			row.record:ClearAllPoints()
+			row.record:SetPoint("RIGHT",origin,"TOPLEFT",right,lineMiddle)
+			row.record:Show()
+			if item.wordWidth>0 then
+				row.word:ClearAllPoints()
+				row.word:SetPoint("RIGHT",origin,"TOPLEFT",right-item.recordWidth-partGap,lineMiddle)
+				row.word:Show()
+			else
+				row.word:Hide()
+			end
+			local subMiddle=-(y+lineHeight+subGap+subHeight/2)
+			if item.met then
+				row.met:ClearAllPoints()
+				row.met:SetPoint("RIGHT",origin,"TOPLEFT",right,subMiddle)
+				row.met:Show()
+				metLines=metLines+1
+			else
+				row.met:Hide()
+			end
+			if item.sub then
+				row.sub:ClearAllPoints()
+				row.sub:SetPoint("LEFT",origin,"TOPLEFT",textLeft,subMiddle)
+				local subRoom=math.max(lineRoom-item.metRoom,1)
+				if item.subWidth>subRoom then
+					tagCut=tagCut+1
+					row.sub:SetWidth(subRoom)
+				else
+					row.sub:SetWidth(0)
+				end
+				row.sub:Show()
+				if item.noteLine then
+					noteLines=noteLines+1
+				end
+			else
+				row.sub:Hide()
+			end
+			y=y+rowHeight
+			rows=rows+1
+			local key=it.side or"unsided"
+			count[key]=count[key]+1
+		end
+	end
+	local tall=y+pad
+
+	showPlate(frame,width,tall)
+	return{
+		width=width,
+		tall=tall,
+		sides=table.concat(drawnSides,","),
+		tagCut=tagCut,
+		nameCut=nameCut,
+		partCut=partCut,
+		noteMarks=0,
+		noteLines=noteLines,
+		rows=rows,
+		compBand=comp~=nil,
+		rematchLine=said~=nil,
+		metLines=metLines,
+		pillsAgainst=count.against,
+		pillsWith=count.with,
+		pillsUnsided=count.unsided,
+		linesAgainst=count.against,
+		linesWith=count.with,
+		linesUnsided=count.unsided,
+	}
+end
+
+local HEADLINE_NAMES=2
+
+local function paintHeadline(frame,composed,cap)
+	cap=type(cap)=="number"and cap>0 and cap or A.metric("announceStripWidth")
+	local padX,padY=A.metric("announceHeadlinePadX"),A.metric("announceHeadlinePadY")
+	local lineHeight=A.metric("announcePillLine")
+	hideStrip(frame)
+	hideCard(frame)
+
+	local plain,coloured,drawnSides,listed={},{},{},0
+	local reset="|r"
+	local count={against=0,with=0,unsided=0}
+	local comp=type(composed.comp)=="table"and composed.comp or nil
+	local compPart=comp and("comp %d-%d"):format(comp.wins,comp.losses)or nil
+	local compAt=nil
+	for r=1,#(composed.runs or{})do
+		local run=composed.runs[r]
+		local shown,said,taken="","",0
+		for k=1,math.min(#run.names,HEADLINE_NAMES)do
+			local it=run.names[k]
+			local name=pillName(it.name)
+			local join=k>1 and", "or""
+			shown=shown..join..name
+			said=said..join..A.channelEscape(A.classColor(it.classToken))..name..reset
+			taken=taken+1
+		end
+		listed=listed+taken
+		local more=#run.names-taken
+		local tail=more>0 and(" and "..more.." more")or""
+		local head=run.heading.." "..#run.names..": "
+		plain[#plain+1]=head..shown..tail
+		coloured[#coloured+1]=A.colorEscape(run.tone or"dim")..head..reset..said
+			..A.colorEscape("dim")..tail..reset
+		count[run.side or"unsided"]=#run.names
+		drawnSides[r]=run.side or"unsided"
+		if comp and run.side=="against"then
+			plain[#plain+1]=compPart
+			coloured[#coloured+1]=A.colorEscape("loss")..compPart..reset
+			compAt=#plain
+		end
+	end
+	if comp and compAt==nil then
+		table.insert(plain,1,compPart)
+		table.insert(coloured,1,A.colorEscape("loss")..compPart..reset)
+		compAt=1
+	end
+	local plainLine,line="",""
+	for r=1,#plain do
+		plainLine=plainLine..(r>1 and"  |  "or"")..plain[r]
+		line=line..(r>1 and(A.colorEscape("dim").."  ||  "..reset)or"")..coloured[r]
+	end
+	frame.headline:SetText(line)
+	local textWidth=A.textRoom(frame.headline,plainLine)
+	local wanted=textWidth+padX*2
+	local width=math.min(wanted,cap)
+	frame.headline:ClearAllPoints()
+	frame.headline:SetPoint("LEFT",frame.plate,"TOPLEFT",padX,-(padY+lineHeight/2))
+	frame.headline:SetWidth(math.max(width-padX*2,1))
+	frame.headline:Show()
+	local tall=padY*2+lineHeight
+	showPlate(frame,width,tall)
+
+	return{
+		width=width,
+		tall=tall,
+		sides=table.concat(drawnSides,","),
+		tagCut=0,
+		nameCut=wanted>cap and 1 or 0,
+		noteMarks=0,
+		noteLines=0,
+		rows=0,
+		headlineNames=listed,
+		compBand=compAt~=nil,
+		rematchLine=false,
+		metLines=0,
+		pillsAgainst=count.against,
+		pillsWith=count.with,
+		pillsUnsided=count.unsided,
+		linesAgainst=count.against>0 and 1 or 0,
+		linesWith=count.with>0 and 1 or 0,
+		linesUnsided=count.unsided>0 and 1 or 0,
+	}
+end
+
+local function formFor(composed,shape,full)
+	if shape=="card"and not full and#composed.names>A.announceCrowd()then
+		return"headline"
+	end
+	return shape
+end
+
+local function retone(frame)
+	for i=1,#SIDES do
+		frame.labels[SIDES[i].side]:SetTextColor(A.color(SIDES[i].tone))
+	end
+	frame.band.head:SetTextColor(A.color("loss"))
+	frame.band.record:SetTextColor(A.color("loss"))
+	local r,g,b=A.color("panelDeep")
+	for i=1,#frame.pills do
+		frame.pills[i].mark:SetColorTexture(A.color("noteWord"))
+		frame.pills[i].markText:SetTextColor(r,g,b,1)
+	end
+end
+
+local function paintForm(frame,composed,shape,cap,full)
+	retone(frame)
+	local form=formFor(composed,shape,full)
+	local drew
+	if form=="card"then
+		drew=paintCard(frame,composed,cap)
+	elseif form=="headline"then
+		drew=paintHeadline(frame,composed,cap)
+	else
+		hideCard(frame)
+		drew=paint(frame,composed,form,cap)
+	end
+	drew.form=form
+	return drew
 end
 
 local function fitTo(width,tall)
@@ -1358,6 +2208,16 @@ local function fitTo(width,tall)
 	local below=screenBelow()
 	local fitted=math.min(A.announceFit(width,room,chosen),A.announceFit(tall,below,chosen))
 	return chosen,room,below,fitted
+end
+
+local function fadeAlpha(at,total)
+	if at<RISE_SECONDS then
+		return at/RISE_SECONDS
+	end
+	if at<total-FALL_SECONDS then
+		return 1
+	end
+	return(total-at)/FALL_SECONDS
 end
 
 local function fade(frame,total)
@@ -1383,17 +2243,34 @@ local function fade(frame,total)
 			self:Hide()
 			return
 		end
-		if at<RISE_SECONDS then
-			self:SetAlpha(at/RISE_SECONDS)
-		elseif at<total-FALL_SECONDS then
-			self:SetAlpha(1)
-		else
-			self:SetAlpha((total-at)/FALL_SECONDS)
-		end
+		self:SetAlpha(fadeAlpha(at,total))
 	end)
 end
 
-function A.announceShow(composed,held)
+local function refit(frame,composed,shape,full,serial,last)
+	if serial~=drawCount or dragging or not frame:IsShown()then
+		return
+	end
+	local drew=paintForm(frame,composed,shape,nil,full)
+	local from=last.width
+	local moved=drew.width~=from or drew.tall~=last.tall
+	if moved then
+		applyScale(frame,select(4,fitTo(drew.width,drew.tall)),drew.tall)
+		last.width,last.tall=drew.width,drew.tall
+	end
+	A.trace("announce-refit",{
+		reason=moved and"moved"or"same",
+		form=drew.form,
+		from=A.unitFigure(from),
+		width=A.unitFigure(drew.width),
+		tall=A.unitFigure(drew.tall),
+		nameCut=drew.nameCut,
+		partCut=drew.partCut,
+		tagCut=drew.tagCut,
+	},"ui")
+end
+
+function A.announceShow(composed,held,full)
 	if type(composed)~="table"or type(composed.names)~="table"or#composed.names==0 then
 		return false
 	end
@@ -1408,14 +2285,23 @@ function A.announceShow(composed,held)
 	end
 
 	local shape=A.announceShape()
-	local drew=paint(frame,composed,shape)
+	local drew=paintForm(frame,composed,shape,nil,full)
 	frame.word:Hide()
 	local chosen,room,below,fitted=fitTo(drew.width,drew.tall)
 	applyScale(frame,fitted,drew.tall)
+	drawCount=drawCount+1
+	if type(C_Timer)=="table"and type(C_Timer.After)=="function"then
+		local serial,last=drawCount,{width=drew.width,tall=drew.tall}
+		for i=1,#REFIT_AFTER do
+			C_Timer.After(REFIT_AFTER[i],function()
+				refit(frame,composed,shape,full,serial,last)
+			end)
+		end
+	end
 	local opacity=A.announceOpacity()
 	applyOpacity(frame,opacity)
 
-	local seconds=A.announceSeconds(composed)
+	local seconds=A.announceSeconds()
 	local unlocked=nil
 	if held then
 		hold(frame)
@@ -1432,7 +2318,6 @@ function A.announceShow(composed,held)
 	end
 	return true,{
 		seconds=seconds,
-		timedLines=timedLines(composed),
 		scale=chosen,
 		fitted=fitted,
 		width=drew.width,
@@ -1440,12 +2325,21 @@ function A.announceShow(composed,held)
 		tall=drew.tall,
 		below=below,
 		shape=shape,
+		form=drew.form,
+		crowd=A.announceCrowd(),
+		rows=drew.rows,
+		noteLines=drew.noteLines,
+		headlineNames=drew.headlineNames,
 		sides=drew.sides,
 		shared=drew.shared,
 		tagLines=composed.tagLines or 0,
 		tagCut=drew.tagCut,
 		nameCut=drew.nameCut,
+		partCut=drew.partCut,
 		noteMarks=drew.noteMarks,
+		compBand=drew.compBand,
+		rematchLine=drew.rematchLine,
+		metLines=drew.metLines,
 		pillsAgainst=drew.pillsAgainst,
 		pillsWith=drew.pillsWith,
 		pillsUnsided=drew.pillsUnsided,
@@ -1490,6 +2384,13 @@ local SAMPLE_TAGS={
 }
 local SAMPLE_NOTED={[1]=true,[2]=true,[5]=true,[6]=true}
 
+local SAMPLE_COMP={signature="MAGE+ROGUE",games=9,wins=2,losses=7,scope="this season"}
+local SAMPLE_REMATCH={count=3,minutesAgo=20,when="20 min ago",result="loss"}
+local SAMPLE_MET={
+	[1]={when="3 d ago",result="loss"},
+	[2]={when="yesterday",result="win"},
+}
+
 local function sampleHeld(record,with)
 	return{
 		against={wins=record[1],decided=record[1]+record[2]},
@@ -1519,13 +2420,36 @@ function A.announceSample(count)
 			faction=(i%2==0)and 1 or 0,
 			rating=rating[i],
 			mark=A.ratingMark(rating[i]),
-			text=SAMPLE_NOTED[i]and"a note the banner does not draw"or nil,
+			text=SAMPLE_NOTED[i]and"kicks late\nswaps early"or nil,
 			tags=SAMPLE_TAGS[i],
 			held=sampleHeld(record,with),
+			lastMet=SAMPLE_MET[i],
 		}
 	end
 
-	return compose(found,1)
+	local composed=compose(found,1)
+	if composed==nil then
+		return nil
+	end
+	local reading={comp="-",rematchWeak=0}
+	if A.announceCompEnabled()then
+		composed.comp=SAMPLE_COMP
+		reading.comp=SAMPLE_COMP.signature
+		reading.compGames=SAMPLE_COMP.wins+SAMPLE_COMP.losses
+		reading.compRecord=("%d-%d"):format(SAMPLE_COMP.wins,SAMPLE_COMP.losses)
+		reading.compReason="none"
+	else
+		reading.compReason="off"
+	end
+	if A.announceRematchEnabled()then
+		composed.rematch=SAMPLE_REMATCH
+		reading.rematch=SAMPLE_REMATCH.count
+		reading.rematchReason="none"
+	else
+		reading.rematchReason="off"
+	end
+	composed.reading=reading
+	return composed
 end
 
 function A.announcePreviewActive()
@@ -1538,19 +2462,23 @@ function A.announcePreview()
 		A.trace("announce",{source="preview",reason="no-sample"})
 		return false
 	end
-	local drawn,drawing=A.announceShow(composed,true)
+	local drawn,drawing=A.announceShow(composed,true,not fullSample)
 	local did=drawing or NOTHING_DRAWN
 	A.trace("announce",{
 		source="preview",
 		reason=drawn and"previewed"or"no-frame",
 		shown=#composed.names,
 		seconds=A.unitFigure(did.seconds),
-		timedLines=did.timedLines,
 		scale=did.scale,
 		fitted=did.fitted,
 		width=A.unitFigure(did.width),
 		tall=A.unitFigure(did.tall),
 		shape=did.shape,
+		form=did.form,
+		crowd=did.crowd,
+		rows=did.rows,
+		noteLines=did.noteLines,
+		headlineNames=did.headlineNames,
 		sides=did.sides,
 		shared=did.shared,
 		pillsAgainst=did.pillsAgainst,
@@ -1562,10 +2490,21 @@ function A.announcePreview()
 		tagLines=did.tagLines,
 		tagCut=did.tagCut,
 		nameCut=did.nameCut,
+		partCut=did.partCut,
 		noteMarks=did.noteMarks,
 		readAgainst=composed.readAgainst,
 		readWith=composed.readWith,
 		readSummed=composed.readSummed,
+		comp=composed.reading.comp,
+		compGames=composed.reading.compGames,
+		compRecord=composed.reading.compRecord,
+		compReason=composed.reading.compReason,
+		rematch=composed.reading.rematch,
+		rematchReason=composed.reading.rematchReason,
+		rematchWeak=composed.reading.rematchWeak,
+		compBand=did.compBand,
+		rematchLine=did.rematchLine,
+		metLines=did.metLines,
 	})
 	return drawn,drawing
 end
@@ -1631,7 +2570,7 @@ function A.announceCardPreview(host)
 	local shape=A.announceShape()
 	local roomW=host:GetWidth()or 0
 	local roomH=host:GetHeight()or 0
-	local drew=paint(strip,composed,shape,roomW)
+	local drew=paintForm(strip,composed,shape,roomW,true)
 	strip.word:Hide()
 	local chosen=A.announceSize()/100
 	local scale=chosen
@@ -1653,6 +2592,8 @@ function A.announceCardPreview(host)
 	A.trace("announce",{
 		source="card",
 		shape=shape,
+		form=drew.form,
+		rows=drew.rows,
 		scale=percent,
 		opacity=opacity,
 		width=A.unitFigure(drew.width),
@@ -1705,20 +2646,15 @@ local function drawPlate()
 	if composed==nil then
 		return false,"no-sample"
 	end
-	local drew=paint(frame,composed,A.announceShape())
-	for i=1,#frame.pills do
-		hidePill(frame.pills[i])
-	end
-	frame.labels.against:Hide()
-	frame.labels.with:Hide()
-	frame.divider:Hide()
-	frame.plate:Show()
-	for i=1,#frame.edges do
-		frame.edges[i]:Show()
-	end
+	drawCount=drawCount+1
+	local drew=paintForm(frame,composed,A.announceShape(),nil,true)
+	hideStrip(frame)
+	hideCard(frame)
+	showPlate(frame,drew.width,drew.tall)
 	local _,_,_,fitted=fitTo(drew.width,drew.tall)
 	applyScale(frame,fitted,drew.tall)
 	applyOpacity(frame,A.announceOpacity())
+	A.style(frame.word,"label","text")
 	frame.word:SetText(PLATE_WORD)
 	frame.word:Show()
 
@@ -1874,7 +2810,7 @@ local function attempt(ladder,n)
 	local own,qualified=ownNames()
 
 	local nameIndex,yielded=nil,nil
-	if ladder.banner or(type(A.alertsEnabled)=="function"and A.alertsEnabled())then
+	if ladder.banner or ladder.sound or(type(A.alertsEnabled)=="function"and A.alertsEnabled())then
 		local built,made,gave=pcall(A.playerNameIndex)
 		nameIndex=built and type(made)=="table"and made or nil
 		yielded=nameIndex and type(gave)=="number"and gave or nil
@@ -1883,18 +2819,26 @@ local function attempt(ladder,n)
 	if A.alertGatesGroup then
 		A.alertGatesGroup(rows,own,qualified,nameIndex)
 	end
-	if not ladder.banner then
+	if not(ladder.banner or ladder.sound)then
 		return
 	end
 
-	local composed=A.announceKnown(rows,own,qualified,nameIndex)
+	local composed=A.announceKnown(rows,own,qualified,nameIndex,record)
 	if composed==nil then
 		A.trace("announce",{reason="nobody",n=#rows,attempt=n,state=state,
 			fill=fillText,yielded=yielded})
 		return
 	end
 
+	A.cueGatesRoster(composed.names,record.openedEpoch or record)
+	if not ladder.banner then
+		return
+	end
+
 	local drawn,drawing=A.announceShow(composed)
+	if drawn then
+		lastShown=composed
+	end
 	local did=drawing or NOTHING_DRAWN
 	A.trace("announce",{
 		reason=drawn and"announced"or"no-frame",
@@ -1914,8 +2858,12 @@ local function attempt(ladder,n)
 		tall=A.unitFigure(did.tall),
 		below=A.unitFigure(did.below),
 		shape=did.shape,
+		form=did.form,
+		crowd=did.crowd,
+		rows=did.rows,
+		noteLines=did.noteLines,
+		headlineNames=did.headlineNames,
 		sides=did.sides,
-		timedLines=did.timedLines,
 		shared=did.shared,
 		pillsAgainst=did.pillsAgainst,
 		pillsWith=did.pillsWith,
@@ -1926,12 +2874,23 @@ local function attempt(ladder,n)
 		tagLines=did.tagLines,
 		tagCut=did.tagCut,
 		nameCut=did.nameCut,
+		partCut=did.partCut,
 		noteMarks=did.noteMarks,
 		readAgainst=composed.readAgainst,
 		readWith=composed.readWith,
 		readSummed=composed.readSummed,
 		unlocked=did.unlocked,
 		opacity=did.opacity,
+		comp=composed.reading.comp,
+		compGames=composed.reading.compGames,
+		compRecord=composed.reading.compRecord,
+		compReason=composed.reading.compReason,
+		rematch=composed.reading.rematch,
+		rematchReason=composed.reading.rematchReason,
+		rematchWeak=composed.reading.rematchWeak,
+		compBand=did.compBand,
+		rematchLine=did.rematchLine,
+		metLines=did.metLines,
 	})
 end
 
@@ -1945,9 +2904,10 @@ function A.announceRoster(record,state)
 		return false
 	end
 	local bannerOn=A.announceEnabled()
+	local soundOn=A.soundEnabled("badArrival")
 	if not bannerOn then
 		A.trace("announce",{reason="switch"})
-		if not A.alertsEnabled()then
+		if not(A.alertsEnabled()or soundOn)then
 			firedFor=record
 			return false
 		end
@@ -1964,7 +2924,7 @@ function A.announceRoster(record,state)
 
 	firedFor=record
 
-	local ladder={record=record,banner=bannerOn,fill={}}
+	local ladder={record=record,banner=bannerOn,sound=soundOn,fill={}}
 	if not(C_Timer and C_Timer.After)then
 		contained(attempt,ladder,MAX_ATTEMPTS)
 		return true
@@ -1977,14 +2937,18 @@ local groupSeen={}
 
 local function groupDecision(guids,selfGuid)
 	local composed,qualified=A.announceGroup(guids,selfGuid)
-	local now,arrived={},false
+	local now,arrivals={},{}
 	for i=1,#qualified do
 		now[qualified[i]]=true
 		if not groupSeen[qualified[i]]then
-			arrived=true
+			arrivals[#arrivals+1]=qualified[i]
 		end
 	end
+	local arrived=#arrivals>0
 	groupSeen=now
+	if arrived then
+		A.cueGroupArrival(arrivals)
+	end
 
 	if composed==nil then
 		A.trace("announce",{source="group",reason="nobody",n=#guids})
@@ -1994,8 +2958,15 @@ local function groupDecision(guids,selfGuid)
 		A.trace("announce",{source="group",reason="seen",n=#guids,found=composed.count})
 		return false
 	end
+	if not A.announceEnabled()then
+		A.trace("announce",{source="group",reason="switch",n=#guids,found=composed.count})
+		return false
+	end
 
 	local drawn,drawing=A.announceShow(composed)
+	if drawn then
+		lastShown=composed
+	end
 	local did=drawing or NOTHING_DRAWN
 	A.trace("announce",{
 		source="group",
@@ -2012,8 +2983,12 @@ local function groupDecision(guids,selfGuid)
 		tall=A.unitFigure(did.tall),
 		below=A.unitFigure(did.below),
 		shape=did.shape,
+		form=did.form,
+		crowd=did.crowd,
+		rows=did.rows,
+		noteLines=did.noteLines,
+		headlineNames=did.headlineNames,
 		sides=did.sides,
-		timedLines=did.timedLines,
 		shared=did.shared,
 		pillsAgainst=did.pillsAgainst,
 		pillsWith=did.pillsWith,
@@ -2024,6 +2999,7 @@ local function groupDecision(guids,selfGuid)
 		tagLines=did.tagLines,
 		tagCut=did.tagCut,
 		nameCut=did.nameCut,
+		partCut=did.partCut,
 		noteMarks=did.noteMarks,
 		readAgainst=composed.readAgainst,
 		readWith=composed.readWith,
@@ -2035,7 +3011,7 @@ local function groupDecision(guids,selfGuid)
 end
 
 function A.announceGroupRoster(guids,selfGuid)
-	if type(guids)~="table"or not A.announceEnabled()then
+	if type(guids)~="table"or not(A.announceEnabled()or A.soundEnabled("badArrival"))then
 		return false
 	end
 	local drawn=false
@@ -2071,7 +3047,7 @@ end
 
 function A.announceFromRecord(record)
 	local rows,own=A.recordRows(record)
-	local composed=A.announceKnown(rows,own,nil)
+	local composed=A.announceKnown(rows,own,nil,nil,record)
 	local switch=A.announceEnabled()and"on"or"off"
 	if composed==nil then
 		A.trace("announce",{source="sample",reason="nobody",id=record.id,n=#rows,switch=switch})
@@ -2091,8 +3067,12 @@ function A.announceFromRecord(record)
 		width=A.unitFigure(did.width),
 		tall=A.unitFigure(did.tall),
 		shape=did.shape,
+		form=did.form,
+		crowd=did.crowd,
+		rows=did.rows,
+		noteLines=did.noteLines,
+		headlineNames=did.headlineNames,
 		sides=did.sides,
-		timedLines=did.timedLines,
 		shared=did.shared,
 		pillsAgainst=did.pillsAgainst,
 		pillsWith=did.pillsWith,
@@ -2103,12 +3083,599 @@ function A.announceFromRecord(record)
 		tagLines=did.tagLines,
 		tagCut=did.tagCut,
 		nameCut=did.nameCut,
+		partCut=did.partCut,
 		noteMarks=did.noteMarks,
 		switch=switch,
+		comp=composed.reading.comp,
+		compGames=composed.reading.compGames,
+		compRecord=composed.reading.compRecord,
+		compReason=composed.reading.compReason,
+		rematch=composed.reading.rematch,
+		rematchReason=composed.reading.rematchReason,
+		rematchWeak=composed.reading.rematchWeak,
+		compBand=did.compBand,
+		rematchLine=did.rematchLine,
+		metLines=did.metLines,
 	})
 	return drawn
+end
+
+function A.announceLast()
+	if lastShown==nil then
+		A.trace("announce",{source="last",reason="none"})
+		return false
+	end
+	local drawn,drawing=A.announceShow(lastShown,false,true)
+	local did=drawing or NOTHING_DRAWN
+	A.trace("announce",{
+		source="last",
+		reason=drawn and"announced"or"no-frame",
+		shown=#lastShown.names,
+		seconds=A.unitFigure(did.seconds),
+		width=A.unitFigure(did.width),
+		tall=A.unitFigure(did.tall),
+		shape=did.shape,
+		form=did.form,
+		rows=did.rows,
+		noteLines=did.noteLines,
+	})
+	return drawn
+end
+
+function A.announceLastHeld()
+	return lastShown~=nil
 end
 
 function A.announceGroupLeft()
 	groupSeen={}
 end
+
+local TOAST_NAME="WowPvpHistoryToast"
+
+local TOAST_TIME={min=2,max=30,step=1,default=5}
+
+local toastGiven
+
+local TOAST_POINT,TOAST_X,TOAST_Y="TOP",0,-TOP_DROP
+
+local TOAST_SIZE={pad=10,stripe=4,gap=3,cellGap=16,minText=160}
+
+local TOAST_CLICK="click to open"
+local TOAST_SEPARATOR="  "
+
+local TOAST_STREAK_FLOOR=2
+
+local TOAST_SAMPLE={
+	verdict="WON 4 OF 6",tone="win",format="shuffle",ratingIn=1850,change=14,delta="+14",
+	deltaTone="win",
+	map="Nagrand Arena",duration=252,best="new best: damage 4.2M",streak="W3",
+}
+
+local toast
+local toastCard
+local toastPreviewUp=false
+
+local toastFadeStarted
+local toastDragFrom
+
+local toastPending
+local toastWaited
+
+function A.toastEnabled()
+	local db=A.db()
+	if not db then
+		return false
+	end
+	return type(db.ui)~="table"or db.ui.toast~=false
+end
+
+function A.setToast(enabled)
+	local db=A.db()
+	if not db then
+		return false
+	end
+	db.ui=db.ui or{}
+	if enabled==false then
+		db.ui.toast=false
+	else
+		db.ui.toast=nil
+	end
+	if A.notifyToastSetting then
+		A.notifyToastSetting()
+	end
+	if enabled==false and toastPreviewUp and toast then
+		pcall(toast.Hide,toast)
+		A.trace("toast",{reason="preview-ended",source="switch"},"ui")
+	end
+	return true
+end
+
+function A.toastSeconds()
+	return storedFigure("toastSeconds",TOAST_TIME.min,TOAST_TIME.max,TOAST_TIME.step,TOAST_TIME.default)
+end
+
+function A.toastSecondsRange()
+	return TOAST_TIME.min,TOAST_TIME.max,TOAST_TIME.step,TOAST_TIME.default
+end
+
+function A.setToastSeconds(value)
+	return storeFigure("toastSeconds",value,TOAST_TIME.min,TOAST_TIME.max,TOAST_TIME.step,
+		TOAST_TIME.default,A.notifyToastSecondsSetting)
+end
+
+function A.toastLocked()
+	local db=A.db()
+	if not db or type(db.ui)~="table"then
+		return true
+	end
+	return db.ui.toastUnlocked~=true
+end
+
+function A.setToastLocked(on)
+	local db=A.db()
+	if not db then
+		return false
+	end
+	db.ui=db.ui or{}
+	db.ui.toastUnlocked=(not on)and true or nil
+	if A.notifyToastLockSetting then
+		A.notifyToastLockSetting()
+	end
+	if toast and not toastPreviewUp then
+		pcall(toast.SetMovable,toast,not on)
+	end
+	return true
+end
+
+function A.toastPosition()
+	return A.storedPosition("toastPosition")
+end
+
+function A.setToastPosition(geometry)
+	return A.storePosition("toastPosition",geometry,function()
+		return TOAST_POINT,TOAST_X,TOAST_Y
+	end)
+end
+
+local function placeToast(frame)
+	local stored=A.toastPosition()
+	local point=stored and stored.point or TOAST_POINT
+	pcall(frame.ClearAllPoints,frame)
+	pcall(frame.SetPoint,frame,point,UIParent,point,stored and stored.x or TOAST_X,
+		stored and stored.y or TOAST_Y)
+end
+
+local function cardFor(record,bestsSet)
+	if type(record)~="table"or record.format=="duel"or record.format=="world"then
+		return nil,"no-result"
+	end
+	local verdict=A.matchVerdict(record)
+	if verdict==nil then
+		return nil,"no-result"
+	end
+	local card={
+		id=record.id,verdict=verdict.words,tone=verdict.tone,format=record.format,
+		map=type(record.map)=="table"and record.map.name or nil,duration=record.duration,
+		best=A.newBestLine(bestsSet),
+	}
+	local delta,deltaTone=A.ratingDelta(record)
+	if delta~=nil then
+		local own=record.participants[record.character]
+		if type(own.rating)=="number"then
+			card.ratingIn,card.change,card.delta,card.deltaTone=own.rating,own.ratingChange,delta,deltaTone
+		end
+	end
+	local streak=A.currentStreak(record.format,record.character)
+	if type(streak)=="table"and streak.count>=TOAST_STREAK_FLOOR then
+		card.streak=streak.word
+	end
+	return card
+end
+
+local function ratingLine(card)
+	if type(card.ratingIn)~="number"or type(card.change)~="number"then
+		return nil
+	end
+	local out=card.ratingIn+card.change
+	local delta,tone=card.delta or tostring(card.change),card.deltaTone or"dim"
+	return A.tierRatingText(card.format,card.ratingIn,"bright").." "..A.colorEscape(tone)..delta
+		.."|r "..A.tierRatingText(card.format,out,"bright"),("%d %s %d"):format(card.ratingIn,delta,out)
+end
+
+local function detailLine(card)
+	local parts={A.formatLabel(card.format)}
+	if type(card.map)=="string"and card.map~=""then
+		parts[#parts+1]=card.map
+	end
+	local length=A.lengthText(card.duration)
+	if length~=nil then
+		parts[#parts+1]=length
+	end
+	return table.concat(parts,TOAST_SEPARATOR)
+end
+
+local function toastText(frame,role,colorName)
+	local fs=A.lineText(frame,role,nil,colorName)
+	fs:Hide()
+	return fs
+end
+
+local function releaseToast(frame)
+	toastPreviewUp=false
+	toastDragFrom=nil
+	escapeList(false,TOAST_NAME)
+	pcall(frame.SetMovable,frame,not A.toastLocked())
+	if type(A.refreshOptionsWindow)=="function"then
+		pcall(A.refreshOptionsWindow)
+	end
+end
+
+local function buildToast()
+	if toast then
+		return toast
+	end
+	if type(CreateFrame)~="function"then
+		return nil
+	end
+	local frame=CreateFrame("Button",TOAST_NAME,UIParent)
+	if type(frame)~="table"or type(frame.EnableMouse)~="function"then
+		return nil
+	end
+	frame:SetFrameStrata("HIGH")
+	frame:SetClampedToScreen(true)
+	frame:EnableMouse(true)
+	frame:RegisterForClicks("LeftButtonUp")
+	frame:RegisterForDrag("LeftButton")
+	frame:SetMovable(not A.toastLocked())
+	placeToast(frame)
+
+	frame.plate=frame:CreateTexture(nil,"BACKGROUND")
+	frame.plate:SetAllPoints(frame)
+	frame.plate:SetColorTexture(GROUND[1],GROUND[2],GROUND[3],OPACITY_DEFAULT/100)
+	frame.edges=fourEdges(frame,"BORDER")
+	frame.stripe=frame:CreateTexture(nil,"ARTWORK")
+	frame.stripe:SetPoint("TOPLEFT",frame,"TOPLEFT",0,0)
+	frame.stripe:SetPoint("BOTTOMLEFT",frame,"BOTTOMLEFT",0,0)
+	frame.stripe:SetWidth(TOAST_SIZE.stripe)
+
+	frame.verdict=toastText(frame,"headingLarge","win")
+	frame.rating=toastText(frame,"cardValue","bright")
+	frame.detail=toastText(frame,"bodyText","dim")
+	frame.best=toastText(frame,"bodyText","text")
+	frame.streak=toastText(frame,"label","text")
+	frame.click=toastText(frame,"cardLabel","dim")
+	frame.click:SetJustifyH("RIGHT")
+
+	frame:SetScript("OnClick",function(self)
+		local id=toastCard and toastCard.id
+		A.trace("toast",{reason="clicked",id=id},"ui")
+		if type(id)=="number"and type(A.raiseMatchWindow)=="function"then
+			A.raiseMatchWindow("match",id,"toast")
+			self:Hide()
+		end
+	end)
+	frame:SetScript("OnDragStart",function(self)
+		if not pcall(self.StartMoving,self)then
+			return
+		end
+		if toastFadeStarted~=nil and type(GetTime)=="function"then
+			toastDragFrom=GetTime()
+			self:SetAlpha(1)
+		end
+	end)
+	frame:SetScript("OnDragStop",function(self)
+		A.stopDrag(self)
+		if toastDragFrom~=nil and toastFadeStarted~=nil then
+			local now=GetTime()
+			toastFadeStarted=now-math.max(toastDragFrom-toastFadeStarted,RISE_SECONDS)
+		end
+		toastDragFrom=nil
+		local read=A.frameGeometry(self)
+		if read and read.point then
+			A.setToastPosition(read)
+		end
+		local at=read or NOTHING_READ
+		A.trace("toast",{reason="moved",point=at.point,x=A.unitFigure(at.x),y=A.unitFigure(at.y)},
+			"ui")
+	end)
+	frame:SetScript("OnHide",function(self)
+		self:SetScript("OnUpdate",nil)
+		toastFadeStarted=nil
+		releaseToast(self)
+	end)
+	frame:Hide()
+	toast=frame
+	return toast
+end
+
+local function paintToast(frame,card)
+	local r,g,b=A.color(card.tone or"dim")
+	frame.stripe:SetColorTexture(r,g,b,1)
+	local rated,ratedPlain=ratingLine(card)
+	local detail=detailLine(card)
+	local streak=card.streak
+
+	local column=TOAST_SIZE.pad+TOAST_SIZE.stripe+TOAST_SIZE.pad
+	local lines={
+		{fs=frame.verdict,text=card.verdict,plain=card.verdict,role="headingLarge",
+			color=card.tone or"dim"},
+		{fs=frame.rating,text=rated,plain=ratedPlain,role="cardValue",color="bright"},
+		{fs=frame.detail,text=detail,plain=detail,role="bodyText",color="dim"},
+		{fs=frame.best,text=card.best,plain=card.best,role="bodyText",color="text"},
+		{fs=frame.streak,text=streak,plain=streak,role="label",color="text"},
+	}
+	local y,wide=TOAST_SIZE.pad,TOAST_SIZE.minText
+	for i=1,#lines do
+		local line=lines[i]
+		if line.text==nil then
+			line.fs:Hide()
+		else
+			if y>TOAST_SIZE.pad then
+				y=y+TOAST_SIZE.gap
+			end
+			A.style(line.fs,line.role,line.color)
+			line.fs:ClearAllPoints()
+			line.fs:SetPoint("TOPLEFT",frame,"TOPLEFT",column,-y)
+			line.fs:SetText(line.text)
+			line.fs:Show()
+			wide=math.max(wide,A.textRoom(line.fs,line.plain))
+			y=y+A.fontSize(line.role)
+		end
+	end
+	local tall=y+TOAST_SIZE.pad
+	A.style(frame.click,"cardLabel","dim")
+	frame.click:SetText(TOAST_CLICK)
+	local cell=A.textRoom(frame.click,TOAST_CLICK)
+	local width=column+wide+TOAST_SIZE.cellGap+cell+TOAST_SIZE.pad
+	frame.click:ClearAllPoints()
+	frame.click:SetPoint("RIGHT",frame,"RIGHT",-TOAST_SIZE.pad,0)
+	frame.click:Show()
+	frame:SetSize(width,tall)
+	box(frame.edges,frame,0,0,width,tall)
+	colourEdges(frame.edges,GROUND_EDGE[1],GROUND_EDGE[2],GROUND_EDGE[3],GROUND_EDGE[4])
+	return width,tall
+end
+
+local function fadeToast(frame,total)
+	toastGiven=total
+	toastFadeStarted=(type(GetTime)=="function")and GetTime()or nil
+	toastDragFrom=nil
+	if toastFadeStarted==nil then
+		frame:SetAlpha(1)
+		frame:Show()
+		return
+	end
+	frame:SetAlpha(0)
+	frame:Show()
+	frame:SetScript("OnUpdate",function(self)
+		if toastDragFrom~=nil or toastFadeStarted==nil then
+			return
+		end
+		local at=GetTime()-toastFadeStarted
+		if at>=total then
+			self:SetAlpha(0)
+			self:Hide()
+			return
+		end
+		self:SetAlpha(fadeAlpha(at,total))
+	end)
+end
+
+local function riseToast(card,held)
+	local frame=buildToast()
+	if not frame then
+		return false
+	end
+	toastCard=card
+	paintToast(frame,card)
+	placeToast(frame)
+	if held then
+		frame:SetScript("OnUpdate",nil)
+		toastFadeStarted=nil
+		toastPreviewUp=true
+		escapeList(true,TOAST_NAME)
+		frame:SetMovable(true)
+		frame:SetAlpha(1)
+		frame:Show()
+		if type(A.refreshOptionsWindow)=="function"then
+			pcall(A.refreshOptionsWindow)
+		end
+	else
+		local endedPreview=toastPreviewUp
+		toastPreviewUp=false
+		escapeList(false,TOAST_NAME)
+		frame:SetMovable(not A.toastLocked())
+		fadeToast(frame,A.toastSeconds())
+		if endedPreview and type(A.refreshOptionsWindow)=="function"then
+			pcall(A.refreshOptionsWindow)
+		end
+	end
+	return true
+end
+
+local function traceToast(reason,card,source)
+	local drawn=card or NOTHING_DRAWN
+	local seconds
+	if reason=="none"then
+		seconds=toastGiven
+	end
+	local best
+	if card then
+		best=card.best~=nil
+	end
+	A.trace("toast",{
+		reason=reason,
+		source=source,
+		id=drawn.id,
+		verdict=drawn.verdict,
+		change=drawn.change,
+		best=best,
+		streak=drawn.streak,
+		seconds=seconds,
+	},"ui")
+end
+
+local TOAST_HELD={instance="in-instance",combat="in-combat",loading="loading"}
+
+local function attemptToast(source)
+	local card=toastPending
+	if card==nil then
+		return nil
+	end
+	if not A.toastEnabled()then
+		toastPending,toastWaited=nil,nil
+		traceToast("off",card,source)
+		return"off"
+	end
+	local held=A.afterMatchHeld(source,toastWaited)
+	if held then
+		if toastWaited~=held then
+			toastWaited=held
+			traceToast(TOAST_HELD[held],card,source)
+		end
+		return"waiting"
+	end
+	toastPending,toastWaited=nil,nil
+	if not riseToast(card,false)then
+		traceToast("no-frame",card,source)
+		return"no-frame"
+	end
+	traceToast("none",card,source)
+	return"none"
+end
+
+function A.toastAfterMatch(record,bestsSet)
+	if not A.toastEnabled()then
+		traceToast("off",nil,"store")
+		return"off"
+	end
+	local card,why=cardFor(record,bestsSet)
+	if card==nil then
+		traceToast(why,nil,"store")
+		return why
+	end
+	toastPending,toastWaited=card,nil
+	return attemptToast("store")
+end
+
+function A.toastPendingCard()
+	return toastPending
+end
+
+function A.dropToast()
+	local had=toastPending~=nil
+	toastPending,toastWaited=nil,nil
+	return had
+end
+
+function A.toastFrame()
+	return toast,toastCard
+end
+
+function A.toastPreviewActive()
+	return toastPreviewUp
+end
+
+function A.toastPreview()
+	if toastPreviewUp and toast then
+		pcall(toast.Hide,toast)
+		traceToast("preview-ended",nil,"preview")
+		return"ended"
+	end
+	if not riseToast(TOAST_SAMPLE,true)then
+		traceToast("no-frame",nil,"preview")
+		return false
+	end
+	traceToast("preview",TOAST_SAMPLE,"preview")
+	return"shown"
+end
+
+function A.resetToastPosition()
+	local stored=A.setToastPosition(nil)
+	if toast then
+		placeToast(toast)
+	end
+	return stored
+end
+
+local function reportToastSeconds(figure)
+	local min,max,step=A.toastSecondsRange()
+	local was=A.toastSeconds()
+	if figure==nil then
+		A.say(("the result card stays up for %d seconds"):format(was))
+		return
+	end
+	local want=A.decimalArgument(figure)
+	if want==nil or not A.setToastSeconds(want)then
+		A.say(("%s is not one this takes. /pvph toast seconds takes %d to %d in steps of %d")
+			:format(tostring(figure),min,max,step))
+		return
+	end
+	A.say(("the result card time is %d seconds, from %d seconds"):format(A.toastSeconds(),was))
+end
+
+function A.reportToast(word,figure)
+	if word=="seconds"then
+		reportToastSeconds(figure)
+		return
+	end
+	if word=="on"or word=="off"then
+		if not A.setToast(word=="on")then
+			A.say("no database, so the setting could not be stored")
+			return
+		end
+		A.say("the result card after a match "..word)
+		return
+	end
+	if word=="preview"then
+		local did=A.toastPreview()
+		if did=="ended"then
+			A.say("the result card sample is put away")
+		elseif did=="shown"then
+			A.say("the result card sample is drawn where the card rises. Drag it, and /pvph toast "
+				.."preview again puts it away")
+		else
+			A.say("the result card could not be drawn on this client")
+		end
+		return
+	end
+	if word=="lock"or word=="unlock"then
+		if not A.setToastLocked(word=="lock")then
+			A.say("no database, so the setting could not be stored")
+			return
+		end
+		A.say(word=="lock"and"the result card is fixed where it is"
+			or"the result card can be dragged while it is up")
+		return
+	end
+	if word=="reset"then
+		if not A.resetToastPosition()then
+			A.say("no database, so the position could not be cleared")
+			return
+		end
+		A.say("the result card is back a sixth of the screen down")
+		return
+	end
+	if word then
+		A.say(("unknown toast command %q. on, off, seconds, preview, lock, unlock or reset"):format(word))
+		return
+	end
+	local held=A.toastPosition()
+	A.say(("the result card after a match is %s and %s, at %s%s"):format(
+		A.toastEnabled()and"on"or"off",A.toastLocked()and"locked"or"unlocked",
+		held and("%s %d, %d"):format(held.point,held.x,held.y)or"its default place",
+		toastPending and(", match #%s waiting"):format(A.matchIdText(toastPending.id))or""))
+end
+
+local function onToastLift(event)
+	if toastPending==nil then
+		return
+	end
+	local ok,err=pcall(attemptToast,event)
+	if not ok then
+		A.noteError(err,"toast")
+	end
+end
+
+A.on("PLAYER_ENTERING_WORLD",onToastLift)
+A.on("PLAYER_REGEN_ENABLED",onToastLift)

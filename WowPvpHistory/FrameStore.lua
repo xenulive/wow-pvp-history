@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.33
+-- WowPvpHistory 0.75.26
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -149,7 +149,6 @@ local function buildWindow()
 	A.registerChrome(frame)
 
 	A.placeWindowHeading(frame)
-	A.style(frame.heading,"heading","bright")
 
 	frame.body=CreateFrame("Frame",nil,frame)
 	frame.body:SetPoint("TOPLEFT",frame,"TOPLEFT",
@@ -183,12 +182,7 @@ local function windowOrNil()
 	if not surface()then
 		return nil
 	end
-	local built=A.buildWindowOnce("store",buildWindow)
-	if not built then
-		window=nil
-		return nil
-	end
-	window=built
+	window=A.buildWindowOnce("store",buildWindow)
 	return window
 end
 
@@ -198,7 +192,7 @@ function A.refreshStoreWindow()
 	end
 
 	A.containedPaint("store/heading",function()
-		window.heading:SetText(A.storeWindowTitle())
+		A.setWindowTitle(window,A.storeWindowTitle())
 		A.style(window.sectionHeading,"section","accent")
 	end)
 

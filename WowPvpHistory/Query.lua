@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.33
+-- WowPvpHistory 0.75.26
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -91,7 +91,7 @@ function A.newestOfFormat(format)
 	local list=db.matches
 	for i=#list,1,-1 do
 		local record=list[i]
-		if type(record)=="table"and record.format==format then
+		if type(record)=="table"and A.recordInFormat(record,format)then
 			return record
 		end
 	end
@@ -226,13 +226,39 @@ local function tableBytes(subject,constants,tap)
 	return bytes
 end
 
+local sandboxCeiling=nil
+
+function A.setSandboxCeiling(n)
+	if not A.sandboxed()then
+		return false
+	end
+	if n==nil then
+		sandboxCeiling=nil
+		return true
+	end
+	if type(n)~="number"or n<1 or n~=math.floor(n)or n>CONSTANT_CEILING then
+		return false
+	end
+	sandboxCeiling={store=A.db(),n=n}
+	return true
+end
+
+local function ceilingNow()
+	local held=sandboxCeiling
+	if held~=nil and A.sandboxed()and A.db()==held.store then
+		return held.n
+	end
+	return CONSTANT_CEILING
+end
+
 local function walkStoredSize()
 	local db=A.db()
+	local ceiling=ceilingNow()
 	if not db then
 		return{total=0,matches=0,generated=0,real=0,
 			participants=0,participantBytes=0,
 			participantShare=0,indexBytes=0,indexShare=0,
-			constants=0,ceiling=CONSTANT_CEILING,headroom=CONSTANT_CEILING,
+			constants=0,ceiling=ceiling,headroom=ceiling,
 			density=nil,headroomMatches=nil}
 	end
 
@@ -302,10 +328,10 @@ local function walkStoredSize()
 		tableBytes(view,realConstants)
 	end
 	local density,headroomMatches
-	local headroom=math.max(CONSTANT_CEILING-constants.n,0)
+	local headroom=math.max(ceiling-constants.n,0)
 	if real>=DENSITY_FLOOR and realConstants.n>0 then
 		density=realConstants.n/real
-		headroomMatches=math.floor(math.max(CONSTANT_CEILING-realConstants.n,0)/density)
+		headroomMatches=math.floor(math.max(ceiling-realConstants.n,0)/density)
 	end
 
 	return{
@@ -319,11 +345,19 @@ local function walkStoredSize()
 		indexBytes=indexBytes,
 		indexShare=total>0 and indexBytes/total or 0,
 		constants=constants.n,
-		ceiling=CONSTANT_CEILING,
+		ceiling=ceiling,
 		headroom=headroom,
 		density=density,
 		headroomMatches=headroomMatches,
 	}
+end
+
+function A.indexEntryBytes(guid,entry)
+	local width=keyBytes(guid)
+	if width==nil or type(entry)~="table"then
+		return 0
+	end
+	return width+OPEN+EOL+tableBytes(entry)+CLOSE+EOL
 end
 
 function A.storedSize()
@@ -335,13 +369,162 @@ function A.storedSize()
 	return size
 end
 
+A.ROOM_SHARE=0.9
+A.ROOM_KEEPS={1,2,3}
+
+local function happenedAt(item)
+	if type(item)~="table"then
+		return nil
+	end
+	for _,key in ipairs({"completedAt","endedAt","openedAt"})do
+		if type(item[key])=="string"and item[key]~=""then
+			return item[key]
+		end
+	end
+	return nil
+end
+
+function A.roomSelection(db,keep)
+	local list=type(db)=="table"and type(db.matches)=="table"and db.matches or{}
+	local seen,seasons={},{}
+	for i=1,#list do
+		local game=A.recordGameSeason(list[i])
+		if game~=nil and not seen[game]then
+			seen[game]=true
+			seasons[#seasons+1]=game
+		end
+	end
+	if#seasons==0 then
+		return nil,"no-season"
+	end
+	table.sort(seasons,function(a,b)
+		return a>b
+	end)
+
+	local keepSet={}
+	for i=1,math.min(keep,#seasons)do
+		keepSet[seasons[i]]=true
+	end
+	local cutoff
+	for i=1,#list do
+		local game=A.recordGameSeason(list[i])
+		local at=happenedAt(list[i])
+		if game~=nil and keepSet[game]and at~=nil and(cutoff==nil or at<cutoff)then
+			cutoff=at
+		end
+	end
+
+	local function placedInside(item)
+		local at=happenedAt(item)
+		return at~=nil and cutoff~=nil and at>=cutoff
+	end
+
+	local out={gone={},kept={},goneLeft={},keptLeft={},seasons=#seasons,keep=keep,
+		cutoff=cutoff}
+	for i=1,#list do
+		local record=list[i]
+		local stays
+		if type(record)~="table"or record.worldOpen then
+			stays=true
+		else
+			local game=A.recordGameSeason(record)
+			if game~=nil then
+				stays=keepSet[game]==true
+			else
+				stays=placedInside(record)
+			end
+		end
+		local into=stays and out.kept or out.gone
+		into[#into+1]=record
+	end
+	local left=type(db)=="table"and type(db.incomplete)=="table"and db.incomplete or{}
+	for i=1,#left do
+		local into=placedInside(left[i])and out.keptLeft or out.goneLeft
+		into[#into+1]=left[i]
+	end
+	return out
+end
+
+local function constantsWithout(db,selection)
+	local view={}
+	for key,value in pairs(db)do
+		view[key]=value
+	end
+	view.matches=selection.kept
+	if type(db.incomplete)=="table"then
+		view.incomplete=selection.keptLeft
+	end
+	local constants=constantSet()
+	constant(constants,SAVED_VARIABLE)
+	tableBytes(view,constants)
+	return constants.n
+end
+
+function A.roomOffer(size)
+	local db=A.db()
+	if not(db and type(size)=="table"and type(size.constants)=="number"
+		and type(size.ceiling)=="number"and size.ceiling>0)then
+		return nil
+	end
+	if size.constants<size.ceiling*A.ROOM_SHARE then
+		return nil
+	end
+	local offer={ceiling=size.ceiling,constants=size.constants,rows={}}
+	for _,keep in ipairs(A.ROOM_KEEPS)do
+		local selection,why=A.roomSelection(db,keep)
+		if not selection then
+			A.trace("room",{state="dry-run",reason=why,keep=keep},"data")
+			return nil,why
+		end
+		local freed=math.max(size.constants-constantsWithout(db,selection),0)
+		offer.rows[#offer.rows+1]={keep=keep,n=#selection.gone,leftEarly=#selection.goneLeft,
+			freed=freed,share=freed/size.ceiling,seasons=selection.seasons}
+		A.trace("room",{state="dry-run",reason="none",keep=keep,n=#selection.gone,
+			leftEarly=#selection.goneLeft,freed=freed,ceiling=size.ceiling},"data")
+	end
+	return offer
+end
+
+function A.roomRowText(row)
+	local n,left=type(row)=="table"and row.n or 0,type(row)=="table"and row.leftEarly or 0
+	if n+left==0 then
+		return"nothing older"
+	end
+	local percent=A.percentPoints(row.share or 0)
+	local moved=n>0 and("%d %s"):format(n,n==1 and"match"or"matches")or("%d left early"):format(left)
+	return("%s, %s of the room"):format(moved,percent<1 and"under 1%"or("%d%%"):format(percent))
+end
+
+function A.roomLead(offer)
+	local first=offer and offer.rows and offer.rows[1]
+	if not first then
+		return nil
+	end
+	return("%d %s older than the newest season"):format(first.n,first.n==1 and"match is"or"matches are")
+end
+
+function A.roomLines(offer)
+	local lines={}
+	if not offer then
+		return lines
+	end
+	lines[#lines+1]=("the file is %s full, and %s. Older seasons can move out into a text copy you keep")
+		:format(A.sizeShare({constants=offer.constants,ceiling=offer.ceiling}),A.roomLead(offer))
+	for _,row in ipairs(offer.rows)do
+		lines[#lines+1]=("  keep %d %s: %s. /pvph room %d")
+			:format(row.keep,row.keep==1 and"season"or"seasons",A.roomRowText(row),row.keep)
+	end
+	return lines
+end
+
 function A.bytesText(bytes,exact)
 	if bytes<1024 then
 		return("%d bytes"):format(bytes)
 	end
 
-	local scaled=("%.1f KB"):format(bytes/1024)
-	if tonumber(("%.1f"):format(bytes/1024))>=1024 then
+	local kb=("%.1f"):format(bytes/1024)
+	local scaled=kb.." KB"
+	if tonumber(kb)>=1024 then
 		scaled=("%.1f MB"):format(bytes/(1024*1024))
 	end
 	if exact then
@@ -477,9 +660,7 @@ function A.historyFigures()
 		for _,key in ipairs({"MATCHES","PLAYERS MET","NOTES WRITTEN","CHARACTERS"})do
 			put(key,nil,nil,"no-match")
 		end
-	end
-
-	if not empty then
+	else
 		counted("MATCHES",function()
 			local count,left=A.allCount()
 			return count,left>0 and("and %d left early"):format(left)or nil
@@ -531,11 +712,7 @@ function A.historyFigures()
 			end
 			return nil
 		end)
-		if ok and type(bytes)=="string"then
-			put("SIZE",bytes)
-		else
-			put("SIZE","-")
-		end
+		put("SIZE",ok and type(bytes)=="string"and bytes or"-")
 	else
 		put("SIZE",nil,nil,"switch-off")
 	end
@@ -544,9 +721,14 @@ end
 
 function A.sizeBand(size)
 	local used=type(size)=="table"and tonumber(size.constants)or 0
-	if used>=ALARM_CONSTANTS then
+	local ceiling=type(size)=="table"and tonumber(size.ceiling)or nil
+	local alarm,warn=ALARM_CONSTANTS,WARN_CONSTANTS
+	if ceiling~=nil and ceiling~=CONSTANT_CEILING then
+		alarm,warn=math.floor(ceiling*0.8),math.floor(ceiling/2)
+	end
+	if used>=alarm then
 		return"loss"
-	elseif used>=WARN_CONSTANTS then
+	elseif used>=warn then
 		return"caution"
 	end
 	return"ok"
@@ -676,7 +858,7 @@ function A.playerEntry(guid)
 	return{guid=guid,entry={names=names},indexed=false},note~=nil
 end
 
-function A.players()
+function A.players(unsorted)
 	local db=A.db()
 	if not db then
 		return{}
@@ -698,7 +880,9 @@ function A.players()
 		end
 	end
 
-	table.sort(out,playerOrder)
+	if not unsorted then
+		table.sort(out,playerOrder)
+	end
 	return out
 end
 
@@ -790,41 +974,79 @@ function A.searchTerms(text)
 		if exclude then
 			term=searchTrim(term:sub(2))
 		end
-		if term~=""then
+		if term=="*"then
+			out[#out+1]={text=term,exclude=exclude,starred=true}
+		elseif term~=""then
 			out[#out+1]={text=A.foldText(term),exclude=exclude}
 		end
 	end
 	return out
 end
 
-local function searchFields(record)
-	local fields={}
-	if type(record)~="table"then
-		return fields
-	end
-	local function add(value)
-		if type(value)=="string"and value~=""then
-			fields[#fields+1]=A.foldText(value)
+local SEARCH_HELP={
+	{feature="commas",line="Separate terms with commas. A match has to carry every one."},
+	{feature="fields",line="A term finds a name, a map, or a spec with its class, as in Frost Mage.",
+		world="A term finds a name, a class or a zone."},
+	{feature="exclude",line="A term opening with - or ! leaves those matches out."},
+	{feature="fold",line="Letters with accents, and Cyrillic, match in either case."},
+	{feature="starred",line="* keeps your starred matches.",starred=true},
+}
+
+function A.searchHelpLines(world)
+	local out,features={"How to search"},{}
+	for i=1,#SEARCH_HELP do
+		local row=SEARCH_HELP[i]
+		if not(world and row.starred)then
+			out[#out+1]=world and row.world or row.line
+			features[#features+1]=row.feature
 		end
 	end
-	if type(record.map)=="table"then
-		add(record.map.name)
+	return out,features
+end
+
+local function offerField(fields,needle,value)
+	if type(value)~="string"or value==""then
+		return false
 	end
-	add(record.opponentName)
+	local folded=A.foldText(value)
+	if needle then
+		return folded:find(needle,1,true)~=nil
+	end
+	fields[#fields+1]=folded
+	return false
+end
+
+local function walkFields(record,fields,needle)
+	if type(record)~="table"then
+		return false
+	end
+	if type(record.map)=="table"and offerField(fields,needle,record.map.name)then
+		return true
+	end
+	if offerField(fields,needle,record.opponentName)then
+		return true
+	end
 	if type(record.participants)=="table"then
 		for _,p in pairs(record.participants)do
 			if type(p)=="table"then
-				add(p.name)
+				if offerField(fields,needle,p.name)then
+					return true
+				end
 				local spec=type(p.spec)=="string"and p.spec~=""and p.spec or nil
 				local class=type(p.class)=="string"and p.class~=""and p.class or nil
-				if spec and class then
-					add(("%s %s"):format(spec,class))
-				else
-					add(spec or class)
+				local label=spec and class and("%s %s"):format(spec,class)or spec or class
+				if offerField(fields,needle,label)then
+					return true
 				end
 			end
 		end
 	end
+	return false
+end
+
+local function searchFields(record)
+	local fields={}
+	walkFields(record,fields,nil)
 	return fields
 end
 
@@ -832,14 +1054,24 @@ function A.searchMatches(record,terms)
 	if type(terms)~="table"or#terms==0 then
 		return true
 	end
+	if#terms==1 then
+		if terms[1].starred then
+			return A.isStarred(record)~=terms[1].exclude
+		end
+		return walkFields(record,nil,terms[1].text)~=terms[1].exclude
+	end
 	local fields=searchFields(record)
 	for i=1,#terms do
 		local term=terms[i]
 		local found=false
-		for j=1,#fields do
-			if fields[j]:find(term.text,1,true)then
-				found=true
-				break
+		if term.starred then
+			found=A.isStarred(record)
+		else
+			for j=1,#fields do
+				if fields[j]:find(term.text,1,true)then
+					found=true
+					break
+				end
 			end
 		end
 		if found==term.exclude then
@@ -865,6 +1097,20 @@ function A.zoneFilterPasses(record,zone)
 	return A.recordZone(record)==zone
 end
 
+local function countedNames(names,counts,field)
+	table.sort(names,function(a,b)
+		if counts[a]~=counts[b]then
+			return counts[a]>counts[b]
+		end
+		return a<b
+	end)
+	for i=1,#names do
+		local name=names[i]
+		names[i]={[field]=name,count=counts[name]}
+	end
+	return names
+end
+
 function A.recordZones(records)
 	local counts,out={},{}
 	for _,record in ipairs(type(records)=="table"and records or{})do
@@ -877,21 +1123,15 @@ function A.recordZones(records)
 			counts[zone]=counts[zone]+1
 		end
 	end
-	table.sort(out,function(a,b)
-		if counts[a]~=counts[b]then
-			return counts[a]>counts[b]
-		end
-		return a<b
-	end)
-	for i=1,#out do
-		out[i]={zone=out[i],count=counts[out[i]]}
-	end
-	return out
+	return countedNames(out,counts,"zone")
 end
 
 function A.resultFilterPasses(record,choice)
 	if choice==nil then
 		return true
+	end
+	if choice=="starred"then
+		return A.isStarred(record)
 	end
 	if type(record)~="table"then
 		return false
@@ -943,17 +1183,7 @@ function A.playedSpecs(format,character,scope)
 			end
 		end
 	end
-	table.sort(order,function(a,b)
-		if counts[a]~=counts[b]then
-			return counts[a]>counts[b]
-		end
-		return a<b
-	end)
-	local out={}
-	for i=1,#order do
-		out[i]={spec=order[i],count=counts[order[i]]}
-	end
-	return out
+	return countedNames(order,counts,"spec")
 end
 
 function A.matchRoster(record,text)
@@ -1140,8 +1370,12 @@ function A.knownLine(known,context)
 	if#names>0 then
 		local shown={}
 		local guids=known.guids or{}
+		local shared=A.sharedBareNames(names,function(name)
+			return name
+		end)
 		for i=1,math.min(#names,KNOWN_NAME_CAP)do
-			shown[i]=guids[i]and A.playerLink(guids[i],names[i])or names[i]
+			local kept=type(names[i])=="string"and shared[(A.nameParts(names[i]))]or nil
+			shown[i]=guids[i]and A.playerLink(guids[i],names[i],kept)or A.listNameText(names[i],kept)
 		end
 		sentence=sentence..": "..table.concat(shown,", ")
 		local rest=#names-#shown
@@ -1152,11 +1386,11 @@ function A.knownLine(known,context)
 	end
 
 	local sides={}
-	if(known.with or 0)>0 then
-		sides[#sides+1]=("%d %s"):format(known.with,SIDE_WORDS.with)
-	end
-	if(known.against or 0)>0 then
-		sides[#sides+1]=("%d %s"):format(known.against,SIDE_WORDS.against)
+	for i=1,#SIDES do
+		local side=SIDES[i]
+		if(known[side]or 0)>0 then
+			sides[#sides+1]=("%d %s"):format(known[side],SIDE_WORDS[side])
+		end
 	end
 
 	return A.joinSentences({sentence,table.concat(sides,", ")})
@@ -1253,6 +1487,7 @@ function A.playerSummary(guid)
 	if note then
 		out.name=out.name or(type(note.name)=="string"and note.name or nil)
 		out.rated=note.rating
+		out.attitude=note.attitude
 		out.tags=detached(note.tags)
 		out.text=note.text
 	end
@@ -1415,7 +1650,8 @@ function A.authoredClause(note)
 		return nil
 	end
 	local parts={}
-	put(parts,A.ratingText(note.rating))
+	clause(parts,A.ratingText(note.rating),"skill %s")
+	clause(parts,A.ratingText(note.attitude,"attitude"),"attitude %s")
 	if type(note.tags)=="table"and#note.tags>0 then
 		put(parts,table.concat(note.tags,", "))
 	end
@@ -1550,9 +1786,7 @@ function A.reasonChoices()
 	return out
 end
 
-local function capturedCells(entry,pane)
-	local parts={}
-
+local function headCells(parts,entry,unknown)
 	clause(parts,entry.id,"#%s")
 
 	put(parts,entry.reason=="abandoned"and"abandoned"or"left")
@@ -1561,7 +1795,7 @@ local function capturedCells(entry,pane)
 		put(parts,"RATED")
 	elseif entry.rated==false then
 		put(parts,"unrated")
-	elseif not pane then
+	elseif unknown then
 		put(parts,"rated state unknown")
 	end
 	if type(entry.surfaceFormat)=="string"then
@@ -1569,6 +1803,11 @@ local function capturedCells(entry,pane)
 	end
 
 	clause(parts,entry.map and entry.map.name)
+end
+
+local function capturedCells(entry,pane)
+	local parts={}
+	headCells(parts,entry,not pane)
 	put(parts,spanText(entry.seconds))
 	if(entry.rounds or 0)>0 then
 		put(parts,("%d rounds"):format(entry.rounds))
@@ -1646,17 +1885,7 @@ function A.incompleteDetailLines(entry)
 	local lines={}
 
 	local head={}
-	clause(head,entry.id,"#%s")
-	put(head,entry.reason=="abandoned"and"abandoned"or"left")
-	if entry.rated==true then
-		put(head,"RATED")
-	elseif entry.rated==false then
-		put(head,"unrated")
-	end
-	if type(entry.surfaceFormat)=="string"then
-		put(head,A.formatLabel(entry.surfaceFormat))
-	end
-	clause(head,entry.map and entry.map.name)
+	headCells(head,entry,false)
 	lines[#lines+1]=table.concat(head,"  ")
 
 	local when={}
@@ -1704,11 +1933,11 @@ function A.duelPatternLine(state)
 end
 
 function A.fontsLine(loaded,gated,whole)
-	if type(gated)=="string"and whole==true then
-		return("fonts: the client's own, because the shipped faces do not carry the script a %s "
-			.."client draws its names in"):format(gated)
-	end
 	if type(gated)=="string"then
+		if whole==true then
+			return("fonts: the client's own, because the shipped faces do not carry the script a %s "
+				.."client draws its names in"):format(gated)
+		end
 		local scriptClause=("names and text draw in the client's own, because the shipped text "
 			.."face does not carry the script a %s client draws its names in"):format(gated)
 		if loaded==nil then
@@ -1968,11 +2197,15 @@ local function editedLine(subject,noteShown)
 	if manual.lastAt~=nil and manual.lastAt~=manual.firstAt then
 		dateClause(parts,manual.lastAt,"last %s")
 	end
-	if CELL_WORD[manual.resultSuperseded]~=nil then
-		put(parts,("typed %s set aside"):format(CELL_WORD[manual.resultSuperseded]))
+	local superseded=CELL_WORD[manual.resultSuperseded]
+	if superseded~=nil then
+		put(parts,("typed %s set aside"):format(superseded))
 	end
 	if not noteShown and A.noteLead(manual.note)~=nil then
 		put(parts,"has a note")
+	end
+	if manual.starred==true then
+		put(parts,"starred")
 	end
 
 	return table.concat(parts,"  "),parts
@@ -2148,6 +2381,8 @@ local ROW_COLUMN_SETS={
 			sort="wins",first="descending"},
 		{key="kb",name="KB",metric="rowKb",lane="figure",align="RIGHT",
 			sort="kb",first="descending"},
+		{key="honor",name="HONOR",metric="rowHonor",lane="figure",align="RIGHT",
+			sort="honor",first="descending"},
 		{key="dispels",name="DISP",metric="rowDispels",lane="figure",align="RIGHT",
 			sort="dispels",first="descending"},
 	},
@@ -2225,7 +2460,7 @@ local MATCH_COLUMNS={
 
 local PLAYED_ON_COLUMNS={
 	{key="id",name="MATCH",metric="rowColMatch"},
-	{key="when",name="WHEN",metric="rowColStamp"},
+	{key="when",name="WHEN",metric="rowColStamp",floor="clock"},
 	{key="map",name="WHERE",metric="rowColWhere"},
 	{key="length",name="LENGTH",metric="rowColLength"},
 	{key="result",name="RESULT",metric="rowColResult"},
@@ -2355,6 +2590,7 @@ end
 
 local FLAT_COLUMN={
 	pick={key="pick",name="",metric="rowColPick"},
+	star={key="star",name="",metric="rowColStar"},
 	chip={key="chip",name="",metric="rowColChip"},
 	id={key="id",name="MATCH",metric="rowColMatch"},
 	day={key="day",name="WHEN",metric="rowColWhen"},
@@ -2369,7 +2605,7 @@ local FLAT_COLUMN={
 	change={key="change",name="CHANGE",metric="rowColChange",align="RIGHT"},
 	ratingOut={key="ratingOut",name="RATING",metric="rowColRating",align="RIGHT"},
 	mmr={key="mmr",name="MMR",metric="rowColMmr",align="RIGHT"},
-	time={key="time",name="TIME",metric="rowColMatch"},
+	time={key="time",name="TIME",metric="rowColMatch",floor="clock"},
 	verdict={key="verdict",name="RESULT",metric="rowColResult"},
 	span={key="span",name="LENGTH",metric="rowColLength",align="RIGHT"},
 	opponent={key="opponent",name="OPPONENT",metric="rowColWhere"},
@@ -2393,11 +2629,12 @@ local function flatColumn(key,name)
 end
 
 function A.flatRowColumns(format,subjects,flat)
-	local formats,sizes,held,opponents,mmr={},{},false,false,false
+	local formats,sizes,held,opponents,mmr,starred={},{},false,false,false,false
 	for _,entry in ipairs(type(subjects)=="table"and subjects or{})do
 		local subject=type(entry)=="table"and(entry.subject or entry)or nil
 		local kind=type(entry)=="table"and entry.kind or nil
 		if type(subject)=="table"then
+			starred=starred or A.isStarred(subject)
 			if kind=="incomplete"then
 				held=true
 			else
@@ -2429,31 +2666,29 @@ function A.flatRowColumns(format,subjects,flat)
 			add("day")
 		end
 	end
+	local function ladderTail()
+		add("change");add("ratingOut")
+		if mmr then
+			add("mmr")
+		end
+	end
 	if format~="unknown"then
 		add("pick")
 	end
+	if starred then
+		add("star")
+	end
 	local shape=type(A.standingShape)=="function"and A.standingShape(format)or"ladderless"
 	if shape=="rated"and(format=="shuffle")then
-		add("chip");lead();add("rounds");add("where");add("lobby");add("length");add("change")
-		add("ratingOut")
-		if mmr then
-			add("mmr")
-		end
+		add("chip");lead();add("rounds");add("where");add("lobby");add("length");ladderTail()
 	elseif shape=="rated"then
-		add("chip");lead();add("result");add("where");add("against");add("length");add("change")
-		add("ratingOut")
-		if mmr then
-			add("mmr")
-		end
+		add("chip");lead();add("result");add("where");add("against");add("length");ladderTail()
 	elseif shape=="all"then
 		add("chip");lead()
 		if varied then
 			add("kind",held and"TYPE"or"FORMAT")
 		end
-		add("result");add("where");add("against");add("length");add("change");add("ratingOut")
-		if mmr then
-			add("mmr")
-		end
+		add("result");add("where");add("against");add("length");ladderTail()
 	elseif format=="duel"then
 		add("time")
 		if flat then
@@ -2514,13 +2749,12 @@ end
 
 local DUEL_CELL={
 	id=function(record)
-		if record.id==nil then
-			return"-"
-		end
-		return("#%s"):format(tostring(record.id))
+		return A.rowIdText(record)
 	end,
-	opponent=function(record)
-		return tostring(record.opponentName or"-")
+	opponent=function(record,_,shared)
+		local name=record.opponentName
+		local kept=type(shared)=="table"and type(name)=="string"and shared[(A.nameParts(name))]or nil
+		return tostring(A.listNameText(name,kept)or"-")
 	end,
 	map=function(record)
 		return tostring(record.map and record.map.name or"-")
@@ -2578,9 +2812,7 @@ local BUCKET_CELL={
 	id=function(subject,kind)
 		return A.rowIdText(subject,kind)
 	end,
-	map=function(subject)
-		return tostring(subject.map and subject.map.name or"-")
-	end,
+	map=DUEL_CELL.map,
 	kind=kindCell,
 	size=sizeCell,
 	length=lengthCell,
@@ -2595,11 +2827,11 @@ local MATCH_CELL={
 		return A.rowIdText(subject,kind)
 	end,
 	kind=kindCell,
-	map=function(subject,kind)
+	map=function(subject,kind,shared)
 		if kind~="incomplete"and subject.format=="duel"then
-			return tostring(subject.opponentName or"-")
+			return DUEL_CELL.opponent(subject,kind,shared)
 		end
-		return tostring(subject.map and subject.map.name or"-")
+		return DUEL_CELL.map(subject)
 	end,
 	size=sizeCell,
 	rating=function(subject,kind)
@@ -2610,7 +2842,11 @@ local MATCH_CELL={
 	end,
 	when=function(subject)
 		local at=subject.openedAt or subject.completedAt or subject.endedAt
-		return type(at)=="string"and A.minuteStamp(at)or"-"
+		if type(at)~="string"then
+			return"-"
+		end
+		local day,clock=A.dayKey(at),A.clockWords(at)
+		return(day and clock)and(day.." "..clock)or A.minuteStamp(at)
 	end,
 	chip=function()
 		return""
@@ -2618,12 +2854,13 @@ local MATCH_CELL={
 	pick=function()
 		return""
 	end,
+	star=function()
+		return""
+	end,
 	day=function(subject)
 		return A.shortDay(subject.openedAt or subject.completedAt or subject.endedAt)or"-"
 	end,
-	where=function(subject)
-		return tostring(subject.map and subject.map.name or"-")
-	end,
+	where=DUEL_CELL.map,
 	rounds=function(subject,kind)
 		if kind=="incomplete"then
 			return"-"
@@ -2636,7 +2873,7 @@ local MATCH_CELL={
 	end,
 	against=function(subject,kind)
 		if kind~="incomplete"and subject.format=="duel"then
-			return tostring(subject.opponentName or"")
+			return tostring(subject.opponentName or"-")
 		end
 		local chips=A.rowChips(subject,kind)
 		return chips and chips.text or""
@@ -2661,7 +2898,7 @@ local MATCH_CELL={
 		return A.teamMmrCell(subject)
 	end,
 	time=function(subject)
-		return A.clockKey(subject.openedAt or subject.completedAt or subject.endedAt)or"-"
+		return A.clockWords(subject.openedAt or subject.completedAt or subject.endedAt)or"-"
 	end,
 	verdict=verdictCell,
 	span=function(subject,kind)
@@ -2670,11 +2907,12 @@ local MATCH_CELL={
 		end
 		return spanText(subject.duration)or""
 	end,
-	opponent=function(subject)
+	opponent=function(subject,_,shared)
 		local bare,realm=A.nameParts(subject.opponentName)
 		if bare==""then
 			return"-"
 		end
+		realm=A.realmDrawn(realm,type(shared)=="table"and shared[bare]or nil)
 		return realm and(bare.."  "..realm)or bare
 	end,
 	how=function(subject)
@@ -2710,20 +2948,16 @@ local MATCH_CELL={
 	end,
 }
 
-function A.columnCells(subject,columns,fillers,kind)
+function A.columnCells(subject,columns,fillers,kind,shared)
 	if type(subject)~="table"or type(columns)~="table"or type(fillers)~="table"then
 		return nil
 	end
 	local cells={}
 	for i=1,#columns do
 		local filler=columns[i].key and fillers[columns[i].key]or nil
-		cells[i]=filler and filler(subject,kind)or"-"
+		cells[i]=filler and filler(subject,kind,shared)or"-"
 	end
 	return cells
-end
-
-local function keyedCells(subject,columns,fillers,kind)
-	return A.columnCells(subject,columns,fillers,kind)
 end
 
 function A.columnFillers(format)
@@ -2769,18 +3003,18 @@ function A.rowColumnCells(subject,format,kind,columns)
 	if type(set)~="table"or type(fillers)~="table"then
 		return nil
 	end
-	return keyedCells(subject,set,fillers,kind)
+	return A.columnCells(subject,set,fillers,kind)
 end
 
 function A.flatColumnFillers()
 	return MATCH_CELL
 end
 
-function A.flatRowCells(subject,kind,columns)
+function A.flatRowCells(subject,kind,columns,shared)
 	if type(subject)~="table"or type(columns)~="table"then
 		return nil
 	end
-	return A.columnCells(subject,columns,MATCH_CELL,kind)
+	return A.columnCells(subject,columns,MATCH_CELL,kind,shared)
 end
 
 function A.flatRowSubs(subject,kind,columns)
@@ -2796,7 +3030,7 @@ function A.flatRowSubs(subject,kind,columns)
 	end
 	local subs={}
 	if has.id then
-		subs.id=A.clockKey(subject.openedAt or subject.completedAt or subject.endedAt)
+		subs.id=A.clockWords(subject.openedAt or subject.completedAt or subject.endedAt)
 	end
 	if kind=="incomplete"then
 		subs.entry=subject.reason=="abandoned"and"found at next login"or"you left"
@@ -2821,6 +3055,95 @@ function A.clockKey(stamp)
 	return stamp:match("^%d%d%d%d%-%d%d%-%d%d (%d%d:%d%d)")
 end
 
+function A.clockWords(at)
+	local key=nil
+	if type(at)=="number"then
+		local ok,text=pcall(date,"%H:%M",at)
+		key=ok and type(text)=="string"and text or nil
+	elseif type(at)=="string"then
+		key=A.clockKey(at)or at:match("^(%d%d:%d%d)$")
+	end
+	if key==nil or A.clockDrawn()~="12"then
+		return key
+	end
+	local hour,minute=key:match("^(%d%d):(%d%d)$")
+	local h=tonumber(hour)
+	if h==nil then
+		return key
+	end
+	local twelve=h%12
+	return("%d:%s %s"):format(twelve==0 and 12 or twelve,minute,h>=12 and"PM"or"AM")
+end
+
+function A.clockWidest()
+	return A.clockDrawn()=="12"and"12:00 PM"or"00:00"
+end
+
+function A.realmDrawn(realm,kept)
+	if type(realm)~="string"or realm==""then
+		return nil
+	end
+	if kept or A.realmsShown()then
+		return realm
+	end
+	return nil
+end
+
+function A.sharedBareNames(items,nameOf)
+	local first,out={},{}
+	for i=1,#(type(items)=="table"and items or{})do
+		local full=nameOf(items[i])
+		if type(full)=="string"and full~=""then
+			local bare=A.nameParts(full)
+			local seen=first[bare]
+			if seen==nil then
+				first[bare]=full
+			elseif seen~=full then
+				out[bare]=true
+			end
+		end
+	end
+	return out
+end
+
+function A.listNameText(name,kept)
+	if type(name)~="string"or not A.canRead(name)then
+		return name
+	end
+	local bare,realm=A.nameParts(name)
+	if realm~=nil and A.realmDrawn(realm,kept)==nil then
+		return bare
+	end
+	return name
+end
+
+function A.markSharedNames(cells)
+	local shared=A.sharedBareNames(cells,function(c)
+		return type(c)=="table"and c.name or nil
+	end)
+	for i=1,#(type(cells)=="table"and cells or{})do
+		local c=cells[i]
+		if type(c)=="table"and type(c.name)=="string"then
+			c.realmKept=shared[(A.nameParts(c.name))]or nil
+		end
+	end
+	return shared
+end
+
+function A.clockExtra()
+	if A.clockDrawn()~="12"or type(A.headerFloor)~="function"then
+		return 0
+	end
+	return math.max(0,A.headerFloor(A.clockWidest())-A.headerFloor("00:00"))
+end
+
+function A.columnContentFloor(column)
+	if type(column)~="table"or column.floor~="clock"then
+		return 0
+	end
+	return A.metric(column.metric)+A.clockExtra()
+end
+
 function A.dayLabel(stamp)
 	local key=A.dayKey(stamp)
 	if key==nil then
@@ -2842,13 +3165,15 @@ function A.dayLabel(stamp)
 	return(text:gsub("^(%a+) 0","%1 "))
 end
 
-function A.rowExpansion(subject)
+function A.rowExpansion(subject,drawn)
 	if type(subject)~="table"then
 		return{}
 	end
 
 	local lines={}
-	clause(lines,subject.outcome)
+	if not(type(drawn)=="table"and drawn.how)then
+		clause(lines,subject.outcome)
+	end
 	if subject.duelToTheDeath then
 		put(lines,"to the death")
 	end
@@ -3262,7 +3587,7 @@ function A.rowLobby(subject,kind)
 			end
 		end
 	end
-	if not sides or split==nil or split==0 or split>=#marks then
+	if split==nil or split==0 or split>=#marks then
 		marks,split={},nil
 		for i=1,#roster do
 			local entry=roster[i]
@@ -3313,11 +3638,7 @@ local function ownSpecRow(subject)
 end
 
 function A.rowSelfChip(subject)
-	local own=ownSpecRow(subject)
-	if own==nil then
-		return nil
-	end
-	return chipOf(own)
+	return chipOf(ownSpecRow(subject))
 end
 
 function A.rowChips(subject,kind)
@@ -3395,7 +3716,7 @@ function A.lastMatchCard(format,season,character,bound)
 	if type(place)~="string"or place==""or place=="-"then
 		place=nil
 	end
-	local clock=stamp and A.clockKey(stamp)or nil
+	local clock=stamp and A.clockWords(stamp)or nil
 	local day=stamp and A.shortDay(stamp)or nil
 	local moment,abbr,shorter=nil,nil,nil
 	if day and clock then
@@ -3439,9 +3760,7 @@ function A.objectiveTotals(record)
 					read=true
 				end
 			end
-			if read then
-				out[c]=sum
-			end
+			out[c]=read and sum or nil
 		end
 		return out
 	end
@@ -3462,8 +3781,8 @@ function A.objectiveTotals(record)
 	return{columns=columns,yours=yours,theirs=theirs}
 end
 
-local function qualifiedName(record,guid,name)
-	local mine=guid~=nil and guid==record.character
+local function qualifiedName(record,guid,name,quiet)
+	local mine=guid~=nil and guid==record.character and not quiet
 
 	if type(name)~="string"or name==""then
 		return name
@@ -3541,7 +3860,7 @@ function A.participantCells(record,entry,sides,columns)
 		guid=guid,
 		self=guid==record.character,
 		bot=bot,
-		name=qualifiedName(record,guid,p.name)or guid,
+		name=qualifiedName(record,guid,p.name,entry.quiet)or guid,
 		side=(sides and p.faction~=nil)
 			and(p.faction==sides.own and"yours"or"theirs")or nil,
 		classToken=p.classToken,class=p.class,spec=p.spec,race=p.race,
@@ -3743,9 +4062,9 @@ function A.seasonCounterLines(counters)
 						local ok,answered,got,count=pcall(A.roundsVerdict,record)
 						if ok then
 							face=answered
-						end
-						if ok and answered~=nil and answered~="unsummed"then
-							won,played=got,count
+							if answered~=nil and answered~="unsummed"then
+								won,played=got,count
+							end
 						end
 					end
 					if face=="unsummed"then
@@ -4062,6 +4381,19 @@ function A.sideWord(side)
 	return tostring(side)
 end
 
+local function roundsWonColumn(record)
+	local columns=orderedColumns(record)
+	if not columns then
+		return nil
+	end
+	for i=1,#columns do
+		if A.columnName(columns[i])=="Rounds Won"then
+			return columns[i].id
+		end
+	end
+	return nil
+end
+
 local function roundsRecord(record)
 	local rounds=type(record)=="table"and record.rounds or nil
 	if type(rounds)~="table"or#rounds<1 then
@@ -4075,23 +4407,12 @@ local function roundsRecord(record)
 		return nil
 	end
 
-	local columns=orderedColumns(record)
-	if not columns then
+	local id=roundsWonColumn(record)
+	if id==nil then
 		return nil
 	end
-
-	local won
-	for i=1,#columns do
-		if A.columnName(columns[i])=="Rounds Won"then
-			local value=stats[columns[i].id]
-			if type(value)=="number"then
-				won=value
-			end
-			break
-		end
-	end
-
-	if won==nil then
+	local won=stats[id]
+	if type(won)~="number"then
 		return nil
 	end
 	return won,#rounds
@@ -4394,18 +4715,7 @@ end
 local MAX_SOLVE_ROUNDS=16
 
 local function roundsWonTotals(record)
-	local columns=orderedColumns(record)
-	if not columns then
-		return nil
-	end
-
-	local id
-	for i=1,#columns do
-		if A.columnName(columns[i])=="Rounds Won"then
-			id=columns[i].id
-			break
-		end
-	end
+	local id=roundsWonColumn(record)
 	if id==nil then
 		return nil
 	end
@@ -4431,7 +4741,7 @@ local function roundsWonTotals(record)
 	if seen==0 then
 		return nil
 	end
-	return totals,sum
+	return totals,sum,seen
 end
 
 local function roundSideGuids(record)
@@ -4678,7 +4988,7 @@ function A.proposeRoundWins(record)
 	local rounds=record.rounds
 	local n=#rounds
 
-	local totals,sum=roundsWonTotals(record)
+	local totals,sum,seats=roundsWonTotals(record)
 	local mineTotal=totals and totals[record.character]or nil
 	if not totals or type(mineTotal)~="number"then
 		return nil,"untotalled"
@@ -4712,10 +5022,11 @@ function A.proposeRoundWins(record)
 		end
 	end
 
-	if sum>ROUND_SIDE*n then
+	local scoredWins=ROUND_SIDE*n
+	if sum>scoredWins then
 		return nil,"summed-over"
-	elseif sum<ROUND_SIDE*n then
-		return nil,"summed-short"
+	elseif sum<scoredWins then
+		return nil,seats<ROUND_SIDE*2 and"seat-missing"or"summed-short"
 	end
 
 	if A.roundsFit(record,proposed)==false then
@@ -4774,9 +5085,9 @@ function A.roundWinners(record)
 		return outcomes,"stored",n,n,1
 	end
 
-	local function keptStored()
+	local function refuse(state)
 		if stored==0 then
-			return nil,0
+			return nil,state,0,n
 		end
 		local out={}
 		for i=1,n do
@@ -4784,24 +5095,21 @@ function A.roundWinners(record)
 				out[i]={won=fixed[i],derived=false}
 			end
 		end
-		return out,stored
+		return out,state,stored,n
 	end
 
 	if n>MAX_SOLVE_ROUNDS then
-		local kept,keptN=keptStored()
-		return kept,"unbounded",keptN,n
+		return refuse("unbounded")
 	end
 
 	local sides=roundSideGuids(record)
 	if not sides then
-		local kept,keptN=keptStored()
-		return kept,"unreadable",keptN,n
+		return refuse("unreadable")
 	end
 
 	local totals,sum=roundsWonTotals(record)
 	if not totals then
-		local kept,keptN=keptStored()
-		return kept,"untotalled",keptN,n
+		return refuse("untotalled")
 	end
 
 	local expect=0
@@ -4809,21 +5117,18 @@ function A.roundWinners(record)
 		expect=expect+sides[i].size
 	end
 	if sum~=expect then
-		local kept,keptN=keptStored()
-		return kept,"unsummable",keptN,n
+		return refuse("unsummable")
 	end
 
 	local mineTotal=totals[record.character]
 	if type(mineTotal)~="number"or mineTotal<0 or mineTotal>n then
-		local kept,keptN=keptStored()
-		return kept,"unsummable",keptN,n
+		return refuse("unsummable")
 	end
 
 	local fits,agree=fitAssignments(n,fixed,sides,totals,mineTotal)
 
 	if fits==0 or agree==nil then
-		local kept,keptN=keptStored()
-		return kept,"none",keptN,n
+		return refuse("none")
 	end
 
 	local outcomes,settled={},0
@@ -5007,8 +5312,8 @@ function A.outingHeadLines(record,head)
 		end
 	end
 	detail(zone or"-",zone and"text"or"dim",true)
-	local from=A.clockKey(record.openedAt)
-	local to=A.clockKey(record.completedAt)
+	local from=A.clockWords(record.openedAt)
+	local to=A.clockWords(record.completedAt)
 	if from~=nil and to~=nil then
 		detail(("%s to %s"):format(from,to),"dim")
 	end
@@ -5030,7 +5335,8 @@ function A.outingHeadLines(record,head)
 		rest[#rest+1]=details[i].text
 	end
 	if game then
-		top.text=table.concat({details[1].text,table.concat(rest,"  ")},"  ")
+		table.insert(rest,1,details[1].text)
+		top.text=table.concat(rest,"  ")
 		sub=nil
 	else
 		top.text=details[1].text
@@ -5189,10 +5495,11 @@ end
 
 local SCORE_SORT_OPENS={
 	name=true,damage=false,healing=false,kb=false,dispels=false,objective=false,
+	honor=false,
 }
 
 local SCORE_SORT_WORDS={
-	name="name",damage="DAMAGE",healing="HEALING",kb="KB",dispels="DISP",
+	name="name",damage="DAMAGE",healing="HEALING",kb="KB",dispels="DISP",honor="HONOR",
 }
 
 local scoreState={roster={key="name",up=true,index=1,set=false},lobby=nil,
@@ -5323,6 +5630,8 @@ local function scoreColumnDrawn(key,index,filled,slots,look)
 		return filled.dispels==true
 	elseif key=="objective"then
 		return index<=slots
+	elseif key=="honor"then
+		return true
 	end
 	return false
 end
@@ -5337,6 +5646,8 @@ local function scoreFigure(c,key,index)
 		value=c.kb
 	elseif key=="dispels"then
 		value=c.dispels
+	elseif key=="honor"then
+		value=c.honorLevel
 	elseif key=="objective"then
 		value=type(c.objectiveValues)=="table"and c.objectiveValues[index]or nil
 	end
@@ -5358,8 +5669,11 @@ local function scoreOrdered(roster,cellsList,drawn,key,up,index)
 	local function before(a,b)
 		if key=="name"then
 			local an,bn=a.entry.p.name,b.entry.p.name
-			if an~=bn then
-				return lessThan(bn,an)
+			if lessThan(bn,an)then
+				return true
+			end
+			if lessThan(an,bn)then
+				return false
 			end
 			return a.at<b.at
 		end
@@ -5435,7 +5749,6 @@ function A.detailLines(record,pane)
 	local decided,byHand=A.effectiveResult(record)
 	if decided~=nil then
 		head.result=RESULT_WORD[decided]or tostring(decided):upper()
-		head.resultTone=A.resultTone(record)
 		head.mark=(byHand and not pane)and"(entered by hand)"or nil
 	end
 
@@ -5444,9 +5757,9 @@ function A.detailLines(record,pane)
 		local verdict
 		verdict,roundsWon,roundsPlayed=A.roundsVerdict(record)
 		head.result=roundsHeadWord(verdict,roundsWon,roundsPlayed)
-		if head.result~=nil then
-			head.resultTone=A.resultTone(record)
-		end
+	end
+	if head.result~=nil then
+		head.resultTone=A.resultTone(record)
 	end
 
 	if head.result==nil and record.format=="world"then
@@ -5505,7 +5818,8 @@ function A.detailLines(record,pane)
 	if record.duelToTheDeath then
 		put(when,"to the death")
 	end
-	put(when,spanText(record.duration))
+	local span=spanText(record.duration)
+	put(when,span)
 	put(when,A.durationCaveat(record.openedState))
 	if A.roundList(record)and#record.rounds>0 and roundsWon==nil then
 		put(when,("%d rounds"):format(#record.rounds))
@@ -5516,7 +5830,7 @@ function A.detailLines(record,pane)
 	put(when,A.seasonText(record,pane))
 	if record.openedAt~=nil then
 		local stamp=tostring(record.openedAt)
-		if spanText(record.duration)~=nil then
+		if span~=nil then
 			stamp=stamp:match("^(%d%d%d%d%-%d%d%-%d%d)")or stamp
 		end
 		put(when,"opened "..stamp)
@@ -5539,6 +5853,11 @@ function A.detailLines(record,pane)
 				heads[#lines]=part
 			end
 		end
+		local ranked,yours=pcall(A.yourLineHead,record)
+		if ranked and type(yours)=="table"then
+			lines[#lines+1]=yours.text
+			heads[#lines]=yours
+		end
 		local built,build=pcall(A.buildHead,record)
 		if built and type(build)=="table"then
 			lines[#lines+1]=build.text
@@ -5547,6 +5866,12 @@ function A.detailLines(record,pane)
 	elseif#when>0 then
 		lines[#lines+1]="  "..table.concat(when,"  ")
 		heads[#lines]={kind="stamps",parts=when}
+	end
+	if not pane then
+		local ranked,yours=pcall(A.yourLineHead,record)
+		if ranked and type(yours)=="table"then
+			lines[#lines+1]="  "..yours.text
+		end
 	end
 
 	local edited,editedParts=nil,nil
@@ -5619,7 +5944,7 @@ function A.detailLines(record,pane)
 	if pane and type(A.lobbyPaneDraws)=="function"and A.lobbyPaneDraws(record)then
 		local entries=rosterEntries(record)
 		local entrySides=rosterSides(record,entries)
-		local joined,own={},nil
+		local joined,own,drawnCells={},nil,{}
 		for i=1,#entries do
 			local c=A.participantCells(record,entries[i],entrySides,objColumns)
 			local values=c.objectiveValues
@@ -5630,6 +5955,7 @@ function A.detailLines(record,pane)
 				damage=A.figureText(c.damage),
 				wins=type(values)=="table"and values[1]or nil,
 				kb=c.kb,
+				honor=c.honorLevel,
 				dispels=c.dispels,
 			}
 			if type(entries[i].guid)=="string"then
@@ -5638,7 +5964,9 @@ function A.detailLines(record,pane)
 			if c.self then
 				own=figures
 			end
+			drawnCells[#drawnCells+1]=c
 		end
+		A.markSharedNames(drawnCells)
 		local paneColumns=A.lobbyPaneColumns(record,#entries)
 		if type(paneColumns)=="table"then
 			merged={columns=paneColumns,joined=joined,own=own}
@@ -5662,14 +5990,15 @@ function A.detailLines(record,pane)
 		end
 	end
 
-	local lobbyRows,lobbyRead,lobbyTotal,lobbyTally,lobbyTyped=nil,0,0,nil,0
+	local lobbyRows,lobbyRead,lobbyTotal,lobbyTally,lobbyTyped,lobbyThrew=nil,0,0,nil,0,0
 	if type(A.lobbyRows)=="function"then
-		local got,rows,read,total,tally,typed=
+		local got,rows,read,total,tally,typed,threw=
 			pcall(A.lobbyRows,record,lobbySort,lobbyAscending,merged and merged.columns or nil,
 				merged and merged.joined or nil)
 		if got and type(rows)=="table"then
 			lobbyRows,lobbyRead,lobbyTotal,lobbyTally=rows,read,total,tally
 			lobbyTyped=type(typed)=="number"and typed or 0
+			lobbyThrew=type(threw)=="number"and threw or 0
 		end
 	end
 	local drewTable=false
@@ -5684,7 +6013,7 @@ function A.detailLines(record,pane)
 
 		local refusal=type(A.roundWinsRefusal)=="function"and A.roundWinsRefusal(record)or nil
 		for _,said in ipairs(A.lobbyCaption(claim,lobbyRead,lobbyTotal,opposites,lobbyTyped,
-			{refusal=refusal,pane=pane==true}))do
+			{refusal=refusal,pane=pane==true,threw=lobbyThrew}))do
 			lines[#lines+1]="  "..said
 		end
 
@@ -5729,7 +6058,7 @@ function A.detailLines(record,pane)
 					you.cells[c]=own and own.name or"-"
 				elseif key=="spec"then
 					you.cells[c]=own and own.specLabel or"-"
-				elseif key=="damage"or key=="wins"or key=="kb"or key=="dispels"then
+				elseif key=="damage"or key=="wins"or key=="kb"or key=="honor"or key=="dispels"then
 					local value=own and own[key]or nil
 					you.cells[c]=value~=nil and tostring(value)or"-"
 				end
@@ -5788,17 +6117,21 @@ function A.detailLines(record,pane)
 	local filled={}
 	for i=1,#roster do
 		local p=roster[i].p
-		local d=p.damage
-		if type(d)=="number"and d>maxDamage then
-			maxDamage=d
+		local d,h=p.damage,p.healing
+		if type(d)=="number"then
+			filled.damage=true
+			if d>maxDamage then
+				maxDamage=d
+			end
 		end
-		if type(p.healing)=="number"and p.healing>maxHealing then
-			maxHealing=p.healing
+		if type(h)=="number"then
+			filled.healing=true
+			if h>maxHealing then
+				maxHealing=h
+			end
 		end
 		if p.spec~=nil then filled.spec=true end
 		if p.role~=nil then filled.role=true end
-		if type(d)=="number"then filled.damage=true end
-		if type(p.healing)=="number"then filled.healing=true end
 		if type(p.killingBlows)=="number"then filled.kb=true end
 	end
 	if filled.damage or filled.healing or filled.kb then
@@ -5809,6 +6142,7 @@ function A.detailLines(record,pane)
 	for i=1,#roster do
 		rosterCells[i]=A.participantCells(record,roster[i],sides,objColumns)
 	end
+	A.markSharedNames(rosterCells)
 	local objectiveSlots=math.min(type(objColumns)=="table"and#objColumns or 0,
 		A.metric("rowObjectiveMax"))
 	local sortKey,sortUp,sortIndex,sortDrawn,sortDefault=rosterOrderFor(filled,objectiveSlots,look)
@@ -5970,7 +6304,7 @@ function A.isSelfPlayer(guid)
 		return false
 	end
 	local own=A.ownGuid()
-	return own~=nil and own==guid
+	return own==guid
 end
 
 local function foldsIntoSides(entry,guid,counted)
@@ -6098,33 +6432,25 @@ function A.playerDetailLines(guid,entry,withKey,dossier)
 		for _,line in ipairs(A.playerDossierLines(dossier))do
 			lines[#lines+1]=line
 		end
-		local heldFormats=formatText(entry)
-		if heldFormats then
-			lines[#lines+1]="  formats: "..heldFormats
-		end
-		for _,line in ipairs(A.noteLines(guid))do
-			lines[#lines+1]=line
-		end
-		return lines
-	end
-
-	local split,counted=splitParts(entry,guid)
-
-	local when={}
-	put(when,countClause(entry,guid,counted))
-	put(when,botText(guid))
-	if entry.firstSeen~=nil and entry.firstSeen==entry.lastSeen then
-		dateClause(when,entry.lastSeen,"seen %s")
 	else
-		dateClause(when,entry.firstSeen,"first %s")
-		dateClause(when,entry.lastSeen,"last %s")
-	end
-	if#when>0 then
-		lines[#lines+1]="  "..table.concat(when,"  ")
-	end
+		local split,counted=splitParts(entry,guid)
 
-	if#split>0 then
-		lines[#lines+1]="  "..table.concat(split,"  ")
+		local when={}
+		put(when,countClause(entry,guid,counted))
+		put(when,botText(guid))
+		if entry.firstSeen~=nil and entry.firstSeen==entry.lastSeen then
+			dateClause(when,entry.lastSeen,"seen %s")
+		else
+			dateClause(when,entry.firstSeen,"first %s")
+			dateClause(when,entry.lastSeen,"last %s")
+		end
+		if#when>0 then
+			lines[#lines+1]="  "..table.concat(when,"  ")
+		end
+
+		if#split>0 then
+			lines[#lines+1]="  "..table.concat(split,"  ")
+		end
 	end
 
 	local formats=formatText(entry)
@@ -6146,7 +6472,7 @@ function A.playerDossierLines(dossier)
 		return lines
 	end
 
-	local when={("met %d %s"):format(dossier.met,dossier.met==1 and"match"or"matches")}
+	local when={"met "..matchNoun(dossier.met)}
 	if dossier.first~=nil and dossier.first==dossier.last then
 		dateClause(when,dossier.last,"seen %s")
 	else
@@ -6162,11 +6488,12 @@ function A.playerDossierLines(dossier)
 
 	local undetermined,byHand=0,0
 	for _,encounter in ipairs(dossier.encounters or{})do
-		if type(encounter.rounds)~="table"and encounter.side~="with"and encounter.side~="against"then
+		local sided=encounter.side=="with"or encounter.side=="against"
+		if type(encounter.rounds)~="table"and not sided then
 			undetermined=undetermined+1
 		end
 		local record=encounter.record
-		if type(record)=="table"and(encounter.side=="with"or encounter.side=="against")
+		if type(record)=="table"and sided
 			and(select(2,A.effectiveResult(record)))then
 			byHand=byHand+1
 		end
@@ -6183,17 +6510,80 @@ function A.playerDossierLines(dossier)
 	return lines
 end
 
-local RATING_TEXT={
-	[2]="strong",[1]="positive",[0]="neutral",[-1]="negative",[-2]="bad",
+A.SCALES={"skill","attitude"}
+
+A.STEP_WORD_MAX=12
+
+local DEFAULT_WORDS={
+	skill={[2]="strong",[1]="good",[0]="average",[-1]="below",[-2]="weak"},
+	attitude={[2]="great",[1]="friendly",[0]="neutral",[-1]="rude",[-2]="toxic"},
 }
 
+local WORDS_KEY={skill="skillWords",attitude="attitudeWords"}
+
+function A.scaleWordsKey(scale)
+	return WORDS_KEY[scale]
+end
+
 local RATING_MARK={
-	[2]="ok",[1]="regard",[0]="dim",[-1]="caution",[-2]="loss",
+	[2]="ok",[1]="regard",[0]="dim",[-1]="caution",[-2]="repBad",
 }
 local UNRATED_MARK="faint"
 
-function A.ratingText(value)
-	return RATING_TEXT[value]
+local STEP_ORDER={-2,-1,0,1,2}
+
+function A.stepWordValid(word)
+	return type(word)=="string"and#word>=1 and#word<=A.STEP_WORD_MAX
+		and word:find("^[%w%-]")~=nil and word:find("[%w%-]$")~=nil
+		and word:find("^[%w%- ]+$")~=nil and word==word:lower()
+end
+
+function A.storedStepWords(scale)
+	local key=WORDS_KEY[scale]
+	local db=key and A.db()
+	local held=db and type(db.ui)=="table"and db.ui[key]or nil
+	local out={}
+	if type(held)~="table"then
+		return out
+	end
+	for step,word in pairs(held)do
+		if type(step)=="number"and DEFAULT_WORDS[scale][step]~=nil and A.stepWordValid(word)then
+			out[step]=word
+		end
+	end
+	return out
+end
+
+function A.defaultStepWord(scale,value)
+	local words=DEFAULT_WORDS[scale]
+	return words and words[value]or nil
+end
+
+function A.defaultStepFor(scale,lowered)
+	for step=-2,2 do
+		if A.defaultStepWord(scale,step)==lowered then
+			return step
+		end
+	end
+	return nil
+end
+
+function A.stepWord(scale,value)
+	local default=A.defaultStepWord(scale,value)
+	if default==nil then
+		return nil
+	end
+	local db=A.db()
+	local held=db and type(db.ui)=="table"and db.ui[WORDS_KEY[scale]]or nil
+	local word=type(held)=="table"and held[value]or nil
+	if A.stepWordValid(word)then
+		return word
+	end
+	return default
+end
+
+function A.ratingText(value,scale)
+	return A.stepWord(scale or"skill",value)
 end
 
 function A.ratingMark(value)
@@ -6203,20 +6593,38 @@ function A.ratingMark(value)
 	return RATING_MARK[value]
 end
 
-function A.ratingChoices()
-	return{
-		{rating=-2,label=RATING_TEXT[-2],mark=RATING_MARK[-2]},
-		{rating=-1,label=RATING_TEXT[-1],mark=RATING_MARK[-1]},
-		{rating=0,label=RATING_TEXT[0],mark=RATING_MARK[0]},
-		{rating=1,label=RATING_TEXT[1],mark=RATING_MARK[1]},
-		{rating=2,label=RATING_TEXT[2],mark=RATING_MARK[2]},
-		{label="not rated",mark=UNRATED_MARK},
-	}
+function A.noteMark(note)
+	local skill,attitude
+	if type(note)=="table"then
+		skill=RATING_MARK[note.rating]and note.rating or nil
+		attitude=RATING_MARK[note.attitude]and note.attitude or nil
+	end
+	if attitude~=nil and attitude<=-1 then
+		return RATING_MARK[attitude],"attitude",attitude
+	end
+	if skill~=nil then
+		return RATING_MARK[skill],"skill",skill
+	end
+	if attitude~=nil then
+		return RATING_MARK[attitude],"attitude",attitude
+	end
+	return UNRATED_MARK,nil,nil
 end
 
-function A.ratingRamp()
+function A.ratingChoices(scale)
+	scale=scale or"skill"
 	local out={}
-	for _,choice in ipairs(A.ratingChoices())do
+	for i=1,#STEP_ORDER do
+		local step=STEP_ORDER[i]
+		out[i]={rating=step,label=A.stepWord(scale,step),mark=RATING_MARK[step]}
+	end
+	out[#out+1]={label="not rated",mark=UNRATED_MARK}
+	return out
+end
+
+function A.ratingRamp(scale)
+	local out={}
+	for _,choice in ipairs(A.ratingChoices(scale))do
 		if choice.rating~=nil then
 			out[#out+1]=choice
 		end
@@ -6224,15 +6632,19 @@ function A.ratingRamp()
 	return out
 end
 
-function A.ratingRampLabel(rating)
-	for _,choice in ipairs(A.ratingChoices())do
+function A.ratingRampLabel(rating,scale)
+	local choices=A.ratingChoices(scale)
+	for _,choice in ipairs(choices)do
 		if choice.rating==rating then
 			return choice.label,choice.mark
 		end
 	end
-	local last=A.ratingChoices()
-	last=last[#last]
+	local last=choices[#choices]
 	return last.label,last.mark
+end
+
+function A.scaleLabel(scale)
+	return scale=="attitude"and"ATTITUDE"or"SKILL"
 end
 
 function A.noteLines(guid)
@@ -6244,7 +6656,8 @@ function A.noteLines(guid)
 	local lines={}
 
 	local head={}
-	clause(head,A.ratingText(entry.rating),"rated %s")
+	clause(head,A.ratingText(entry.rating),"skill %s")
+	clause(head,A.ratingText(entry.attitude,"attitude"),"attitude %s")
 	if type(entry.tags)=="table"and#entry.tags>0 then
 		put(head,"tags: "..table.concat(entry.tags,", "))
 	end
@@ -6262,7 +6675,8 @@ function A.noteLines(guid)
 
 	for _,held in ipairs(type(entry.merged)=="table"and entry.merged or{})do
 		local older={}
-		clause(older,A.ratingText(held.rating),"rated %s")
+		clause(older,A.ratingText(held.rating),"skill %s")
+		clause(older,A.ratingText(held.attitude,"attitude"),"attitude %s")
 		if held.text~=nil then
 			put(older,"note: "..tostring(held.text))
 		end
@@ -6284,7 +6698,8 @@ function A.authoredDigest(guid)
 	end
 
 	local parts={}
-	put(parts,A.ratingText(entry.rating))
+	clause(parts,A.ratingText(entry.rating),"skill %s")
+	clause(parts,A.ratingText(entry.attitude,"attitude"),"attitude %s")
 	if type(entry.tags)=="table"and#entry.tags>0 then
 		put(parts,("%d %s"):format(#entry.tags,#entry.tags==1 and"tag"or"tags"))
 	end
@@ -6357,8 +6772,8 @@ function A.murlokAddress(name,realm,region)
 	return("https://murlok.io/character/%s/%s/%s/pvp"):format(code,slug,name:lower())
 end
 
-function A.repLabel(rating)
-	local label,mark=A.ratingRampLabel(rating)
+function A.repLabel(rating,scale)
+	local label,mark=A.ratingRampLabel(rating,scale)
 	return(tostring(label):gsub("^%l",string.upper)),mark
 end
 
@@ -6494,34 +6909,15 @@ function A.sideRecord(encounters)
 					sided=true
 					if type(seat.won)~="boolean"then
 						side.unsettled=side.unsettled+1
-					end
-				end
-			end
-			if not sided then
-				out.unsided=out.unsided+1
-			end
-		end
-		out.ids[#out.ids+1]=encounter.id
-		if encounter.at~=nil then
-			if out.first==nil or encounter.at<out.first then
-				out.first=encounter.at
-			end
-			if out.last==nil or encounter.at>out.last then
-				out.last=encounter.at
-				out.lastEpoch=encounter.epoch
-			end
-		end
-		if type(encounter.rounds)=="table"then
-			for r=1,#encounter.rounds do
-				local seat=encounter.rounds[r]
-				local side=seat and out[seat.side or""]or nil
-				if side and type(seat.won)=="boolean"then
-					if seat.won then
+					elseif seat.won then
 						side.rounds.won=side.rounds.won+1
 					else
 						side.rounds.lost=side.rounds.lost+1
 					end
 				end
+			end
+			if not sided then
+				out.unsided=out.unsided+1
 			end
 		elseif encounter.side=="with"or encounter.side=="against"then
 			local held=out[encounter.side].matches
@@ -6533,6 +6929,16 @@ function A.sideRecord(encounters)
 				held.drawn=held.drawn+1
 			else
 				held.open=held.open+1
+			end
+		end
+		out.ids[#out.ids+1]=encounter.id
+		if encounter.at~=nil then
+			if out.first==nil or encounter.at<out.first then
+				out.first=encounter.at
+			end
+			if out.last==nil or encounter.at>out.last then
+				out.last=encounter.at
+				out.lastEpoch=encounter.epoch
 			end
 		end
 	end
@@ -6594,31 +7000,51 @@ local function matchExtras(part)
 	return out
 end
 
+local function sideBits(parts)
+	local first=parts[1]
+	local bits={}
+	if first.unit=="rounds"then
+		bits[1]={words=("over %d %s"):format(first.count,first.count==1 and"round"or"rounds")}
+	elseif first.figure then
+		bits[1]={words="over "..matchNoun(first.count)..matchExtras(first)}
+	else
+		bits[1]={words=matchNoun(first.count)..", none with a result"}
+	end
+	bits[1].figure=first.figure
+	local second=parts[2]
+	if second then
+		if second.figure then
+			bits[2]={figure=second.figure,words="in matches"..matchExtras(second)}
+		else
+			bits[2]={words=matchNoun(second.count).." with no result"}
+		end
+	end
+	return bits
+end
+
 function A.sideWords(parts)
 	if type(parts)~="table"or#parts==0 then
 		return nil
 	end
 	local first=parts[1]
-	local bits={}
-	if first.unit=="rounds"then
-		bits[1]=("over %d %s"):format(first.count,first.count==1 and"round"or"rounds")
-	elseif first.figure then
-		bits[1]=("over %d %s"):format(first.count,first.count==1 and"match"or"matches")
-			..matchExtras(first)
-	else
-		bits[1]=("%d %s, none with a result"):format(first.count,
-			first.count==1 and"match"or"matches")
-	end
-	local second=parts[2]
+	local bits=sideBits(parts)
+	local said={bits[1].words}
+	local second=bits[2]
 	if second then
-		if second.figure then
-			bits[#bits+1]=("and %s in matches"):format(second.figure)..matchExtras(second)
-		else
-			bits[#bits+1]=("and %d %s with no result"):format(second.count,
-				second.count==1 and"match"or"matches")
-		end
+		said[2]="and "..(second.figure and(second.figure.." ")or"")..second.words
 	end
-	return first.figure,first.tone,table.concat(bits,", ")
+	return first.figure,first.tone,table.concat(said,", ")
+end
+
+function A.sideHoverLines(parts,against)
+	if type(parts)~="table"or#parts==0 or parts[1].figure==nil then
+		return nil
+	end
+	local lines={against and"Your record against this player"or"Your record with this player"}
+	for _,bit in ipairs(sideBits(parts))do
+		lines[#lines+1]=(bit.figure and(bit.figure.." ")or"")..bit.words
+	end
+	return lines
 end
 
 function A.sideLine(parts)
@@ -6732,7 +7158,7 @@ function A.stampWords(stamp)
 	if day==nil then
 		return nil
 	end
-	local minute=A.clockKey(stamp)
+	local minute=A.clockWords(stamp)
 	return minute and(day.." "..minute)or day
 end
 
@@ -6813,8 +7239,8 @@ local function searchHit(guid,entry,encounters,note,needle)
 	return false
 end
 
-function A.newestSession()
-	local db=A.db()
+function A.newestSession(store)
+	local db=store or A.db()
 	local matches=(db and type(db.matches)=="table")and db.matches or{}
 	local entries={}
 	for i=#matches,1,-1 do
@@ -6838,7 +7264,9 @@ function A.newestSession()
 	local newest=sessions[1]
 	if newest then
 		for _,entry in ipairs(newest.entries)do
-			ids[entry.subject.id]=true
+			if entry.subject.id~=nil then
+				ids[entry.subject.id]=true
+			end
 		end
 	end
 	return ids,newest
@@ -6847,8 +7275,10 @@ end
 local SORTS={
 	recent={segment=true},
 	met={segment=true,header=true,first="down"},
-	rep={segment=true},
+	skill={segment=true},
+	attitude={segment=true},
 	player={header=true,first="up"},
+	trend={header=true,first="down"},
 	record={header=true,first="down"},
 	with={header=true,first="down"},
 	against={header=true,first="down"},
@@ -6857,6 +7287,7 @@ local SORTS={
 local SORT_LABELS={
 	met={down="Met most often",up="Fewest met"},
 	player={up="By name",down="By name, Z to A"},
+	trend={down="Rating climbed most",up="Rating fell most"},
 	record={down="Best record",up="Worst record"},
 	with={down="Best with you",up="Worst with you"},
 	against={down="Best against you",up="Worst against you"},
@@ -6864,17 +7295,24 @@ local SORT_LABELS={
 
 local RANK_FIELDS={record="recordRank",with="withRank",against="againstRank"}
 
+function A.playerSortWord(word)
+	if word=="rep"then
+		return"skill"
+	end
+	return word
+end
+
 function A.playerSortKnown(word)
-	return type(word)=="string"and SORTS[word]~=nil
+	return type(word)=="string"and SORTS[A.playerSortWord(word)]~=nil
 end
 
 function A.playerSortFirst(word)
-	local sort=type(word)=="string"and SORTS[word]or nil
+	local sort=type(word)=="string"and SORTS[A.playerSortWord(word)]or nil
 	return sort and sort.first or nil
 end
 
 function A.playerSortSegment(word)
-	local sort=type(word)=="string"and SORTS[word]or nil
+	local sort=type(word)=="string"and SORTS[A.playerSortWord(word)]or nil
 	return sort~=nil and sort.segment==true
 end
 
@@ -6882,7 +7320,8 @@ function A.playerSorts()
 	return{
 		{value="recent",label="Recent"},
 		{value="met",label="Most met"},
-		{value="rep",label="Rep"},
+		{value="skill",label="Skill"},
+		{value="attitude",label="Attitude"},
 	}
 end
 
@@ -6923,33 +7362,34 @@ local function repValue(value)
 	if value=="none"then
 		return true
 	end
-	return type(value)=="number"and A.ratingText(value)~=nil
+	return type(value)=="number"and A.defaultStepWord("skill",value)~=nil
 end
 
-function A.repFromWord(word)
+function A.repFromWord(word,scale)
 	if type(word)~="string"then
 		return nil
 	end
+	scale=scale or"skill"
 	local lowered=word:lower()
 	if lowered=="none"or lowered=="not rated"or lowered=="unrated"then
 		return"none"
 	end
-	for _,choice in ipairs(A.ratingChoices())do
+	for _,choice in ipairs(A.ratingChoices(scale))do
 		if choice.rating~=nil and choice.label==lowered then
 			return choice.rating
 		end
 	end
-	return nil
+	return A.defaultStepFor(scale,lowered)
 end
 
-local function repHit(row,rep)
-	if rep==nil then
-		return true
+local function repHit(row,rep,attitude)
+	if rep=="none"and row.rating~=nil or rep~=nil and rep~="none"and row.rating~=rep then
+		return false
 	end
-	if rep=="none"then
-		return row.rating==nil
+	if attitude=="none"then
+		return row.attitude==nil
 	end
-	return row.rating==rep
+	return attitude==nil or row.attitude==attitude
 end
 
 function A.recorderSet()
@@ -6975,9 +7415,9 @@ end
 
 function A.playersMet(index)
 	index=type(index)=="table"and index or A.encounterIndex()
-	local recorders=A.recorderSet()
+	local recorders=A.paintHeld("recorderSet",A.recorderSet)
 	local met,noted={},{}
-	for _,item in ipairs(A.players())do
+	for _,item in ipairs(A.paintHeld("players",A.players,true))do
 		if listedPlayer(item.guid,recorders,true)then
 			if#(index[item.guid]or{})>0 then
 				met[#met+1]=item
@@ -6986,6 +7426,8 @@ function A.playersMet(index)
 			end
 		end
 	end
+	table.sort(met,playerOrder)
+	table.sort(noted,playerOrder)
 	return met,noted
 end
 
@@ -7011,28 +7453,41 @@ end
 function A.playersView(state)
 	state=type(state)=="table"and state or{}
 	local now=type(state.now)=="number"and state.now or time()
-	local sort=SORTS[state.sort]and state.sort or"recent"
+	local sort=A.playerSortWord(state.sort)
+	sort=SORTS[sort]and sort or"recent"
 	local dir=SORTS[sort].first
 	if dir~=nil and(state.dir=="up"or state.dir=="down")then
 		dir=state.dir
 	end
 	local needle=(type(state.text)=="string"and state.text~="")and A.foldText(state.text)or nil
 	local rep=repValue(state.rep)and state.rep or nil
+	local attitudeFilter=repValue(state.attitude)and state.attitude or nil
 	local index=type(state.index)=="table"and state.index or A.encounterIndex()
 	local sessionIds,session=state.sessionIds,state.session
 	if type(sessionIds)~="table"then
-		sessionIds,session=A.newestSession()
+		sessionIds,session=A.paintHeld("newestSession",A.newestSession)
 	end
 
 	local base,scoped
 	if state.scope~=nil then
 		scoped=A.match(state.scope)
 		base=scoped and A.rosterPlayers(scoped)or{}
+	elseif type(state.tidy)=="table"then
+		base={}
+		local db=A.db()
+		local players=(db and type(db.players)=="table")and db.players or{}
+		for i=1,#state.tidy do
+			local guid=state.tidy[i]
+			if type(players[guid])=="table"then
+				base[#base+1]={guid=guid,entry=players[guid],indexed=true}
+			end
+		end
 	else
-		base=A.players()
+		base=A.paintHeld("players",A.players,true)
 	end
 
-	local recorders=type(state.recorders)=="table"and state.recorders or A.recorderSet()
+	local recorders=type(state.recorders)=="table"and state.recorders
+		or A.paintHeld("recorderSet",A.recorderSet)
 
 	local function consider(item)
 		local guid=item.guid
@@ -7073,10 +7528,13 @@ function A.playersView(state)
 			entry=entry,
 			identity=rowIdentity(guid,entry,encounters),
 			rating=note and A.ratingText(note.rating)~=nil and note.rating or nil,
+			attitude=note and A.ratingText(note.attitude,"attitude")~=nil and note.attitude or nil,
+			mark=(A.noteMark(note)),
 			noted=note~=nil and type(note.text)=="string"and note.text~="",
 			comments=type(A.playerComments)=="function"and#A.playerComments(guid)or 0,
 			tag=note and type(note.tags)=="table"and note.tags[1]or nil,
 			met=record.met,
+			trend=A.playerTrend(entry,state.format),
 			with=with,
 			against=against,
 			withRank=withRank,
@@ -7100,11 +7558,18 @@ function A.playersView(state)
 	end
 
 	local strip={players=0,unmet=0,encounters=0,matches=0,metAgain=0,notes=0,
-		noted=0,tonight=0,tonightBefore=0,rated=0,steps={},notRated=0}
+		noted=0,tonight=0,tonightBefore=0,rated=0,steps={},notRated=0,
+		attitudeRated=0,attitudeSteps={},attitudeNotRated=0}
 	local matchSeen={}
-	local stepCounts={}
+	local stepCounts,attitudeCounts={},{}
 	for i=1,#rows do
 		local row=rows[i]
+		if row.attitude~=nil then
+			strip.attitudeRated=strip.attitudeRated+1
+			attitudeCounts[row.attitude]=(attitudeCounts[row.attitude]or 0)+1
+		else
+			strip.attitudeNotRated=strip.attitudeNotRated+1
+		end
 		if row.met>0 then
 			strip.players=strip.players+1
 		else
@@ -7143,6 +7608,10 @@ function A.playersView(state)
 		strip.steps[#strip.steps+1]={rating=step.rating,label=label,mark=step.mark,
 			count=stepCounts[step.rating]or 0}
 	end
+	for _,step in ipairs(A.ratingRamp("attitude"))do
+		strip.attitudeSteps[#strip.attitudeSteps+1]={rating=step.rating,
+			label=(A.repLabel(step.rating,"attitude")),mark=step.mark,count=attitudeCounts[step.rating]or 0}
+	end
 	strip.metAgainShare=strip.players>0 and math.floor(strip.metAgain*100/strip.players+0.5)or nil
 	strip.session=session
 	if session and type(A.sessionDayForms)=="function"then
@@ -7152,7 +7621,7 @@ function A.playersView(state)
 
 	local shown={}
 	for i=1,#rows do
-		if rows[i].searched and repHit(rows[i],rep)then
+		if rows[i].searched and repHit(rows[i],rep,attitudeFilter)then
 			shown[#shown+1]=rows[i]
 		end
 	end
@@ -7169,17 +7638,7 @@ function A.playersView(state)
 		return tostring(a.guid)<tostring(b.guid)
 	end
 
-	local function byLastThenGuid(a,b)
-		if byLast(a,b)then
-			return true
-		end
-		if byLast(b,a)then
-			return false
-		end
-		return tostring(a.guid)<tostring(b.guid)
-	end
-
-	local sections={}
+	local sections,buckets={},nil
 	if sort=="met"then
 		table.sort(shown,function(a,b)
 			if a.met~=b.met then
@@ -7188,7 +7647,7 @@ function A.playersView(state)
 				end
 				return a.met>b.met
 			end
-			return byLastThenGuid(a,b)
+			return byLast(a,b)
 		end)
 		sections[1]={key="met",label=SORT_LABELS.met[dir],rows=shown}
 	elseif sort=="player"then
@@ -7211,6 +7670,21 @@ function A.playersView(state)
 			return false
 		end)
 		sections[1]={key="player",label=SORT_LABELS.player[dir],rows=shown}
+	elseif sort=="trend"then
+		table.sort(shown,function(a,b)
+			local at,bt=a.trend,b.trend
+			if(at==nil)~=(bt==nil)then
+				return bt==nil
+			end
+			if at~=nil and at.change~=bt.change then
+				if dir=="up"then
+					return at.change<bt.change
+				end
+				return at.change>bt.change
+			end
+			return byLast(a,b)
+		end)
+		sections[1]={key="trend",label=SORT_LABELS.trend[dir],rows=shown}
 	elseif RANK_FIELDS[sort]then
 		local field=RANK_FIELDS[sort]
 		table.sort(shown,function(a,b)
@@ -7229,17 +7703,18 @@ function A.playersView(state)
 					return ar.games>br.games
 				end
 			end
-			return byLastThenGuid(a,b)
+			return byLast(a,b)
 		end)
 		sections[1]={key=sort,label=SORT_LABELS[sort][dir],rows=shown}
-	elseif sort=="rep"then
-		local buckets={}
-		for _,choice in ipairs(A.ratingChoices())do
+	elseif sort=="skill"or sort=="attitude"then
+		buckets={}
+		local field=sort=="attitude"and"attitude"or"rating"
+		for _,choice in ipairs(A.ratingChoices(sort))do
 			local key=choice.rating~=nil and choice.rating or"none"
-			buckets[#buckets+1]={key=key,label=(A.repLabel(choice.rating)),rows={}}
+			buckets[#buckets+1]={key=key,label=(A.repLabel(choice.rating,sort)),rows={}}
 		end
 		for i=1,#shown do
-			local key=shown[i].rating~=nil and shown[i].rating or"none"
+			local key=shown[i][field]~=nil and shown[i][field]or"none"
 			for b=1,#buckets do
 				if buckets[b].key==key then
 					local held=buckets[b].rows
@@ -7248,15 +7723,9 @@ function A.playersView(state)
 				end
 			end
 		end
-		for b=1,#buckets do
-			table.sort(buckets[b].rows,byLast)
-			if#buckets[b].rows>0 then
-				sections[#sections+1]=buckets[b]
-			end
-		end
 	else
 		local week=now-7*86400
-		local buckets={
+		buckets={
 			{key="tonight",label=strip.sessionDay or"Tonight",rows={}},
 			{key="week",label="This week",rows={}},
 			{key="earlier",label="Earlier",rows={}},
@@ -7273,6 +7742,8 @@ function A.playersView(state)
 			end
 			at.rows[#at.rows+1]=row
 		end
+	end
+	if buckets then
 		for b=1,#buckets do
 			table.sort(buckets[b].rows,byLast)
 			if#buckets[b].rows>0 then
@@ -7297,8 +7768,10 @@ function A.playersView(state)
 		sort=sort,
 		dir=dir,
 		rep=rep,
+		attitude=attitudeFilter,
 		scope=scoped,
 		scopeId=state.scope,
+		tidy=state.scope==nil and type(state.tidy)=="table"or nil,
 	}
 end
 
@@ -7311,7 +7784,7 @@ function A.encounterLine(encounter)
 		id=encounter.id~=nil and("#%s"):format(tostring(encounter.id))or"-",
 		matchId=encounter.id,
 		day=A.shortDay(encounter.at)or"-",
-		clock=A.clockKey(encounter.at),
+		clock=A.clockWords(encounter.at),
 		map=type(record)=="table"and type(record.map)=="table"and record.map.name or nil,
 		format=encounter.format~=nil and A.formatLabel(encounter.format)or nil,
 	}
@@ -7347,8 +7820,7 @@ function A.encounterLine(encounter)
 		elseif encounter.side=="against"then
 			out.side,out.sideTone="against you","loss"
 		end
-		local words={win="won",loss="lost",draw="draw"}
-		out.result=words[encounter.verdict]
+		out.result=CELL_WORD[encounter.verdict]
 		out.resultTone=(encounter.verdict=="win"and"win")or(encounter.verdict=="loss"and"loss")
 			or"dim"
 	end
@@ -7383,6 +7855,7 @@ function A.playerDossier(guid,index)
 	local record=A.sideRecord(encounters)
 	local note=A.noteFor(guid)
 	local rating=note and A.ratingText(note.rating)~=nil and note.rating or nil
+	local attitude=note and A.ratingText(note.attitude,"attitude")~=nil and note.attitude or nil
 	local identity=rowIdentity(guid,entry,encounters)
 	return{
 		guid=guid,
@@ -7390,6 +7863,7 @@ function A.playerDossier(guid,index)
 		identity=identity,
 		specLine=A.specLine(identity),
 		rating=rating,
+		attitude=attitude,
 		note=note,
 		record=record,
 		with=A.sideParts(record.with),
@@ -7401,6 +7875,7 @@ function A.playerDossier(guid,index)
 		last=record.last,
 		lastEpoch=record.lastEpoch,
 		encounters=encounters,
+		trend=A.playerTrend(entry),
 	}
 end
 
@@ -7408,7 +7883,7 @@ function A.metWords(dossier)
 	if type(dossier)~="table"or(dossier.met or 0)==0 then
 		return nil,"never met in a match"
 	end
-	local figure=("%d %s"):format(dossier.met,dossier.met==1 and"match"or"matches")
+	local figure=matchNoun(dossier.met)
 	local day=A.shortDay(dossier.first)
 	if dossier.met==1 then
 		return figure,day
@@ -7563,7 +8038,9 @@ function A.playerCardFacts(guid,now,index)
 	if not dossier then
 		return nil
 	end
-	local label,mark=A.repLabel(dossier.rating)
+	local label=A.repLabel(dossier.rating)
+	local attitudeLabel=A.repLabel(dossier.attitude,"attitude")
+	local mark,markScale=A.noteMark(dossier.note)
 	local note=dossier.note
 	return{
 		guid=guid,
@@ -7571,10 +8048,18 @@ function A.playerCardFacts(guid,now,index)
 		realm=dossier.identity.realm,
 		classToken=dossier.identity.classToken,
 		spec=dossier.identity.spec,
-		rep=label,
+		rep=markScale=="attitude"and attitudeLabel or label,
 		repMark=mark,
+		repScale=markScale,
+		skillWord=label,
+		tipWord=(dossier.rating~=nil and dossier.attitude~=nil)
+			and("skill %s, attitude %s"):format(label:lower(),attitudeLabel:lower())
+			or(dossier.attitude~=nil and("attitude %s"):format(attitudeLabel:lower()))
+			or(dossier.rating~=nil and("skill %s"):format(label:lower()))or nil,
+		attitudeWord=attitudeLabel,
+		attitude=dossier.attitude,
 		rating=dossier.rating,
-		rated=dossier.rating~=nil,
+		rated=dossier.rating~=nil or dossier.attitude~=nil,
 		with=A.sideShort(dossier.with),
 		against=A.sideShort(dossier.against),
 		met=dossier.met,
@@ -7722,12 +8207,13 @@ function A.matchMenuEntries(record,kind)
 	local out={
 		{key="open",label=matchWindowOpen(record.id)and"Close"or"Open"},
 		{key="note",label="Write a note"},
+		{key="star",label=A.isStarred(record)and"Unstar"or"Star"},
 		{key="roster",label=(A.rosterWords(record))},
 		{key="print",label="Print in chat"},
 	}
 	if record.format=="world"then
 		out[2].label=(A.rosterWords(record))
-		table.remove(out,3)
+		table.remove(out,4)
 	end
 	local compare=type(A.compareMenuEntry)=="function"and A.compareMenuEntry(record)or nil
 	if compare~=nil then

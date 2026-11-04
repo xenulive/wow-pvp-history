@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.33
+-- WowPvpHistory 0.75.26
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -7,7 +7,7 @@ local _,A=...
 
 local SIGNATURE="WPHCSV"
 
-local FORMAT_VERSION=8
+local FORMAT_VERSION=9
 
 local SOURCE="csv"
 
@@ -37,6 +37,8 @@ local function textEncode(value)
 	local text=tostring(value)
 	text=text:gsub("%%","%%25")
 	text=text:gsub("|","%%7C")
+	text=text:gsub("\r","%%0D")
+	text=text:gsub("\n","%%0A")
 	return neutralLead(text)
 end
 
@@ -51,8 +53,14 @@ local function plainNumber(text)
 	return value
 end
 
-local function guidShaped(text)
-	return type(text)=="string"and#text<=64 and text:find("^%a[%w]*%-[%w%-]+$")~=nil
+local function guidShaped(text,format)
+	if type(text)~="string"or#text>64 or text==""then
+		return false
+	end
+	if format=="duel"then
+		return text:find("[%c%%|]")==nil
+	end
+	return text:find("^%a[%w]*%-[%w%-]+$")~=nil
 end
 
 local function packDecode(text)
@@ -520,6 +528,15 @@ local MATCH_COLUMNS={
 		column.longest=function()return A.MANUAL_NOTE_MAX end
 		return column
 	end)(free(under("manual","manualNote","text","note"))),
+	(function(column)
+		local set=column.set
+		column.set=function(record,value)
+			if value==true then
+				set(record,true)
+			end
+		end
+		return column
+	end)(under("manual","manualStarred","flag","starred")),
 	under("manual","edits","number","edits"),
 	free(under("manual","manualFirstAt","text","firstAt")),
 	under("manual","manualFirstEpoch","number","firstEpoch"),
@@ -878,7 +895,7 @@ local function selected(db,filter)
 	local list=db.matches
 	for i=1,#list do
 		local record=list[i]
-		local keep=type(record)=="table"and(format==nil or record.format==format)
+		local keep=type(record)=="table"and A.recordInFormat(record,format)
 		if keep and since~=nil then
 			local at=recordDate(record)
 			keep=at~=nil and at>=since
@@ -1228,7 +1245,7 @@ local function readRow(row,width)
 		end
 		return record,nil,nil,continuation,dropped
 	end
-	if not guidShaped(guid)then
+	if not guidShaped(guid,record.format)then
 		return nil
 	end
 
@@ -1300,7 +1317,8 @@ function A.csvImport(text,forced)
 			skipped=skipped+1
 			return
 		end
-		if A.isFixtureRecord(record)then
+		local generated=A.isFixtureRecord(record)
+		if generated then
 			if fixtureHeld>=fixtureCeiling then
 				fixtureDropped=fixtureDropped+1
 				return
@@ -1335,7 +1353,7 @@ function A.csvImport(text,forced)
 			manual.result=nil
 		end
 
-		if A.isFixtureRecord(record)then
+		if generated then
 			db.nextFixtureId=type(db.nextFixtureId)=="number"and db.nextFixtureId or 1
 			record.id=("F%d"):format(db.nextFixtureId)
 			db.nextFixtureId=db.nextFixtureId+1

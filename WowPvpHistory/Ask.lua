@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.33
+-- WowPvpHistory 0.75.26
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -105,13 +105,17 @@ local DASH="-"
 
 local UNREADABLE="this couldn't be read: try /reload"
 
+local function roundFormat(format)
+	return type(A.compRounds)=="function"and A.compRounds(format)
+end
+
 local function countsMatches(format)
-	return not(type(A.compRounds)=="function"and A.compRounds(format))
+	return not roundFormat(format)
 		and(format=="duel"or(type(A.specMatchFormat)=="function"and A.specMatchFormat(format)))
 end
 
 local function specReadings(format,season,character,bound,comp)
-	local rounds=type(A.compRounds)=="function"and A.compRounds(format)
+	local rounds=roundFormat(format)
 	local matches=type(A.specMatchFormat)=="function"and A.specMatchFormat(format)
 	if not rounds and not matches then
 		return nil,nil,"this tab keeps no spec readings"
@@ -419,6 +423,7 @@ local function answerComp(format,season,character,bound)
 			under[#under+1]=entry
 		end
 	end
+	table.sort(under,underOrder)
 	local lead=fittingLead("comp",ranked)
 	return{
 		rows=ranked,
@@ -463,8 +468,7 @@ function A.askAnswer(key,format,season,character,bound,comp)
 		answer.floorUnit="decided matches"
 	end
 	local specMatches=(key=="beats"or key=="worth")and countsMatches(format)
-	if(key=="comp"and not(type(A.compRounds)=="function"and A.compRounds(format)))
-		or specMatches then
+	if(key=="comp"and not roundFormat(format))or specMatches then
 		answer.unit={"match","matches"}
 		answer.floorUnit="decided matches"
 	end
@@ -505,6 +509,9 @@ function A.askFloorLine(answer)
 	end
 	local parts={}
 	local count=type(answer.under)=="table"and#answer.under or 0
+	if answer.underDrawn==true and(answer.ranked or 0)==0 then
+		count=0
+	end
 	if count>0 then
 		local noun=type(answer.noun)=="table"and answer.noun or{"row","rows"}
 		parts[#parts+1]=("%d %s under %d %s"):format(count,
@@ -776,6 +783,7 @@ function A.askElements(answer)
 
 		return{row=row,cells=cells,cellTint=tint,cellStyle=style,
 			cellBar=bar,askKey=answer.key,faint=faint or nil,
+			height=answer.key=="builds"and A.askTableRow("builds")or nil,
 			kdCell=type(row.kdCounts)=="table"and row.kdCounts or nil,
 			cellOpens=not faint and type(row.cellOpens)=="table"and row.cellOpens or nil,
 			askRow=(A.askRowOpens(answer)and type(row.ids)=="table"and#row.ids>0)
@@ -891,6 +899,7 @@ function A.compRowLines(row)
 	end
 	local byRound=type(row.rounds)=="table"
 	local met={}
+	local set={grids={}}
 	if byRound then
 		for i=#row.rounds,1,-1 do
 			local held=row.rounds[i]
@@ -901,7 +910,9 @@ function A.compRowLines(row)
 				local mates=type(A.roundSides)=="function"and A.roundSides(record,round)or nil
 				local won=held.won==true
 				local grid={match=("#%s"):format(tostring(held.id)),round=("R%d"):format(held.round),
-					side=sideMembers(mates),result=won and"WON"or"LOST",tone=won and"win"or"loss"}
+					side=sideMembers(mates),result=won and"WON"or"LOST",tone=won and"win"or"loss",
+					set=set}
+				set.grids[#set.grids+1]=grid
 				met[#met+1]={kind="specMet",id=held.id,grid=grid,stay=true,
 					text=("%s   %s   %s"):format(grid.match,grid.round,grid.result)}
 			end
@@ -916,7 +927,8 @@ function A.compRowLines(row)
 				local result=(tone=="win"and"WON")or(tone=="loss"and"LOST")or"-"
 				local grid={match=("#%s"):format(tostring(record.id)),
 					side=sideMembers(type(split)=="table"and split.own or nil),result=result,
-					tone=(tone=="win"or tone=="loss")and tone or nil}
+					tone=(tone=="win"or tone=="loss")and tone or nil,set=set}
+				set.grids[#set.grids+1]=grid
 				met[#met+1]={kind="specMet",id=ids[i],grid=grid,stay=true,
 					text=("%s   %s"):format(grid.match,grid.result)}
 			end
@@ -1403,11 +1415,10 @@ function A.mapsAnswer(format,season,character,bound)
 	local answer={key="maps",title="Maps",group="EVERY MAP",columns="askWhere",
 		noun={"map","maps"},floorKind="maps",floorUnit="decided matches",
 		unit={"decided","decided"}}
-	if type(A.mapTally)~="function"then
-		answer.reason,answer.rows,answer.under=UNREADABLE,{},{}
-		return answer
+	local ok,rows=false,nil
+	if type(A.mapTally)=="function"then
+		ok,rows=pcall(A.mapTally,format,season,character,bound)
 	end
-	local ok,rows=pcall(A.mapTally,format,season,character,bound)
 	if not ok or type(rows)~="table"then
 		answer.reason,answer.rows,answer.under=UNREADABLE,{},{}
 		return answer
@@ -1432,6 +1443,7 @@ function A.mapsAnswer(format,season,character,bound)
 	answer.floor=floor
 	answer.ranked=#ranked
 	answer.underCount=#under
+	answer.underDrawn=true
 	if#all==0 then
 		answer.reason="no matches here yet"
 	end
@@ -1514,6 +1526,12 @@ function A.askNoteText(answer)
 		parts[#parts+1]=answer.note
 	end
 	local words=A.askSortWords(answer.key)
+	if words~=nil and answer.underDrawn==true and askSortHeld[answer.key]==nil then
+		local ranked,under=answer.ranked or 0,answer.underCount or 0
+		if under>0 then
+			words=ranked>0 and(words..", then the rest most played first")or"most played first"
+		end
+	end
 	if words~=nil then
 		parts[#parts+1]=words
 	end

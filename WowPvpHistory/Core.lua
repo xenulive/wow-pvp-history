@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.33
+-- WowPvpHistory 0.75.26
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -114,14 +114,19 @@ function A.storeReplaced()
 		{"notesindex","dropNotesIndex"},
 		{"size","dropHeldStoredSize"},
 		{"aftermatch","dropAfterMatch"},
+		{"toast","dropToast"},
 		{"finder","dropFinderWalk"},
 		{"folds","dropHeldSessionFolds"},
 		{"lobby","dropLobbyClaims"},
 		{"compare","dropCompareSet"},
+		{"undo","dropUndoHold"},
 		{"window","refreshWindow"},
 		{"overlay","overlayRepaint","stored","replaced"},
-		{"store","refreshStoreWindow"},
+		{"broker","brokerRefresh"},
 	}
+	if type(A.storeWindowShown)=="function"and A.storeWindowShown()then
+		steps[#steps+1]={"store","refreshStoreWindow"}
+	end
 	for _,step in ipairs(steps)do
 		local run=A[step[2]]
 		if type(run)=="function"then
@@ -133,18 +138,22 @@ function A.storeReplaced()
 	end
 end
 
+local RECORD_REPAINTS={
+	{"finder","finderRecordStored"},
+	{"overlay","overlayRecordStored"},
+	{"tally","tallyRecordStored"},
+	{"broker","brokerRefresh"},
+}
+
 function A.recordStored(source)
 	source=tostring(source or"store")
-	if type(A.finderRecordStored)=="function"then
-		local repainted,err=pcall(A.finderRecordStored)
-		if not repainted then
-			A.noteError(err,source..".finder")
-		end
-	end
-	if type(A.overlayRecordStored)=="function"then
-		local repainted,err=pcall(A.overlayRecordStored)
-		if not repainted then
-			A.noteError(err,source..".overlay")
+	for _,step in ipairs(RECORD_REPAINTS)do
+		local run=A[step[2]]
+		if type(run)=="function"then
+			local repainted,err=pcall(run)
+			if not repainted then
+				A.noteError(err,source.."."..step[1])
+			end
 		end
 	end
 	if type(A.storeWindowShown)=="function"and A.storeWindowShown()then
@@ -358,10 +367,7 @@ function A.noteIncomplete(reason,record)
 		entry.rounds=#rounds
 	end
 
-	local opener=record.character
-	if type(opener)=="string"and A.canRead(opener)and opener~=""then
-		entry.character=opener
-	end
+	entry.character=A.readableString(record.character)
 
 	if record.openRated~=nil then
 		entry.rated=record.openRated
@@ -435,6 +441,18 @@ local function keepOriginal(store,field,held)
 	end
 end
 
+local function repairedList(store,key)
+	if type(store.repaired)~="table"then
+		store.repaired={}
+	end
+	local kept=store.repaired[key]
+	if type(kept)~="table"then
+		kept={}
+		store.repaired[key]=kept
+	end
+	return kept
+end
+
 local function repairField(store,repairs,field,wanted,fresh)
 	local held=store[field]
 	if held==nil or type(held)==wanted then
@@ -453,14 +471,7 @@ local function repairEntries(store,repairs,field)
 	for i=#list,1,-1 do
 		local entry=list[i]
 		if entry~=nil and type(entry)~="table"then
-			if type(store.repaired)~="table"then
-				store.repaired={}
-			end
-			local kept=store.repaired.entries
-			if type(kept)~="table"then
-				kept={}
-				store.repaired.entries=kept
-			end
+			local kept=repairedList(store,"entries")
 			kept[#kept+1]={field=field,position=i,value=entry}
 			table.remove(list,i)
 			repairs[#repairs+1]={field=field,foundType=type(entry),position=i}
@@ -468,10 +479,39 @@ local function repairEntries(store,repairs,field)
 	end
 end
 
+local function repairIds(store,repairs,field)
+	local list,cleared=store[field],{}
+	if type(list)~="table"then
+		return cleared
+	end
+	for i=1,#list do
+		local entry=list[i]
+		local id=type(entry)=="table"and entry.id or nil
+		if type(id)=="number"and(id~=id or id==math.huge or id==-math.huge)then
+			local kept=repairedList(store,"ids")
+			kept[#kept+1]={field=field,position=i,value=tostring(id)}
+			entry.id=nil
+			cleared[#cleared+1]=entry
+			repairs[#repairs+1]={field=field..".id",foundType="number",position=i}
+		end
+	end
+	return cleared
+end
+
+local function issueIds(store,entries,counter)
+	for i=1,#entries do
+		if entries[i].id==nil then
+			local id=store[counter]
+			entries[i].id=id
+			store[counter]=id+1
+		end
+	end
+end
+
 local function raiseCounter(store,repairs,field,largest)
 	local wanted=math.floor(largest)+1
 	local held=store[field]
-	if type(held)=="number"and held>=wanted then
+	if type(held)=="number"and held>=wanted and held~=math.huge then
 		return
 	end
 	if held==nil and largest==0 then
@@ -489,14 +529,11 @@ local function repairNextIds(store,repairs)
 	local largestMatch,largestFixture=0,0
 	if type(store.matches)=="table"then
 		for _,match in ipairs(store.matches)do
-			local id=type(match)=="table"and match.id or nil
-			if type(id)=="number"and id>largestMatch then
-				largestMatch=id
-			elseif type(id)=="string"then
-				local n=tonumber(id:match("^F(%d+)$"))
-				if n and n>largestFixture then
-					largestFixture=n
-				end
+			local kind,n=A.matchIdRank(type(match)=="table"and match.id or nil)
+			if kind==1 and n>largestMatch then
+				largestMatch=n
+			elseif kind==0 and n>largestFixture then
+				largestFixture=n
 			end
 		end
 	end
@@ -536,7 +573,11 @@ function A.repairStore(store)
 	repairField(store,repairs,"seasons","table",{})
 	repairField(store,repairs,"pruneLog","table",{})
 	repairEntries(store,repairs,"seasons")
+	local matchesCleared=repairIds(store,repairs,"matches")
+	local incompleteCleared=repairIds(store,repairs,"incomplete")
 	repairNextIds(store,repairs)
+	issueIds(store,matchesCleared,"nextMatchId")
+	issueIds(store,incompleteCleared,"nextIncompleteId")
 	for i=1,#repairs do
 		local repair=repairs[i]
 		if repair.field=="players"and repair.position==nil then
@@ -544,6 +585,14 @@ function A.repairStore(store)
 		end
 	end
 	return repairs
+end
+
+local RETIRED_UI_KEYS={"talentBuildsShut"}
+
+function A.dropRetiredUiKeys(ui)
+	for i=1,#RETIRED_UI_KEYS do
+		ui[RETIRED_UI_KEYS[i]]=nil
+	end
 end
 
 local function initDB()
@@ -571,6 +620,7 @@ local function initDB()
 	end
 	db.players=db.players or{}
 	db.ui=db.ui or{}
+	A.dropRetiredUiKeys(db.ui)
 end
 
 function A.byteCut(text,bound)
@@ -773,6 +823,23 @@ function A.noteError(err,where,handed)
 	return true
 end
 
+function A.nextFrameOnce(fn,where)
+	local pending=false
+	return function()
+		if pending or not(C_Timer and type(C_Timer.After)=="function")then
+			return
+		end
+		pending=true
+		C_Timer.After(0,function()
+			pending=false
+			local ok,err=pcall(fn)
+			if not ok then
+				A.noteError(err,where)
+			end
+		end)
+	end
+end
+
 function A.clearError()
 	if not db then
 		return nil
@@ -911,16 +978,153 @@ function A.guardedCall(fn,...)
 end
 
 function A.inCombatLockdown()
-	if type(InCombatLockdown)~="function"then
+	return A.guardedCall(InCombatLockdown)==true
+end
+
+function A.inPvpInstance()
+	if type(IsInInstance)~="function"then
 		return false
 	end
-	local ok,value=pcall(InCombatLockdown)
-	return ok and value==true
+	local ok,_,kind=pcall(IsInInstance)
+	return ok and A.canRead(kind)and(kind=="pvp"or kind=="arena")
+end
+
+function A.frameShown(value)
+	if type(value)~="table"or type(value.IsShown)~="function"then
+		return false
+	end
+	local ok,shown=pcall(value.IsShown,value)
+	return ok and shown==true
 end
 
 function A.pvpCall(name,...)
 	return A.guardedCall(C_PvP and C_PvP[name],...)
 end
+
+local gameClock=nil
+
+local CLOCK_WORDS={game=true,["24"]=true,["12"]=true}
+
+function A.readGameClock()
+	local value=A.guardedCall(C_CVar and C_CVar.GetCVar,"timeMgrUseMilitaryTime")
+	if value=="1"then
+		gameClock="24"
+	elseif value=="0"then
+		gameClock="12"
+	else
+		gameClock=nil
+	end
+	return gameClock
+end
+
+function A.gameClock()
+	return gameClock
+end
+
+function A.clockSetting()
+	local store=A.db and A.db()
+	local stored=store and type(store.ui)=="table"and store.ui.clock or nil
+	if type(stored)=="string"and CLOCK_WORDS[stored]then
+		return stored
+	end
+	return"game"
+end
+
+function A.clockDrawn()
+	local setting=A.clockSetting()
+	if setting~="game"then
+		return setting
+	end
+	return gameClock or"24"
+end
+
+function A.clockChoices()
+	return{
+		{value="game",label="As the game's",tooltip="Follow the game's own clock setting."},
+		{value="24",label="24-hour",tooltip="Draw times as 21:05."},
+		{value="12",label="12-hour",tooltip="Draw times as 9:05 PM."},
+	}
+end
+
+function A.realmsShown()
+	local store=A.db and A.db()
+	return not(store and type(store.ui)=="table"and store.ui.realms==false)
+end
+
+local function tracePalette(via,moved)
+	if type(A.trace)=="function"then
+		A.trace("palette",{realms=A.realmsShown(),clock=A.clockSetting(),via=via or"call",
+			state=moved and"moved"or"drawn"},"ui")
+	end
+end
+
+local function repaintDrawing()
+	if type(A.refreshWindow)=="function"then
+		pcall(A.refreshWindow)
+	end
+	if type(A.overlayRepaint)=="function"then
+		pcall(A.overlayRepaint,"setting","palette")
+	end
+end
+
+function A.setClock(value,via)
+	value=value~=nil and tostring(value)or nil
+	if value==nil or not CLOCK_WORDS[value]then
+		return false
+	end
+	local store=A.db and A.db()
+	if not store then
+		return false
+	end
+	if type(store.ui)~="table"then
+		store.ui={}
+	end
+	local moved=A.clockSetting()~=value
+	if moved then
+		store.ui.clock=value~="game"and value or nil
+		repaintDrawing()
+		if A.notifyClockSetting then
+			A.notifyClockSetting()
+		end
+	end
+	tracePalette(via,moved)
+	return moved
+end
+
+function A.setRealms(on,via)
+	local store=A.db and A.db()
+	if not store then
+		return false
+	end
+	if type(store.ui)~="table"then
+		store.ui={}
+	end
+	local want=on~=false
+	local moved=A.realmsShown()~=want
+	if moved then
+		if want then
+			store.ui.realms=nil
+		else
+			store.ui.realms=false
+		end
+		repaintDrawing()
+		if A.notifyRealmsSetting then
+			A.notifyRealmsSetting()
+		end
+	end
+	tracePalette(via,moved)
+	return moved
+end
+
+local function onClockChanged()
+	local before=A.clockDrawn()
+	A.readGameClock()
+	if A.clockDrawn()~=before then
+		repaintDrawing()
+		tracePalette("game",true)
+	end
+end
+A.onGameClockChanged=onClockChanged
 
 local stateNames
 
@@ -952,14 +1156,7 @@ function A.matchState()
 end
 
 function A.selfFaction()
-	if type(GetBattlefieldArenaFaction)~="function"then
-		return nil
-	end
-	local ok,res=pcall(GetBattlefieldArenaFaction)
-	if ok then
-		return res
-	end
-	return nil
+	return A.guardedCall(GetBattlefieldArenaFaction)
 end
 
 local FACTION_INDEX={Horde=0,Alliance=1}
@@ -991,7 +1188,7 @@ function A.ownGuid()
 end
 
 function A.isOwnCharacter(guid)
-	if type(guid)~="string"or not A.canRead(guid)or guid==""then
+	if not A.readableString(guid)then
 		return false
 	end
 	if guid==A.ownGuid()then
@@ -1031,14 +1228,7 @@ function A.botCount(entries)
 end
 
 function A.ownRealm()
-	if type(GetNormalizedRealmName)~="function"then
-		return nil
-	end
-	local ok,realm=pcall(GetNormalizedRealmName)
-	if ok and type(realm)=="string"and A.canRead(realm)and realm~=""then
-		return realm
-	end
-	return nil
+	return A.readableString(A.guardedCall(GetNormalizedRealmName))
 end
 
 function A.pvpRestriction()
@@ -1082,5 +1272,14 @@ end
 A.on("ADDON_LOADED",function(_,name)
 	if name==ADDON then
 		initDB()
+	end
+end)
+
+A.on("PLAYER_LOGIN",function()
+	A.readGameClock()
+end)
+A.on("CVAR_UPDATE",function(_,name)
+	if name=="timeMgrUseMilitaryTime"then
+		A.onGameClockChanged()
 	end
 end)

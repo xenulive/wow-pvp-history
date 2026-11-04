@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.33
+-- WowPvpHistory 0.75.26
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -48,6 +48,14 @@ local function paintSurface(button,off)
 	end
 end
 
+local function fontOf(fontString)
+	if fontString==nil or fontString.GetFontObject==nil then
+		return nil
+	end
+	local ok,object=pcall(fontString.GetFontObject,fontString)
+	return ok and object or nil
+end
+
 local function paintPill(button)
 	local off=isOff(button)
 
@@ -61,7 +69,11 @@ local function paintPill(button)
 	if not off and button.controlSelected then
 		tone="bright"
 	end
+	local before=fontOf(label)
 	A.style(label,button.controlRole or"bodyMedium",tone)
+	if button.controlFitted and fontOf(label)~=before then
+		A.fitControl(button,button.controlFitMin,button.controlFitPad)
+	end
 end
 
 local function paintTab(button)
@@ -339,6 +351,9 @@ local function paintByKind(button)
 end
 
 local function paint(button)
+	if button.themeLock then
+		return A.withTheme(button.themeLock,A.containedPaint,"controls/paint",paintByKind,button)
+	end
 	return A.containedPaint("controls/paint",paintByKind,button)
 end
 
@@ -464,6 +479,7 @@ local function stringWidth(fontString)
 end
 
 function A.fitControl(button,minWidth,padding)
+	button.controlFitted,button.controlFitMin,button.controlFitPad=true,minWidth,padding
 	local pad=padding or A.metric("pillPad")
 	local floor=minWidth or A.metric("pillMin")
 	local text=0
@@ -862,6 +878,11 @@ function A.dropdown(parent,choices,onPick)
 
 	local function close()
 		panel:Hide()
+		for i=1,#button.rows do
+			if button.rows[i].wash then
+				button.rows[i].wash:Hide()
+			end
+		end
 		if openDropdown==button then
 			openDropdown=nil
 		end
@@ -1301,7 +1322,11 @@ function A.tooltipRoomBelow(tooltip,anchor)
 		return"unread"
 	end
 	local drop=-(tonumber(anchor.y)or 0)
-	if bottom*relScale-(height+drop)*tipScale<0 then
+	local below=A.unitFigure(bottom*relScale-(height+drop)*tipScale)
+	if below==nil then
+		return"unread"
+	end
+	if below<0 then
 		return"flipped"
 	end
 	return"clear"

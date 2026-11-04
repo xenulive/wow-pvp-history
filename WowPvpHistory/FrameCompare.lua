@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.33
+-- WowPvpHistory 0.75.26
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -332,7 +332,7 @@ local function buildWindow()
 	window=frame
 	if type(A.attachResize)=="function"then
 		pcall(A.attachResize,frame,"compare",function()
-			A.refreshCompareWindow()
+			A.refreshCompareWindow(true)
 		end)
 	end
 	return frame
@@ -345,12 +345,7 @@ local function windowOrNil()
 	if not surface()then
 		return nil
 	end
-	local built=A.buildWindowOnce("compare",buildWindow)
-	if not built then
-		window=nil
-		return nil
-	end
-	window=built
+	window=A.buildWindowOnce("compare",buildWindow)
 	return window
 end
 
@@ -598,10 +593,10 @@ local function secondNeed(reading)
 	if#reading.lines>0 then
 		need=#reading.lines*A.metric("compareRoundLine")+A.metric("paneGap")
 	end
-	need=need+A.metric("compareGroupRow")+A.metric("compareLobbyRow")
-		+math.min(reading.lobbyRows,A.compareLobbyMost())*A.metric("compareLobbyRow")
+	local lobbyRow=A.metric("compareLobbyRow")
+	need=need+A.metric("compareGroupRow")+lobbyRow+math.min(reading.lobbyRows,A.compareLobbyMost())*lobbyRow
 	if reading.lobby.shared~=nil then
-		need=need+A.metric("compareLobbyRow")
+		need=need+lobbyRow
 	end
 	return need
 end
@@ -665,11 +660,12 @@ local function paintFigures(rows,folded,count,y,columnX,columnWidth,labelWidth)
 end
 
 local function paintSecond(reading,records,y,columnX,columnWidth,labelWidth,body)
-	local gap=A.metric("compareColumnGap")
+	local gap,lobbyRow=A.metric("compareColumnGap"),A.metric("compareLobbyRow")
+	local lineHeight,left,roundIcon=A.metric("compareRoundLine"),labelWidth+gap,A.metric("compareRoundIcon")
 	for index,line in ipairs(reading.lines)do
 		local drawn=window.roundLines[index]or buildRoundLine(window,index)
 		hideRoundLine(drawn)
-		local height=A.metric("compareRoundLine")-4
+		local height=lineHeight-4
 		drawn.id:ClearAllPoints()
 		drawn.id:SetPoint("TOPLEFT",window.body,"TOPLEFT",0,y-4)
 		drawn.id:SetText(line.id)
@@ -681,9 +677,7 @@ local function paintSecond(reading,records,y,columnX,columnWidth,labelWidth,body
 		A.style(drawn.word,"bodyMedium",line.word and line.tone or"dim")
 		drawn.word:Show()
 		local cards=math.max(6,#line.rounds)
-		local left=labelWidth+gap
 		local cardWidth=math.floor((body-left-gap*(cards-1))/cards)
-		local side=A.metric("compareRoundIcon")
 		for r,round in ipairs(line.rounds)do
 			local card=drawn.cards[r]
 			if card~=nil then
@@ -714,15 +708,15 @@ local function paintSecond(reading,records,y,columnX,columnWidth,labelWidth,body
 					local icon=card.icons[m]
 					if mate~=nil then
 						icon:ClearAllPoints()
-						icon:SetPoint("BOTTOMLEFT",window.body,"TOPLEFT",x+4+(m-1)*(side+2),y-height+3)
-						icon:SetSize(side,side)
+						icon:SetPoint("BOTTOMLEFT",window.body,"TOPLEFT",x+4+(m-1)*(roundIcon+2),y-height+3)
+						icon:SetSize(roundIcon,roundIcon)
 						specArt(icon,mate.classToken,mate.spec)
 						icon:Show()
 					end
 				end
 			end
 		end
-		y=y-A.metric("compareRoundLine")
+		y=y-lineHeight
 	end
 	for i=#reading.lines+1,#window.roundLines do
 		hideRoundLine(window.roundLines[i])
@@ -760,7 +754,7 @@ local function paintSecond(reading,records,y,columnX,columnWidth,labelWidth,body
 		A.style(head,"label",c==1 and"accent"or"dim")
 		head:Show()
 	end
-	y=y-A.metric("compareLobbyRow")
+	y=y-lobbyRow
 
 	local most=A.compareLobbyMost()
 	local total=#lobby.rows
@@ -800,13 +794,13 @@ local function paintSecond(reading,records,y,columnX,columnWidth,labelWidth,body
 				if line~=nil then
 					drawnCell.hover:ClearAllPoints()
 					drawnCell.hover:SetPoint("TOPLEFT",window.body,"TOPLEFT",columnX(c),y)
-					drawnCell.hover:SetSize(columnWidth,A.metric("compareLobbyRow"))
+					drawnCell.hover:SetSize(columnWidth,lobbyRow)
 					drawnCell.hover.line=line
 					drawnCell.hover:Show()
 				end
 			end
 		end
-		y=y-A.metric("compareLobbyRow")
+		y=y-lobbyRow
 	end
 	for i=drawn+1,#window.lobbyRows do
 		hideLobbyRow(window.lobbyRows[i])
@@ -834,7 +828,7 @@ local function paintSecond(reading,records,y,columnX,columnWidth,labelWidth,body
 			A.style(shared,"rowNote","dim")
 			shared:Show()
 		end
-		y=y-A.metric("compareLobbyRow")
+		y=y-lobbyRow
 	end
 	return y,drawn
 end
@@ -863,11 +857,12 @@ local function paintTabs(second,tab,y,body)
 		x=x+width+A.metric("paneGap")
 	end
 	window.tabRule:ClearAllPoints()
-	window.tabRule:SetPoint("TOPLEFT",window.body,"TOPLEFT",0,y-A.metric("compareTab"))
+	local tabHeight=A.metric("compareTab")
+	window.tabRule:SetPoint("TOPLEFT",window.body,"TOPLEFT",0,y-tabHeight)
 	window.tabRule:SetWidth(body)
 	window.tabRule:SetColorTexture(A.color("hairline"))
 	window.tabRule:Show()
-	return A.metric("compareTab")+A.metric("paneGap")
+	return tabHeight+A.metric("paneGap")
 end
 
 local function fitHeight(height)
@@ -886,21 +881,43 @@ local function fitHeight(height)
 	return"rows"
 end
 
-function A.refreshCompareWindow()
-	if not window then
-		return nil
+local function compareReadings(reuse)
+	local mark=A.storeMark()
+	local held=window.heldReadings
+	if reuse and held and held.ids==table.concat(A.compareIds(),",")and A.storeMarkSame(held.mark,mark)then
+		return held,true
 	end
+	window.heldReadings=nil
 	local records=A.compareRecords()
 	if#records<2 then
-		return nil
+		return nil,false
 	end
 	local rows,hidden,folded=A.compareRows(records)
 	local second=A.compareSecondTab(records[1].format)
+	local made={
+		mark=mark,
+		ids=table.concat(A.compareIds(),","),
+		records=records,rows=rows,hidden=hidden,folded=folded,second=second,
+		reading=second~=nil and A.compareSecondReading(records)or nil,
+	}
+	window.heldReadings=made
+	return made,false
+end
+
+function A.refreshCompareWindow(reuse)
+	if not window then
+		return nil
+	end
+	local made,held=compareReadings(reuse==true)
+	window.readingsHeld=held
+	if made==nil then
+		return nil
+	end
+	local records,rows,hidden,folded=made.records,made.rows,made.hidden,made.folded
+	local second,reading=made.second,made.reading
 	local tab=A.compareTab()
-	local reading=second~=nil and A.compareSecondReading(records)or nil
 	pcall(function()
-		window.heading:SetText(A.compareTitle(#records,records[1].format))
-		A.style(window.heading,"heading","bright")
+		A.setWindowTitle(window,A.compareTitle(#records,records[1].format))
 		A.fitControl(window.addMatch,A.metric("actionMin"))
 		A.fitControl(window.openEach,A.metric("actionMin"))
 	end)
@@ -949,11 +966,11 @@ function A.compareScrollLobby(step)
 		return 0
 	end
 	window.lobbyOffset=math.max(0,(window.lobbyOffset or 0)+(step or 0))
-	A.refreshCompareWindow()
+	A.refreshCompareWindow(true)
 	lobbyScrolls=lobbyScrolls+1
 	if lobbyScrolls<=LOBBY_SCROLL_TRACES then
-		A.trace("compare/scroll",{offset=window.lobbyOffset,rows=window.lobbyDrawn,n=lobbyScrolls},
-			"ui")
+		A.trace("compare/scroll",{offset=window.lobbyOffset,rows=window.lobbyDrawn,n=lobbyScrolls,
+			held=window.readingsHeld==true},"ui")
 	end
 	return window.lobbyOffset
 end

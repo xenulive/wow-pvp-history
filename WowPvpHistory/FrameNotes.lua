@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.33
+-- WowPvpHistory 0.75.26
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -15,6 +15,7 @@ local searchText
 local sortWord="recent"
 local sortDir
 local repFilter
+local attitudeFilter
 local formatFilter
 local sideFilter
 
@@ -22,9 +23,23 @@ local stagedFault=false
 
 local scopeMatchId
 
+local scopeTidy
+
 local pendingReveal
 
 local requestedGuid
+
+local paintingToShow=false
+
+local function refreshToShow()
+	paintingToShow=true
+	local ok,painted=pcall(A.refreshNotes)
+	paintingToShow=false
+	if not ok then
+		error(painted,0)
+	end
+	return painted
+end
 
 local function setSelected(guid)
 	if guid==selectedGuid then
@@ -44,6 +59,10 @@ local lastRows=0
 local tracedOrder="recent"
 
 local DETAIL_SUBJECT="the player detail pane"
+
+local function listSubject()
+	return(window.list and window.list.subject)or"the player list"
+end
 
 local ROSTER_SLOTS=8
 
@@ -66,6 +85,8 @@ end
 local function figureColumns()
 	return{
 		{key="met",name="MET",width=A.metric("playerColMet"),justify="RIGHT"},
+		{key="trend",name="TREND",width=math.max(A.metric("playerColTrend"),A.headerFloor("TREND")),
+			justify="RIGHT"},
 		{key="record",name="RECORD",width=A.metric("playerColSide")*2+A.metric("rowCellGap"),
 			justify="LEFT"},
 	}
@@ -75,6 +96,7 @@ local SIDE_WORDS={with="with",against="vs"}
 
 function A.recordCellText(withParts,againstParts)
 	local out,plain={},{}
+	local comma=A.colorEscape("dim")..", |r"
 	for _,side in ipairs({{"with",withParts},{"against",againstParts}})do
 		local pieces=A.sideShort(side[2])
 		if pieces then
@@ -84,7 +106,7 @@ function A.recordCellText(withParts,againstParts)
 				texts[i]=pieces[i].text
 			end
 			local word=SIDE_WORDS[side[1]]
-			out[#out+1]=table.concat(figures,A.colorEscape("dim")..", |r").." "
+			out[#out+1]=table.concat(figures,comma).." "
 				..A.colorEscape("text")..word.."|r"
 			plain[#plain+1]=table.concat(texts,", ").." "..word
 		end
@@ -92,7 +114,23 @@ function A.recordCellText(withParts,againstParts)
 	if#out==0 then
 		return A.colorEscape("dimmer").."-|r","-"
 	end
-	return table.concat(out,A.colorEscape("dim")..", |r"),table.concat(plain,", ")
+	return table.concat(out,comma),table.concat(plain,", ")
+end
+
+A.TREND_FLOOR=100
+
+function A.trendCellText(trend)
+	if type(trend)~="table"or type(trend.change)~="number"then
+		return"","dimmer"
+	end
+	local change=trend.change
+	if change>=A.TREND_FLOOR then
+		return("+%d"):format(change),"win"
+	end
+	if change<=-A.TREND_FLOOR then
+		return("%d"):format(change),"loss"
+	end
+	return"\194\183","dimmer"
 end
 
 local function figureEdges()
@@ -127,7 +165,8 @@ function A.refitNameHead(fontString,retry)
 	end
 	local ok,room=pcall(fontString.GetWidth,fontString)
 	local text,index,measured=nil,nil,false
-	if ok and type(room)=="number"and room>0 then
+	local roomRead=ok and type(room)=="number"and room>0
+	if roomRead then
 		text,index,measured=A.fittedForm(fontString,room,forms)
 	end
 	if text==nil then
@@ -154,7 +193,7 @@ function A.refitNameHead(fontString,retry)
 		form="bare"
 	end
 	fontString.headFit={
-		room=(ok and type(room)=="number"and room>0)and A.unitFigure(room)or 0,
+		room=roomRead and A.unitFigure(room)or 0,
 		need=#forms>1 and A.unitFigure(A.textRoom(fontString,forms[1]))or nil,
 		form=form,
 	}
@@ -205,8 +244,6 @@ local function initRow(row,data)
 		row.specIcon:Hide()
 
 		row.label=row:CreateFontString(nil,"ARTWORK","GameFontHighlightSmall")
-		row.label:SetPoint("TOPLEFT",row,"TOPLEFT",left+A.playersIconSize()+A.metric("chipGap"),-4)
-		row.label:SetPoint("RIGHT",row,"RIGHT",-used,0)
 		row.label:SetJustifyH("LEFT")
 		row.label:SetWordWrap(false)
 
@@ -230,6 +267,12 @@ local function initRow(row,data)
 				A.clickPlayersRow(self.playerGuid)
 			end
 		end)
+		row:SetScript("OnEnter",function(self)
+			if self.fullName~=nil then
+				A.keyedTooltip(self,{self.fullName},"ANCHOR_RIGHT","players-name")
+			end
+		end)
+		row:SetScript("OnLeave",A.hideTooltip)
 	end
 
 	row.hover:SetColorTexture(A.color("hover"))
@@ -238,6 +281,7 @@ local function initRow(row,data)
 
 	if data.section~=nil then
 		row.playerGuid=nil
+		row.fullName=nil
 		row:EnableMouse(false)
 		row.hover:Hide()
 		row.selection:Hide()
@@ -267,13 +311,19 @@ local function initRow(row,data)
 	local item=data.row
 	row.playerGuid=item.guid
 
-	row.lane:SetColorTexture(A.color(A.ratingMark(item.rating)))
+	row.lane:SetColorTexture(A.color(item.mark))
 	row.lane:Show()
 
 	local identity=item.identity
+	row.label:ClearAllPoints()
+	row.label:SetPoint("TOPLEFT",row,"TOPLEFT",
+		A.metric("playerLane")+A.metric("playerLaneGap")+A.playersIconSize()+A.metric("chipGap"),-4)
+	row.label:SetPoint("RIGHT",row,"RIGHT",-select(2,figureEdges()),0)
 	A.style(row.label,"bodyMedium")
 	row.label:SetTextColor(A.classColor(identity.classToken))
-	A.fitNameHead(row.label,identity.bare or A.UNKNOWN_PLAYER,identity.realm,"dimmer",
+	local realm=A.realmDrawn(identity.realm,data.realmKept)
+	row.fullName=(realm==nil and identity.realm~=nil)and identity.full or nil
+	A.fitNameHead(row.label,identity.bare or A.UNKNOWN_PLAYER,realm,"dimmer",
 		item.noted and("  "..A.colorEscape("noteWord").."note|r")or nil)
 	row.label:Show()
 
@@ -286,9 +336,12 @@ local function initRow(row,data)
 	row.spec:SetText(sub)
 	row.spec:Show()
 
-	local met,record=row.figures[1],row.figures[2]
+	local met,trend,record=row.figures[1],row.figures[2],row.figures[3]
 	A.style(met,"numberSmall",item.met>1 and"text"or"dimmer")
 	met:SetText(("x%d"):format(item.met))
+	local trendText,trendTone=A.trendCellText(item.trend)
+	A.style(trend,"numberSmall",trendTone)
+	trend:SetText(trendText)
 	A.style(record,"numberSmall","text")
 	record:SetText((A.recordCellText(item.with,item.against)))
 	for i=1,#row.figures do
@@ -305,20 +358,62 @@ local function rowExtent(_,data)
 	return A.metric("playerRow")
 end
 
+function A.applyNoteTemplate(box,guid,template)
+	if type(template)~="string"or template==""then
+		return nil,"empty"
+	end
+	local read,typed=pcall(box.GetText,box)
+	local base=(read and type(typed)=="string"and typed or""):gsub("^%s+",""):gsub("%s+$","")
+	local function trace(state,reason,text)
+		A.trace("edit",{field="note",via="template",state=state,reason=reason,
+			bytes=text and#text or nil,bound=text and A.PLAYER_NOTE_MAX or nil},"data")
+	end
+	if base:find(template,1,true)then
+		trace("unchanged","present")
+		return"present"
+	end
+	local joined=base==""and template or(base..", "..template)
+	if#joined>A.PLAYER_NOTE_MAX then
+		A.say(("that note would be %d bytes and the bound is %d bytes. Nothing written")
+			:format(#joined,A.PLAYER_NOTE_MAX))
+		trace("refused","too-long",joined)
+		return nil,"too-long"
+	end
+	local held=A.noteFor(guid)
+	local stored=type(held)=="table"and type(held.text)=="string"and held.text or""
+	if base~=stored then
+		pcall(box.SetText,box,joined)
+		trace("drafted",nil,joined)
+		return"drafted"
+	end
+	local saved,_,why=A.setPlayerNote(guid,joined)
+	if not saved then
+		A.say(("%s, so the note could not be stored"):format(A.noteRefusalText(why)))
+		trace("refused",why,joined)
+		return nil,why
+	end
+	pcall(box.SetText,box,joined)
+	trace("filled",nil,joined)
+	return"saved"
+end
+
 function A.commitNoteBox(box,guid)
 	local ok,text=pcall(box.GetText,box)
 	if not ok then
 		return
 	end
 
-	local stored,_,why,length,bound=
-		A.setPlayerNote(guid,(text~=nil and text~="")and text or nil)
+	local cleared=text==nil or text:gsub("%s","")==""
+	local stored,was,why,length,bound=A.setPlayerNote(guid,not cleared and text or nil)
+	if stored and cleared and was~=nil then
+		A.sayRemoved(guid,"note",was)
+	end
 	if not stored then
 		if why=="too-long"then
 			A.say(("that note is %d bytes and the bound is %d bytes. Nothing written")
 				:format(tonumber(length)or 0,tonumber(bound)or A.PLAYER_NOTE_MAX))
 		else
-			A.say("no database, so the note could not be stored")
+			A.say(("%s, so the note could not be stored"):format(A.noteRefusalText(why)))
 		end
 		return
 	end
@@ -350,17 +445,33 @@ function A.discardTypedNote(box,owner)
 	owner.notePainted=(ok and type(held)=="string")and held or""
 end
 
-local function repPicked(wanted)
-	if not selectedGuid then
-		return
-	end
-	local held=A.noteFor(selectedGuid)
-	if held~=nil and held.rating==wanted then
+function A.pickNoteStep(guid,scale,wanted)
+	local field=scale=="attitude"and"attitude"or"rating"
+	local held=A.noteFor(guid)
+	if held~=nil and held[field]==wanted then
 		wanted=nil
 	end
-	if not A.setPlayerRating(selectedGuid,wanted)then
-		A.say("no database, so the rating could not be stored")
+	local set=scale=="attitude"and A.setPlayerAttitude or A.setPlayerRating
+	local stored,was,why=set(guid,wanted)
+	if not stored then
+		A.say(("%s, so the %s could not be stored"):format(A.noteRefusalText(why),scale))
+	elseif wanted==nil and was~=nil then
+		A.sayRemoved(guid,field,was)
 	end
+end
+
+local function scalePicked(scale,wanted)
+	if selectedGuid then
+		A.pickNoteStep(selectedGuid,scale,wanted)
+	end
+end
+
+local function repPicked(wanted)
+	scalePicked("skill",wanted)
+end
+
+local function attitudePicked(wanted)
+	scalePicked("attitude",wanted)
 end
 
 function A.sayTagRefusal(why,offender,bound)
@@ -371,7 +482,7 @@ function A.sayTagRefusal(why,offender,bound)
 		A.say(("that is past %d tags, so %q and the rest were not added. Nothing written")
 			:format(tonumber(bound)or A.PLAYER_MAX_TAGS,tostring(offender)))
 	else
-		A.say("no database, so the tags could not be stored")
+		A.say(("%s, so the tags could not be stored"):format(A.noteRefusalText(why)))
 	end
 end
 
@@ -412,12 +523,25 @@ local function commitTags()
 	A.commitTagBox(window.tagRow.box,selectedGuid)
 end
 
-local function tagClicked(button)
-	if not(selectedGuid and button.tagValue)then
-		return
+function A.removeShownTag(guid,tag)
+	local stored,removed,why=A.removePlayerTags(guid,{tag})
+	if not stored then
+		A.say(("%s, so the tag could not be removed"):format(A.noteRefusalText(why)))
+	elseif type(removed)=="table"and#removed>0 then
+		A.sayRemoved(guid,"tag",removed)
 	end
-	if not A.removePlayerTags(selectedGuid,{button.tagValue})then
-		A.say("no database, so the tag could not be removed")
+end
+
+local function tagClicked(button)
+	if selectedGuid and button.tagValue then
+		A.removeShownTag(selectedGuid,button.tagValue)
+	end
+end
+
+local function templateClicked(button)
+	local box=window and window.noteRow and window.noteRow.box
+	if selectedGuid and box and button.templateValue then
+		A.applyNoteTemplate(box,selectedGuid,button.templateValue)
 	end
 end
 
@@ -487,7 +611,7 @@ local function commitRosterTags()
 		elseif why=="empty-roster"then
 			A.say("this match's roster is you and its bot rows, so there is nobody to tag")
 		else
-			A.say("no database, so the tags could not be stored")
+			A.say(("%s, so the tags could not be stored"):format(A.noteRefusalText(why)))
 		end
 		return
 	end
@@ -503,12 +627,12 @@ local function rosterChipClicked(button)
 		return
 	end
 
-	local ok,summary=A.untagRoster(record,{button.tagValue})
+	local ok,summary,why=A.untagRoster(record,{button.tagValue})
 	if not ok then
-		A.say("no database, so the tag could not be removed")
+		A.say(("%s, so the tag could not be removed"):format(A.noteRefusalText(why)))
 		return
 	end
-	A.say(A.rosterWriteLine(summary,false))
+	A.sayRosterRemoved(summary)
 end
 
 function A.notesRosterBandHeight()
@@ -608,10 +732,11 @@ local function paintRosterBand()
 	if missed>0 then
 		window.rosterMore:ClearAllPoints()
 		window.rosterMore:SetPoint("TOPLEFT",window.rosterBand,"TOPLEFT",x,-paneGap-4)
-		window.rosterMore:SetText(("+%d"):format(missed))
+		local more=("+%d"):format(missed)
+		window.rosterMore:SetText(more)
 		A.style(window.rosterMore,"note","dimmer")
 		window.rosterMore:Show()
-		x=x+A.textRoom(window.rosterMore,("+%d"):format(missed))+pillGap
+		x=x+A.textRoom(window.rosterMore,more)+pillGap
 	else
 		window.rosterMore:Hide()
 	end
@@ -633,7 +758,19 @@ function A.playersStripHeight()
 	return A.metric("standPad")*2+A.fontSize("label")+A.fontSize("number")+A.fontSize("note")+8
 end
 
-local RATINGS_LABEL="YOUR REP"
+local function stripLabel(scale)
+	return"THEIR "..A.scaleLabel(scale)
+end
+
+local function legendNeed()
+	local legend=0
+	local swatch,paneGap=A.metric("repSwatch"),A.metric("paneGap")
+	for _,slice in ipairs(A.repSlices())do
+		local countFloor=A.headerFloor(slice.rating=="none"and"0,000"or"000")
+		legend=legend+swatch+4+countFloor+paneGap+6
+	end
+	return legend
+end
 
 local function stripBlock(parent)
 	local block=CreateFrame("Frame",nil,parent)
@@ -659,18 +796,24 @@ local function stripBlock(parent)
 	return block
 end
 
-function A.repSlices(strip)
+function A.repSlices(strip,scale)
+	scale=scale or"skill"
+	local steps=type(strip)=="table"and(scale=="attitude"and strip.attitudeSteps or strip.steps)or{}
 	local counts={}
-	for _,step in ipairs(type(strip)=="table"and strip.steps or{})do
+	for _,step in ipairs(steps)do
 		counts[step.rating]=step.count
 	end
 	local out={}
-	for _,step in ipairs(A.ratingRamp())do
-		out[#out+1]={rating=step.rating,label=(A.repLabel(step.rating)),mark=step.mark,
+	for _,step in ipairs(A.ratingRamp(scale))do
+		out[#out+1]={rating=step.rating,label=(A.repLabel(step.rating,scale)),mark=step.mark,
 			swatch=step.mark,count=counts[step.rating]or 0}
 	end
+	local rest=0
+	if type(strip)=="table"then
+		rest=(scale=="attitude"and strip.attitudeNotRated or strip.notRated)or 0
+	end
 	out[#out+1]={rating="none",label=(A.repLabel(nil)),mark=A.ratingMark(nil),swatch="dimmer",
-		count=type(strip)=="table"and strip.notRated or 0}
+		count=rest}
 	return out
 end
 
@@ -705,48 +848,60 @@ local function buildStrip(frame)
 		x=x+tileWidth+paneGap*2
 	end
 
-	local rep=CreateFrame("Frame",nil,frame.strip)
-	rep:SetPoint("TOPLEFT",frame.stripLead,"TOPRIGHT",A.metric("paneGap")*3,0)
-	rep:SetPoint("BOTTOMRIGHT",frame.stripTiles[1],"BOTTOMLEFT",-A.metric("paneGap")*2,0)
-	frame.stripRep=rep
-	rep.label=rep:CreateFontString(nil,"ARTWORK","GameFontDisableSmall")
-	rep.label:SetPoint("TOPLEFT",rep,"TOPLEFT",0,0)
-	rep.label:SetJustifyH("LEFT")
-	rep.label:SetWordWrap(false)
+	frame.stripReps={}
+	for _,scale in ipairs(A.SCALES)do
+		local rep=CreateFrame("Frame",nil,frame.strip)
+		rep.scale=scale
+		local after=scale=="skill"and frame.stripLead or frame.stripRep
+		rep:SetPoint("TOPLEFT",after,"TOPRIGHT",A.metric("paneGap")*3,0)
+		rep:SetPoint("BOTTOMLEFT",after,"BOTTOMRIGHT",A.metric("paneGap")*3,0)
+		if scale=="skill"then
+			frame.stripRep=rep
+		else
+			frame.stripAttitude=rep
+		end
+		frame.stripReps[scale]=rep
+		rep.label=rep:CreateFontString(nil,"ARTWORK","GameFontDisableSmall")
+		rep.label:SetPoint("TOPLEFT",rep,"TOPLEFT",0,0)
+		rep.label:SetJustifyH("LEFT")
+		rep.label:SetWordWrap(false)
 
-	rep.bars,rep.legend={},{}
-	local barHeight,keyHeight,swatch=A.metric("repBarHeight"),A.fontSize("note")+4,A.metric("repSwatch")
-	for i,step in ipairs(A.repSlices())do
-		local bar=CreateFrame("Button",nil,rep)
-		bar:SetHeight(barHeight)
-		bar:RegisterForClicks("LeftButtonUp")
-		bar.fill=bar:CreateTexture(nil,"ARTWORK")
-		bar.fill:SetAllPoints(bar)
-		bar.ratingValue=step.rating
-		bar.ratingMark=step.mark
-		bar:SetScript("OnClick",function(self)
-			A.toggleNotesRep(self.ratingValue)
-		end)
-		rep.bars[i]=bar
+		rep.bars,rep.legend={},{}
+		local barHeight,keyHeight,swatch=A.metric("repBarHeight"),A.fontSize("note")+4,A.metric("repSwatch")
+		for i,step in ipairs(A.repSlices(nil,scale))do
+			local bar=CreateFrame("Button",nil,rep)
+			bar:SetHeight(barHeight)
+			bar:RegisterForClicks("LeftButtonUp")
+			bar.fill=bar:CreateTexture(nil,"ARTWORK")
+			bar.fill:SetAllPoints(bar)
+			bar.ratingValue=step.rating
+			bar.ratingMark=step.mark
+			bar.scale=scale
+			bar:SetScript("OnClick",function(self)
+				A.toggleNotesScale(self.scale,self.ratingValue)
+			end)
+			rep.bars[i]=bar
 
-		local key=CreateFrame("Button",nil,rep)
-		key:SetHeight(keyHeight)
-		key:RegisterForClicks("LeftButtonUp")
-		key.swatch=key:CreateTexture(nil,"ARTWORK")
-		key.swatch:SetSize(swatch,swatch)
-		key.swatch:SetPoint("LEFT",key,"LEFT",0,0)
-		key.word=key:CreateFontString(nil,"ARTWORK","GameFontHighlightSmall")
-		key.word:SetPoint("LEFT",key.swatch,"RIGHT",4,0)
-		key.word:SetWordWrap(false)
-		key.count=key:CreateFontString(nil,"ARTWORK","GameFontDisableSmall")
-		key.count:SetPoint("LEFT",key.word,"RIGHT",4,0)
-		key.count:SetWordWrap(false)
-		key.ratingValue=step.rating
-		key.ratingMark=step.swatch
-		key:SetScript("OnClick",function(self)
-			A.toggleNotesRep(self.ratingValue)
-		end)
-		rep.legend[i]=key
+			local key=CreateFrame("Button",nil,rep)
+			key:SetHeight(keyHeight)
+			key:RegisterForClicks("LeftButtonUp")
+			key.swatch=key:CreateTexture(nil,"ARTWORK")
+			key.swatch:SetSize(swatch,swatch)
+			key.swatch:SetPoint("LEFT",key,"LEFT",0,0)
+			key.word=key:CreateFontString(nil,"ARTWORK","GameFontHighlightSmall")
+			key.word:SetPoint("LEFT",key.swatch,"RIGHT",4,0)
+			key.word:SetWordWrap(false)
+			key.count=key:CreateFontString(nil,"ARTWORK","GameFontDisableSmall")
+			key.count:SetPoint("LEFT",key.word,"RIGHT",4,0)
+			key.count:SetWordWrap(false)
+			key.ratingValue=step.rating
+			key.ratingMark=step.swatch
+			key.scale=scale
+			key:SetScript("OnClick",function(self)
+				A.toggleNotesScale(self.scale,self.ratingValue)
+			end)
+			rep.legend[i]=key
+		end
 	end
 end
 
@@ -778,6 +933,8 @@ local function paintStrip(view)
 		leadText=fitted(lead.sub,A.metric("standLead"),{
 			("in match #%s"):format(tostring(view.scopeId)),
 		})
+	elseif view.tidy then
+		leadText=fitted(lead.sub,A.metric("standLead"),{"a tidy would drop","to tidy"})
 	else
 		local encounterWord=strip.encounters==1 and"encounter"or"encounters"
 		local forms={
@@ -801,90 +958,107 @@ local function paintStrip(view)
 		leadText=fitted(lead.sub,A.metric("standLead"),forms)
 	end
 
-	local rep=window.stripRep
-	A.style(rep.label,"label","dim")
-	rep.label:SetText(RATINGS_LABEL)
+	local total=select(2,pcall(window.strip.GetWidth,window.strip))
+	if type(total)~="number"or total<100 then
+		total=A.notesFrameWidth()-A.metric("margin")*2
+	end
+	local roomAll=total-A.metric("standPad")*2-A.metric("standLead")
+		-3*(A.metric("standTile")+A.metric("paneGap")*2)-A.metric("paneGap")*3
+	local bothGap=A.metric("paneGap")*3
+	local skillRoom=math.max(math.floor((roomAll-bothGap)/2),legendNeed())
+	local rooms={skill=skillRoom,attitude=math.max(roomAll-bothGap-skillRoom,1)}
+	local paintFilter={skill=repFilter,attitude=attitudeFilter}
+	local barWidths={}
+	for _,scale in ipairs(A.SCALES)do
+		local rep=window.stripReps[scale]
+		local filter=paintFilter[scale]
+		local room=rooms[scale]
+		A.style(rep.label,"label","dim")
+		rep.label:SetText(stripLabel(scale))
+		rep:SetWidth(room)
 
-	local room=select(2,pcall(rep.GetWidth,rep))
-	if type(room)~="number"or room<100 then
-		room=A.notesFrameWidth()-A.metric("margin")*2-A.metric("standPad")*2
-			-A.metric("standLead")-3*(A.metric("standTile")+A.metric("paneGap")*2)
-			-A.metric("paneGap")*3
-	end
-	local slices=A.repSlices(strip)
-	local gap=A.metric("repBarGap")
-	local floor=6
-	local total,held=0,0
-	for _,slice in ipairs(slices)do
-		total=total+slice.count
-		if slice.count>0 then
-			held=held+1
+		local slices=A.repSlices(strip,scale)
+		local gap=A.metric("repBarGap")
+		local floor=6
+		local sum,held=0,0
+		for _,slice in ipairs(slices)do
+			sum=sum+slice.count
+			if slice.count>0 then
+				held=held+1
+			end
 		end
-	end
-	local spare=room-gap*(held-1)-floor*held
-	local x=0
-	local barTop=-(A.fontSize("label")+6)
-	local widths={}
-	for i,bar in ipairs(rep.bars)do
-		local slice=slices[i]
-		local width=0
-		if i==#slices and(total==0 or slice.count>0)then
-			width=math.max(math.floor(room-x),floor)
-		elseif slice.count>0 then
-			width=floor+(spare>0 and math.floor(spare*slice.count/total)or 0)
+		local spare=room-gap*(held-1)-floor*held
+		local x=0
+		local barTop=-(A.fontSize("label")+6)
+		local widths={}
+		barWidths[scale]=widths
+		for i,bar in ipairs(rep.bars)do
+			local slice=slices[i]
+			local width=0
+			if i==#slices and(sum==0 or slice.count>0)then
+				width=math.max(math.floor(room-x),floor)
+			elseif slice.count>0 then
+				width=floor+(spare>0 and math.floor(spare*slice.count/sum)or 0)
+			end
+			widths[i]=width
+			bar:ClearAllPoints()
+			bar:SetPoint("TOPLEFT",rep,"TOPLEFT",x,barTop)
+			bar:SetWidth(math.max(width,1))
+			bar:SetShown(width>0)
+			bar.fill:SetColorTexture(A.color(bar.ratingMark))
+			local dim=filter~=nil and filter~=bar.ratingValue
+			bar.fill:SetAlpha(dim and 0.3 or 1)
+			if width>0 then
+				x=x+width+gap
+			end
 		end
-		widths[i]=width
-		bar:ClearAllPoints()
-		bar:SetPoint("TOPLEFT",rep,"TOPLEFT",x,barTop)
-		bar:SetWidth(math.max(width,1))
-		bar:SetShown(width>0)
-		bar.fill:SetColorTexture(A.color(bar.ratingMark))
-		local dim=repFilter~=nil and repFilter~=bar.ratingValue
-		bar.fill:SetAlpha(dim and 0.3 or 1)
-		if width>0 then
-			x=x+width+gap
-		end
-	end
 
-	local keyTop=barTop-A.metric("repBarHeight")-6
-	local keyGap=A.metric("paneGap")+6
-	local swatch=A.metric("repSwatch")
-	local function keyWidth(key,step,withWord)
-		local wide=swatch+4+A.textRoom(key.count,A.groupedCount(step.count))
-		if withWord then
-			wide=wide+A.textRoom(key.word,step.label)+4
+		local keyTop=barTop-A.metric("repBarHeight")-6
+		local keyGap=A.metric("paneGap")+6
+		local swatch=A.metric("repSwatch")
+		local function keyWidth(key,step,withWord)
+			local wide=swatch+4+A.textRoom(key.count,A.groupedCount(step.count))
+			if withWord then
+				wide=wide+A.textRoom(key.word,step.label)+4
+			end
+			return wide
 		end
-		return wide
-	end
-	local whole=0
-	for i,key in ipairs(rep.legend)do
-		A.style(key.word,"note","text")
-		A.style(key.count,"numberMicro","dim")
-		whole=whole+keyWidth(key,slices[i],true)+(i>1 and keyGap or 0)
-	end
-	local words=whole<=room
-	x=0
-	for i,key in ipairs(rep.legend)do
-		local step=slices[i]
-		local chosen=repFilter==key.ratingValue
-		local dim=repFilter~=nil and not chosen
-		key.swatch:SetColorTexture(A.color(key.ratingMark))
-		key.swatch:SetAlpha(dim and 0.3 or 1)
-		A.style(key.word,"note",chosen and key.ratingMark or(dim and"dimmer"or"text"))
-		key.word:SetText(words and step.label or"")
-		key.word:SetShown(words)
-		key.count:ClearAllPoints()
-		if words then
-			key.count:SetPoint("LEFT",key.word,"RIGHT",4,0)
-		else
-			key.count:SetPoint("LEFT",key.swatch,"RIGHT",4,0)
+		local whole=0
+		for i,key in ipairs(rep.legend)do
+			A.style(key.word,"note","text")
+			A.style(key.count,"numberMicro","dim")
+			whole=whole+keyWidth(key,slices[i],true)+(i>1 and keyGap or 0)
 		end
-		key.count:SetText(A.groupedCount(step.count))
-		local wide=keyWidth(key,step,words)
-		key:ClearAllPoints()
-		key:SetPoint("TOPLEFT",rep,"TOPLEFT",x,keyTop)
-		key:SetWidth(wide)
-		x=x+wide+keyGap
+		local words=whole<=room
+		local narrow=0
+		for i,key in ipairs(rep.legend)do
+			narrow=narrow+keyWidth(key,slices[i],false)+(i>1 and keyGap or 0)
+		end
+		local keyed=words or narrow<=room
+		x=0
+		for i,key in ipairs(rep.legend)do
+			local step=slices[i]
+			key:SetShown(keyed)
+			local chosen=filter==key.ratingValue
+			local dim=filter~=nil and not chosen
+			key.swatch:SetColorTexture(A.color(key.ratingMark))
+			key.swatch:SetAlpha(dim and 0.3 or 1)
+			A.style(key.word,"note",chosen and key.ratingMark or(dim and"dimmer"or"text"))
+			key.word:SetText(words and step.label or"")
+			key.word:SetShown(words)
+			key.count:ClearAllPoints()
+			if words then
+				key.count:SetPoint("LEFT",key.word,"RIGHT",4,0)
+			else
+				key.count:SetPoint("LEFT",key.swatch,"RIGHT",4,0)
+			end
+			key.count:SetText(A.groupedCount(step.count))
+			local wide=keyWidth(key,step,words)
+			key:ClearAllPoints()
+			key:SetPoint("TOPLEFT",rep,"TOPLEFT",x,keyTop)
+			key:SetWidth(wide)
+			x=x+wide+keyGap
+		end
 	end
 
 	local tiles=window.stripTiles
@@ -925,7 +1099,8 @@ local function paintStrip(view)
 	return{
 		tileForms=table.concat(forms,","),
 		lead=leadText,
-		repBars=table.concat(widths,","),
+		repBars=table.concat(barWidths.skill,","),
+		attitudeBars=table.concat(barWidths.attitude,","),
 	}
 end
 
@@ -979,6 +1154,11 @@ local function buildToolbar(frame)
 	A.setControlTone(frame.repChip,"accent")
 	frame.repChip:SetPoint("TOPRIGHT",frame.toolbar,"TOPRIGHT",0,orderTop)
 	frame.repChip:Hide()
+	frame.attitudeChip=A.pill(frame.toolbar,"",function()
+		A.toggleNotesScale("attitude",attitudeFilter)
+	end)
+	A.setControlTone(frame.attitudeChip,"accent")
+	frame.attitudeChip:Hide()
 
 	frame.clearScope=A.pill(frame.toolbar,"Show all",function()
 		A.clearNotesScope()
@@ -998,18 +1178,38 @@ local function paintToolbar()
 	A.setDropdownChoices(window.sideFilter,A.playerSideChoices(),sideFilter)
 
 	window.clearScope:ClearAllPoints()
+	local orderTop=-(A.metric("controlHeight")+A.metric("paneGap"))
+	local leftmost=nil
 	if repFilter~=nil then
 		local label=(A.repLabel(repFilter~="none"and repFilter or nil))
 		window.repChip:SetText(("%s  x"):format(label))
 		A.fitControl(window.repChip,A.metric("tagMin"),A.metric("tagPad"))
 		window.repChip:Show()
-		window.clearScope:SetPoint("RIGHT",window.repChip,"LEFT",-A.metric("paneGap"),0)
+		leftmost=window.repChip
 	else
 		window.repChip:Hide()
-		window.clearScope:SetPoint("TOPRIGHT",window.toolbar,"TOPRIGHT",0,
-			-(A.metric("controlHeight")+A.metric("paneGap")))
 	end
-	window.clearScope:SetShown(scopeMatchId~=nil)
+	if attitudeFilter~=nil then
+		local label=(A.repLabel(attitudeFilter~="none"and attitudeFilter or nil,"attitude"))
+		window.attitudeChip:SetText(("%s  x"):format(label))
+		A.fitControl(window.attitudeChip,A.metric("tagMin"),A.metric("tagPad"))
+		window.attitudeChip:ClearAllPoints()
+		if leftmost then
+			window.attitudeChip:SetPoint("RIGHT",leftmost,"LEFT",-A.metric("paneGap"),0)
+		else
+			window.attitudeChip:SetPoint("TOPRIGHT",window.toolbar,"TOPRIGHT",0,orderTop)
+		end
+		window.attitudeChip:Show()
+		leftmost=window.attitudeChip
+	else
+		window.attitudeChip:Hide()
+	end
+	if leftmost then
+		window.clearScope:SetPoint("RIGHT",leftmost,"LEFT",-A.metric("paneGap"),0)
+	else
+		window.clearScope:SetPoint("TOPRIGHT",window.toolbar,"TOPRIGHT",0,orderTop)
+	end
+	window.clearScope:SetShown(scopeMatchId~=nil or scopeTidy~=nil)
 end
 
 local function buildFaultPanel(frame)
@@ -1135,6 +1335,7 @@ local function buildDossier(frame)
 			A.showCopyBox(frame,"Copy name","Ctrl+C copies the name.",frame.copyText)
 		end
 	end,A.metric("actionMin"))
+	frame.undoPill=A.buildUndoPill(frame.dossier)
 
 	frame.dossierIcon=frame.dossier:CreateTexture(nil,"ARTWORK")
 	frame.dossierIcon:SetPoint("TOPLEFT",frame.dossier,"TOPLEFT",0,0)
@@ -1150,13 +1351,17 @@ local function buildDossier(frame)
 	frame.dossierSub:SetJustifyH("LEFT")
 	frame.dossierSub:SetWordWrap(false)
 
-	frame.rep=A.buildRepControl(frame.dossier,repPicked)
+	frame.rep=A.buildRepControl(frame.dossier,repPicked,"skill")
 	frame.rep:SetPoint("TOPLEFT",frame.dossierSub,"BOTTOMLEFT",
 		-(A.fontSize("dossierName")+A.metric("chipGap")),-A.metric("paneGap"))
 	frame.rep:SetPoint("RIGHT",frame.dossier,"RIGHT",0,0)
 
+	frame.attitude=A.buildRepControl(frame.dossier,attitudePicked,"attitude")
+	frame.attitude:SetPoint("TOPLEFT",frame.rep,"BOTTOMLEFT",0,-A.metric("paneGap"))
+	frame.attitude:SetPoint("RIGHT",frame.dossier,"RIGHT",0,0)
+
 	frame.cards=A.buildSideCards(frame.dossier)
-	frame.cards:SetPoint("TOPLEFT",frame.rep,"BOTTOMLEFT",0,-A.metric("paneGap"))
+	frame.cards:SetPoint("TOPLEFT",frame.attitude,"BOTTOMLEFT",0,-A.metric("paneGap"))
 	frame.cards:SetPoint("RIGHT",frame.dossier,"RIGHT",0,0)
 
 	frame.noteRow=A.buildNoteRow(frame.dossier)
@@ -1176,7 +1381,7 @@ local function buildDossier(frame)
 		A.refreshNotes()
 	end)
 
-	frame.tagRow=A.buildTagRow(frame.dossier,tagClicked,suggestClicked,commitTags)
+	frame.tagRow=A.buildTagRow(frame.dossier,tagClicked,suggestClicked,commitTags,templateClicked)
 	frame.tagRow:SetPoint("TOPLEFT",frame.noteRow,"BOTTOMLEFT",0,-A.metric("paneGap"))
 	frame.tagRow:SetPoint("RIGHT",frame.dossier,"RIGHT",0,0)
 	frame.tagRow.box:HookScript("OnTextChanged",function(_,userInput)
@@ -1235,6 +1440,7 @@ function A.notesPaneStack(tagRows)
 	local gap=A.metric("paneGap")
 	return A.fontSize("dossierName")+2+A.fontSize("note")
 		+gap+A.metric("controlHeight")
+		+gap+A.metric("controlHeight")
 		+gap+A.sideCardHeight()
 		+gap+A.metric("controlHeight")
 		+gap+rows*A.metric("tagRow")
@@ -1243,21 +1449,16 @@ end
 local function topFloor()
 	local strip=A.metric("standPad")*2+A.metric("standLead")+A.metric("paneGap")*3
 		+3*(A.metric("standTile")+A.metric("paneGap")*2)
-	local legend=0
-	local swatch,paneGap=A.metric("repSwatch"),A.metric("paneGap")
-	for _,slice in ipairs(A.repSlices())do
-		local countFloor=A.headerFloor(slice.rating=="none"and"0,000"or"000")
-		legend=legend+swatch+4+countFloor+paneGap+6
-	end
-	strip=strip+legend
+	local paneGap=A.metric("paneGap")
+	strip=strip+legendNeed()+paneGap*3+A.headerFloor(stripLabel("attitude"))
 	local search=A.metric("playerSearch")+2*(A.metric("pillGap")+A.metric("dropdownWidth"))
 	local sorts=0
 	local segmentMin,segmentGap=A.metric("segmentMin"),A.metric("segmentGap")
 	for _,sort in ipairs(A.playerSorts())do
 		sorts=sorts+math.max(segmentMin,A.headerFloor(sort.label))+segmentGap
 	end
-	local order=sorts+A.metric("paneGap")+A.metric("actionMin")+A.metric("paneGap")
-		+A.headerFloor("Not rated  x")+A.metric("tagPad")
+	local chip=A.headerFloor(("W"):rep(math.max(A.STEP_WORD_MAX,#"Not rated")).."  x")+A.metric("tagPad")
+	local order=sorts+paneGap+A.metric("actionMin")+paneGap+chip+paneGap+chip
 	return math.max(strip,search,order)+A.metric("margin")*2
 end
 
@@ -1302,7 +1503,6 @@ local function buildWindow()
 	A.registerChrome(frame)
 
 	A.placeWindowHeading(frame)
-	A.style(frame.heading,"heading","bright")
 
 	buildStrip(frame)
 	buildToolbar(frame)
@@ -1401,10 +1601,12 @@ local function viewState(index)
 		recorders=held.recorders,
 		index=index,
 		scope=scopeMatchId,
+		tidy=scopeTidy,
 		text=searchText,
 		format=formatFilter,
 		side=sideFilter,
 		rep=repFilter,
+		attitude=attitudeFilter,
 		sort=sortWord,
 		dir=sortDir,
 		now=time(),
@@ -1421,6 +1623,9 @@ local function orderValue(sort,row)
 	end
 	if sort=="met"then
 		return row.met
+	end
+	if sort=="trend"then
+		return row.trend and row.trend.change or"-"
 	end
 	if sort=="player"then
 		local folded=A.foldText(tostring(row.identity and row.identity.bare or""))
@@ -1443,6 +1648,13 @@ local function drawnRows(view)
 			end
 		end
 	end
+	local shared=A.sharedBareNames(rows,function(data)
+		return data.row and data.row.identity and data.row.identity.full or nil
+	end)
+	for i=1,#rows do
+		local identity=rows[i].row and rows[i].row.identity
+		rows[i].realmKept=identity~=nil and shared[identity.bare or""]or nil
+	end
 	return rows,selected
 end
 
@@ -1459,6 +1671,10 @@ local function clearNarrowings()
 		cleared=cleared+1
 		repFilter=nil
 	end
+	if attitudeFilter~=nil then
+		cleared=cleared+1
+		attitudeFilter=nil
+	end
 	if formatFilter~=nil then
 		cleared=cleared+1
 		formatFilter=nil
@@ -1467,9 +1683,10 @@ local function clearNarrowings()
 		cleared=cleared+1
 		sideFilter=nil
 	end
-	if scopeMatchId~=nil then
+	if scopeMatchId~=nil or scopeTidy~=nil then
 		cleared=cleared+1
 		scopeMatchId=nil
+		scopeTidy=nil
 	end
 	return cleared
 end
@@ -1510,14 +1727,14 @@ local function listRows(index)
 	return rows,selected,view
 end
 
-local function repPhrase(rep)
+local function repPhrase(rep,scale)
 	if rep==nil then
 		return nil
 	end
 	if rep=="none"then
-		return"not rated"
+		return scale.." not rated"
 	end
-	return("rated %s"):format(tostring(A.ratingText(rep)))
+	return("%s %s"):format(scale,tostring(A.ratingText(rep,scale)))
 end
 
 local drawnEmpty=nil
@@ -1547,7 +1764,10 @@ local function emptyText()
 	end
 	local filters={}
 	if repFilter~=nil then
-		filters[#filters+1]=repPhrase(repFilter)
+		filters[#filters+1]=repPhrase(repFilter,"skill")
+	end
+	if attitudeFilter~=nil then
+		filters[#filters+1]=repPhrase(attitudeFilter,"attitude")
 	end
 	if formatFilter~=nil then
 		filters[#filters+1]=("met in %s"):format(A.formatLabel(formatFilter))
@@ -1566,6 +1786,12 @@ local function emptyText()
 		return("No player in match #%s %s. %s."):format(tostring(scopeMatchId),
 			tostring(A.joinAnd(filters)),roster==1 and"1 player is in it"
 			or("%d players are in it"):format(roster)),"scoped"
+	end
+	if scopeTidy then
+		if#filters==0 then
+			return"No player met once, over a year ago, with nothing written.","tidy"
+		end
+		return("No player a tidy would drop %s."):format(tostring(A.joinAnd(filters))),"tidy"
 	end
 	if not anyPlayer()then
 		return"No players yet.","nobody"
@@ -1816,7 +2042,7 @@ local function paintFaultPanel(listTook,detailDrew,shown,noRoom)
 	end
 
 	local refused,unreached={},{}
-	local listName=(window.list and window.list.subject)or"the player list"
+	local listName=listSubject()
 	if listTook==false then
 		refused[#refused+1]=listName
 	elseif listTook==nil then
@@ -1851,8 +2077,7 @@ function A.stageNotesFault()
 		return false,"the staged fault panel is down and the panes are back"
 	end
 
-	local listName=(window.list and window.list.subject)or"the player list"
-	local said=A.paneFaultText({listName},nil,{DETAIL_SUBJECT},{DETAIL_SUBJECT})
+	local said=A.paneFaultText({listSubject()},nil,{DETAIL_SUBJECT},{DETAIL_SUBJECT})
 	if not said then
 		return false,"the fault panel composed nothing, so it was not staged"
 	end
@@ -1920,6 +2145,7 @@ local function paintDossier(selected,index)
 
 	local dossier=A.playerDossier(selected.guid,index)
 	if not dossier then
+		window.dossier:Hide()
 		return nil
 	end
 	local identity=dossier.identity
@@ -1928,7 +2154,8 @@ local function paintDossier(selected,index)
 	window.copyText,window.murlokText=A.playerCopyTexts(selected.guid,dossier.entry)
 	local edge=window.openWindow
 	local pillGap=A.metric("pillGap")
-	for _,pair in ipairs({{window.murlok,window.murlokText},{window.copyName,window.copyText}})do
+	for _,pair in ipairs({{window.murlok,window.murlokText},{window.copyName,window.copyText},
+		{window.undoPill,A.undoPending(selected.guid)or nil}})do
 		local button,text=pair[1],pair[2]
 		button:ClearAllPoints()
 		if text then
@@ -1959,6 +2186,7 @@ local function paintDossier(selected,index)
 	window.dossierSub:SetText(sub)
 
 	A.paintRepControl(window.rep,dossier.rating,pane,true)
+	A.paintRepControl(window.attitude,dossier.attitude,pane,true)
 	A.paintSideCards(window.cards,dossier,pane)
 
 	local note=dossier.note
@@ -1998,7 +2226,7 @@ function A.refreshNotes(searchOnly)
 	if not searchOnly and type(A.refreshPlayerWindows)=="function"then
 		A.containedPaint("notes/player-windows",A.refreshPlayerWindows,index)
 	end
-	if not window then
+	if not window or not(paintingToShow or A.notesWindowShown())then
 		return false
 	end
 
@@ -2078,8 +2306,7 @@ function A.refreshNotes(searchOnly)
 				tostring(hostRead(host,"GetWidth")),tostring(height)),source)
 		end
 	end
-	cramped(window.listHost,listTook,(window.list and window.list.subject)or"the player list",
-		"notes/list")
+	cramped(window.listHost,listTook,listSubject(),"notes/list")
 	cramped(window.detailHost,detailDrew,DETAIL_SUBJECT,"notes/detail")
 
 	local panelOk,panel=pcall(paintFaultPanel,listTook,detailDrew,view.shown,noRoom)
@@ -2088,6 +2315,12 @@ function A.refreshNotes(searchOnly)
 		panel=false
 	end
 
+	local trendRows=0
+	for i=1,#view.rows do
+		if view.rows[i].trend~=nil then
+			trendRows=trendRows+1
+		end
+	end
 	local selectedIds=nil
 	if dossier and type(dossier.record)=="table"and type(dossier.record.ids)=="table"then
 		local held,ids=dossier.record.ids,{}
@@ -2107,16 +2340,21 @@ function A.refreshNotes(searchOnly)
 		sort=sortWord,
 		sortDir=sortDir,
 		repStep=repFilter~=nil and tostring(repFilter)or nil,
+		attitudeStep=attitudeFilter~=nil and tostring(attitudeFilter)or nil,
 		fmt=formatFilter,
 		sideFilter=sideFilter,
 		players=view.strip.players,
 		unmet=view.strip.unmet,
+		trendRows=trendRows,
 		sections=#view.sections,
 		tileForms=stripDrew.tileForms,
 		lead=stripDrew.lead,
 		ratedPlayers=view.strip.rated,
 		unratedPlayers=view.strip.notRated,
+		attitudeRatedPlayers=view.strip.attitudeRated,
+		attitudeUnratedPlayers=view.strip.attitudeNotRated,
 		repBars=stripDrew.repBars,
+		attitudeBars=stripDrew.attitudeBars,
 		search=searchText~=nil or nil,
 		empty=view.shown==0 and drawnEmpty or nil,
 		with=dossier and A.sideReading(dossier.with)or nil,
@@ -2134,7 +2372,7 @@ function A.refreshNotes(searchOnly)
 	},"ui")
 
 	pcall(function()
-		window.heading:SetText(A.notesWindowTitle())
+		A.setWindowTitle(window,A.notesWindowTitle())
 		local tagline,credit=A.windowFootLine()
 		A.style(window.footName,"rowNote","dimmer")
 		A.style(window.footState,"rowNote","dimmer")
@@ -2151,7 +2389,7 @@ function A.showNotes()
 		return false
 	end
 
-	A.refreshNotes()
+	refreshToShow()
 	A.takeHalf("players")
 	local shown=pcall(frame.Show,frame)
 	pcall(frame.Raise,frame)
@@ -2183,6 +2421,7 @@ function A.setNotesSort(word,dir)
 	if not A.playerSortKnown(word)then
 		return false
 	end
+	word=A.playerSortWord(word)
 	local first=A.playerSortFirst(word)
 	if dir~=nil and(first==nil or(dir~="up"and dir~="down"))then
 		return false
@@ -2205,25 +2444,38 @@ function A.clickNotesHeader(word)
 	return A.setNotesSort(word,dir)
 end
 
-function A.toggleNotesRep(rep)
-	if rep==nil then
-		repFilter=nil
-	elseif repFilter==rep then
-		repFilter=nil
+local function storeScaleFilter(scale,value)
+	if scale=="attitude"then
+		attitudeFilter=value
 	else
-		repFilter=rep
+		repFilter=value
 	end
+	requestedGuid=nil
 	A.refreshNotes()
 	return true
 end
 
-function A.setNotesRep(rep)
-	if rep~=nil and rep~="none"and A.ratingText(rep)==nil then
+function A.toggleNotesScale(scale,value)
+	local held=scale=="attitude"and attitudeFilter or repFilter
+	if value==nil or held==value then
+		value=nil
+	end
+	return storeScaleFilter(scale,value)
+end
+
+function A.toggleNotesRep(rep)
+	return A.toggleNotesScale("skill",rep)
+end
+
+function A.setNotesScale(scale,value)
+	if value~=nil and value~="none"and A.ratingText(value,scale)==nil then
 		return false
 	end
-	repFilter=rep
-	A.refreshNotes()
-	return true
+	return storeScaleFilter(scale,value)
+end
+
+function A.setNotesRep(rep)
+	return A.setNotesScale("skill",rep)
 end
 
 function A.setNotesFormat(format)
@@ -2231,6 +2483,7 @@ function A.setNotesFormat(format)
 		return false
 	end
 	formatFilter=format
+	requestedGuid=nil
 	A.refreshNotes()
 	return true
 end
@@ -2240,6 +2493,7 @@ function A.setNotesSide(side)
 		return false
 	end
 	sideFilter=side
+	requestedGuid=nil
 	A.refreshNotes()
 	return true
 end
@@ -2258,8 +2512,9 @@ function A.setNotesSearch(text)
 end
 
 function A.notesState()
-	return{sort=sortWord,dir=sortDir,rep=repFilter,format=formatFilter,side=sideFilter,
-		text=searchText,scope=scopeMatchId}
+	return{sort=sortWord,dir=sortDir,rep=repFilter,attitude=attitudeFilter,format=formatFilter,
+		side=sideFilter,
+		text=searchText,scope=scopeMatchId,tidy=scopeTidy~=nil and#scopeTidy or nil}
 end
 
 function A.notesScope()
@@ -2272,12 +2527,29 @@ function A.showNotesForMatch(id)
 	end
 
 	scopeMatchId=id
+	scopeTidy=nil
+	requestedGuid=nil
+	return A.showNotes()
+end
+
+function A.showNotesForTidy(guids)
+	if type(guids)~="table"then
+		return false
+	end
+	local held={}
+	for i=1,#guids do
+		held[i]=guids[i]
+	end
+	scopeTidy=held
+	scopeMatchId=nil
+	requestedGuid=nil
 	return A.showNotes()
 end
 
 function A.clearNotesScope()
-	local held=scopeMatchId
+	local held=scopeMatchId or scopeTidy
 	scopeMatchId=nil
+	scopeTidy=nil
 	A.refreshNotes()
 	return held~=nil
 end
@@ -2285,6 +2557,7 @@ end
 function A.resetNotesPane()
 	setSelected(nil)
 	scopeMatchId=nil
+	scopeTidy=nil
 	pendingReveal=nil
 	if type(A.clearPlayerListing)=="function"then
 		A.clearPlayerListing()
@@ -2300,6 +2573,7 @@ function A.clickPlayersRow(guid)
 		return"refused"
 	end
 	setSelected(guid)
+	requestedGuid=nil
 	A.refreshNotes()
 	return"selected"
 end
@@ -2326,7 +2600,7 @@ function A.selectPlayer(guid,forWriting)
 	if not windowOrNil()then
 		return false
 	end
-	A.refreshNotes()
+	refreshToShow()
 	A.takeHalf("players")
 	local shown=pcall(window.Show,window)
 	pcall(window.Raise,window)

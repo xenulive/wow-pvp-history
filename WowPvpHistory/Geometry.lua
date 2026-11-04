@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.33
+-- WowPvpHistory 0.75.26
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -225,6 +225,7 @@ function A.registerPlacedWindow(frame,point,x,y,onScaled,hooks)
 		x=type(x)=="number"and x or 0,
 		y=type(y)=="number"and y or 0,
 		name=name,
+		announcement=type(hooks)=="table"and hooks.announcement==true,
 		place=type(hooks)=="table"and type(hooks.place)=="function"and hooks.place or nil,
 		stored=type(hooks)=="table"and type(hooks.stored)=="function"and hooks.stored or nil,
 	}
@@ -253,21 +254,23 @@ function A.replacePlacedWindows()
 	local names,refused={},0
 	for i=1,#placedWindows do
 		local held=placedWindows[i]
-		local point,x,y=held.point,held.x,held.y
-		if held.place then
-			local okPlace,p,px,py=pcall(held.place)
-			if okPlace and type(p)=="string"and type(px)=="number"and type(py)=="number"then
-				point,x,y=p,px,py
+		if not held.announcement then
+			local point,x,y=held.point,held.x,held.y
+			if held.place then
+				local okPlace,p,px,py=pcall(held.place)
+				if okPlace and type(p)=="string"and type(px)=="number"and type(py)=="number"then
+					point,x,y=p,px,py
+				end
 			end
-		end
-		local ok=pcall(held.frame.ClearAllPoints,held.frame)
-		if ok then
-			ok=pcall(held.frame.SetPoint,held.frame,point,UIParent,point,x,y)
-		end
-		if ok then
-			names[#names+1]=held.name or("window "..i)
-		else
-			refused=refused+1
+			local ok=pcall(held.frame.ClearAllPoints,held.frame)
+			if ok then
+				ok=pcall(held.frame.SetPoint,held.frame,point,UIParent,point,x,y)
+			end
+			if ok then
+				names[#names+1]=held.name or("window "..i)
+			else
+				refused=refused+1
+			end
 		end
 	end
 	return names,refused
@@ -374,10 +377,6 @@ end
 
 function A.placeWindowHeading(frame)
 	frame.heading=A.windowTitle(frame)
-	frame.heading:SetPoint("TOPLEFT",frame,"TOPLEFT",A.metric("titleInset"),-A.metric("titleTop"))
-	frame.heading:SetPoint("TOPRIGHT",frame,"TOPRIGHT",-A.metric("titleInset"),-A.metric("titleTop"))
-	frame.heading:SetJustifyH("CENTER")
-	frame.heading:SetWordWrap(false)
 end
 
 function A.closeOnEscape(name)
@@ -583,7 +582,7 @@ function A.setSessionWindowScale(value,from)
 end
 
 local function fit(value,floor,ceiling)
-	if type(value)~="number"then
+	if type(value)~="number"or value~=value or value==math.huge or value==-math.huge then
 		value=floor
 	end
 	if type(ceiling)=="number"and value>ceiling then
@@ -593,6 +592,14 @@ local function fit(value,floor,ceiling)
 		value=floor
 	end
 	return value
+end
+
+local function widthCeiling(kind,screenW)
+	local maxW=A.windowCeiling(kind)
+	if type(screenW)=="number"and(maxW==nil or screenW<maxW)then
+		maxW=screenW
+	end
+	return maxW
 end
 
 function A.clampGeometry(kind,geometry)
@@ -605,10 +612,7 @@ function A.clampGeometry(kind,geometry)
 	end
 
 	local screenW,screenH=A.screenSizeFor(specs[kind]and specs[kind].frame or nil)
-	local maxW=A.windowCeiling(kind)
-	if type(screenW)=="number"and(maxW==nil or screenW<maxW)then
-		maxW=screenW
-	end
+	local maxW=widthCeiling(kind,screenW)
 
 	local out={
 		width=fit(geometry.width,floorW,maxW),
@@ -958,9 +962,6 @@ end
 
 function A.replaceOtherWindows()
 	local names,refused=A.replacePlacedWindows()
-	if type(A.overlayReplaced)=="function"then
-		pcall(A.overlayReplaced)
-	end
 	pcall(A.clearPooledPoints)
 	local records={}
 	if type(A.recascadeMatchWindows)=="function"then
@@ -1008,15 +1009,14 @@ function A.resetGeometryLines()
 	end
 
 	local out={}
+	local back=held==0 and"no window was put back"
+		or("%d window%s back at %s authored size"):format(held,held==1 and" is"or"s are",
+			held==1 and"its"or"their")
 	if held==0 and#pooled==0 then
 		out[1]="no window geometry was stored, so every window is already at its authored size"
 	elseif#pooled==0 then
-		out[1]=("%d window%s back at %s authored size and nothing is stored for any window"):format(
-			held,held==1 and" is"or"s are",held==1 and"its"or"their")
+		out[1]=back.." and nothing is stored for any window"
 	else
-		local back=held==0 and"no window was put back"
-			or("%d window%s back at %s authored size"):format(held,held==1 and" is"or"s are",
-				held==1 and"its"or"their")
 		out[1]=("%s, the size every %s opens at is forgotten while the ones open keep theirs, and "
 			.."nothing is stored for any window"):format(back,table.concat(pooled," and "))
 	end
@@ -1038,6 +1038,79 @@ function A.resetGeometryLines()
 		out[#out+1]=table.concat(clauses,", ")
 	else
 		out[#out+1]="no other window was open, so there was nothing else to put back"
+	end
+	return out
+end
+
+local ANNOUNCEMENTS={
+	{name="banner",label="the roster banner",
+		position=function()return A.announcePosition()end,
+		reset=function()return A.resetAnnouncePosition()end,
+		frame=function()return A.announceFrame()end},
+	{name="tally",label="the round tally",
+		position=function()return A.tallyPosition()end,
+		reset=function()return A.resetTallyPosition()end,
+		frame=function()return A.tallyFrame()end},
+	{name="card",label="the result card",
+		position=function()return A.toastPosition()end,
+		reset=function()return A.resetToastPosition()end,
+		frame=function()return(A.toastFrame())end},
+	{name="bar",label="the results bar",
+		position=function()return A.overlayPosition()end,
+		reset=function()return A.resetOverlayPosition()end,
+		frame=function()return A.overlayFrame()end},
+}
+
+local function joined(words)
+	if#words<=1 then
+		return words[1]or""
+	end
+	return table.concat(words,", ",1,#words-1).." and "..words[#words]
+end
+
+function A.replaceAnnouncements()
+	local heldLabels,builtLabels,names,anchors,reached={},{},{},{},false
+	for _,entry in ipairs(ANNOUNCEMENTS)do
+		local had=entry.position()~=nil
+		local ok,stored=pcall(entry.reset)
+		if ok then
+			names[#names+1]=entry.name
+			reached=reached or stored==true
+			if had then
+				heldLabels[#heldLabels+1]=entry.label
+			end
+			local built=entry.frame()
+			if built then
+				builtLabels[#builtLabels+1]=entry.label
+				anchors[#anchors+1]=entry.name.."="..(A.anchorState(built)or"unread")
+			end
+		end
+	end
+
+	A.trace("announce/replace",{
+		announcementsReset=#names>0 and table.concat(names,"+")or nil,
+		storedBefore=#heldLabels,
+		anchors=#anchors>0 and table.concat(anchors," ")or nil,
+	},"ui")
+	return heldLabels,builtLabels,names,reached
+end
+
+function A.resetAnnouncementLines()
+	local heldLabels,builtLabels,_,reached=A.replaceAnnouncements()
+	if not reached then
+		return{"nothing is stored, so no announcement place could be forgotten"}
+	end
+	local out={}
+	if#heldLabels>0 then
+		out[#out+1]=("the stored place of %s %s forgotten"):format(joined(heldLabels),
+			#heldLabels==1 and"is"or"are")
+	end
+	if#builtLabels>0 then
+		out[#out+1]=("%s %s back at the default place"):format(joined(builtLabels),
+			#builtLabels==1 and"is"or"are")
+	end
+	if#out==0 then
+		out[1]="no announcement had a stored place and none is drawn, so there was nothing to put back"
 	end
 	return out
 end
@@ -1176,10 +1249,7 @@ boundResize=function(frame,kind)
 		return false
 	end
 	local screenW,screenH=A.screenSizeFor(frame)
-	local maxW=A.windowCeiling(kind)
-	if type(screenW)=="number"and(maxW==nil or screenW<maxW)then
-		maxW=screenW
-	end
+	local maxW=widthCeiling(kind,screenW)
 	if type(maxW)=="number"and maxW<floorW then
 		maxW=floorW
 	end
@@ -1220,6 +1290,14 @@ local function seatGrip(frame,kind,grip)
 	end)
 end
 
+local function leftButtonUp()
+	if type(IsMouseButtonDown)~="function"then
+		return false
+	end
+	local read,down=pcall(IsMouseButtonDown,"LeftButton")
+	return read and down==false
+end
+
 function A.attachResize(frame,kind,onResize)
 	local spec=specs[kind]
 	if not(spec and type(frame)=="table")then
@@ -1257,11 +1335,8 @@ function A.attachResize(frame,kind,onResize)
 	end
 
 	frame:SetScript("OnSizeChanged",function()
-		if pressed and type(IsMouseButtonDown)=="function"then
-			local read,down=pcall(IsMouseButtonDown,"LeftButton")
-			if read and down==false then
-				pressed=false
-			end
+		if pressed and leftButtonUp()then
+			pressed=false
 		end
 		if pressed then
 			steps=steps+1
@@ -1371,11 +1446,8 @@ function A.attachPooledResize(frame,kind,hooks)
 
 	local pressed,steps,resized,before=false,0,false,nil
 	frame:SetScript("OnSizeChanged",function()
-		if pressed and type(IsMouseButtonDown)=="function"then
-			local read,down=pcall(IsMouseButtonDown,"LeftButton")
-			if read and down==false then
-				pressed=false
-			end
+		if pressed and leftButtonUp()then
+			pressed=false
 		end
 		if not pressed then
 			return
@@ -1755,6 +1827,9 @@ function A.halfTabs(frame,chosen)
 	local tabs={}
 	local function build(kind)
 		local tab=A.panelTab(frame,HALF_WORDS[kind],function()
+			if kind=="stats"and type(A.dropGraphHold)=="function"then
+				A.dropGraphHold()
+			end
 			A.openHalf(kind)
 		end)
 		tab.halfKind=kind
@@ -1832,7 +1907,8 @@ function A.geometryLines()
 
 		local ownW=ownFloor(kind)
 		local binder
-		if type(ownW)=="number"and type(floorW)=="number"and ownW<floorW then
+		local ownAt,floorAt=A.unitFigure(ownW),A.unitFigure(floorW)
+		if ownAt~=nil and floorAt~=nil and ownAt<floorAt then
 			local group=groupOf(kind)
 			for g=1,#group do
 				if group[g]~=kind and ownFloor(group[g])==floorW then

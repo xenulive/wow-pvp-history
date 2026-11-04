@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.33
+-- WowPvpHistory 0.75.26
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -24,12 +24,205 @@ local function claimHarvest(record,source)
 	return true
 end
 
+local PAUSE_MINUTES,PAUSE_MINUTES_MAX=60,24*60
+
+local pauseCall=0
+
+function A.worldEnabled()
+	local db=A.db()
+	if not db then
+		return false
+	end
+	return not(type(db.ui)=="table"and db.ui.world==false)
+end
+
+function A.setWorld(enabled)
+	local db=A.db()
+	if not db then
+		return false
+	end
+	if type(db.ui)~="table"then
+		db.ui={}
+	end
+	if enabled==false then
+		db.ui.world=false
+		if A.closeWorldSession then
+			local closed,err=pcall(A.closeWorldSession,"switch")
+			if not closed then
+				A.noteError(err,"world-switch")
+			end
+		end
+	else
+		db.ui.world=nil
+	end
+	if A.notifyWorldSetting then
+		A.notifyWorldSetting()
+	end
+	return true
+end
+
+function A.characterRecorded(guid)
+	guid=guid or A.ownGuid()
+	local db=A.db()
+	if guid==nil or not db or type(db.ui)~="table"or type(db.ui.mute)~="table"then
+		return true
+	end
+	return db.ui.mute[guid]~=true
+end
+
+function A.setCharacterRecorded(enabled,guid)
+	guid=guid or A.ownGuid()
+	local db=A.db()
+	if not db or guid==nil then
+		return false
+	end
+	if type(db.ui)~="table"then
+		db.ui={}
+	end
+	if enabled==false then
+		if type(db.ui.mute)~="table"then
+			db.ui.mute={}
+		end
+		db.ui.mute[guid]=true
+	elseif type(db.ui.mute)=="table"then
+		db.ui.mute[guid]=nil
+		if next(db.ui.mute)==nil then
+			db.ui.mute=nil
+		end
+	end
+	if A.notifyCharacterRecordedSetting then
+		A.notifyCharacterRecordedSetting()
+	end
+	return true
+end
+
+function A.recordingName(guid)
+	guid=guid or A.ownGuid()
+	local db=A.db()
+	local held=guid and db and type(db.characters)=="table"and db.characters[guid]or nil
+	if type(held)~="table"or type(held.name)~="string"or held.name==""then
+		return nil
+	end
+	if type(held.realm)=="string"and held.realm~=""then
+		return held.name.."-"..held.realm
+	end
+	return held.name
+end
+
+function A.mutedCharacters()
+	local out={}
+	local db=A.db()
+	local mute=db and type(db.ui)=="table"and db.ui.mute or nil
+	if type(mute)~="table"then
+		return out
+	end
+	for guid,on in pairs(mute)do
+		if on==true and type(guid)=="string"then
+			out[#out+1]=guid
+		end
+	end
+	table.sort(out)
+	return out
+end
+
+function A.pausedUntil(now)
+	local db=A.db()
+	local ui=db and type(db.ui)=="table"and db.ui or nil
+	if ui==nil or ui.pausedUntil==nil then
+		return nil
+	end
+	local at=tonumber(ui.pausedUntil)
+	now=now or time()
+	if at==nil or at~=at or at==math.huge or at<=now then
+		ui.pausedUntil=nil
+		A.trace("pause",{state="ended",source="clock"})
+		if A.notifyPauseSetting then
+			A.notifyPauseSetting()
+		end
+		return nil
+	end
+	return at
+end
+
+function A.pauseClock(at)
+	return A.clockWords(at)
+end
+
+function A.pauseRange()
+	return 1,PAUSE_MINUTES_MAX,PAUSE_MINUTES
+end
+
+function A.setPause(minutes)
+	local db=A.db()
+	local figure=minutes==nil and PAUSE_MINUTES or tonumber(minutes)
+	if not db or figure==nil or figure~=math.floor(figure)or figure<1 or figure>PAUSE_MINUTES_MAX then
+		return false
+	end
+	if type(db.ui)~="table"then
+		db.ui={}
+	end
+	local at=time()+figure*60
+	db.ui.pausedUntil=at
+	A.trace("pause",{state="started",n=figure})
+	pauseCall=pauseCall+1
+	local call=pauseCall
+	local after=C_Timer and C_Timer.After
+	if type(after)=="function"then
+		pcall(after,figure*60+1,function()
+			if call==pauseCall then
+				A.pausedUntil()
+			end
+		end)
+	end
+	if A.notifyPauseSetting then
+		A.notifyPauseSetting()
+	end
+	return at
+end
+
+function A.resumeRecording()
+	local running=A.pausedUntil()~=nil
+	pauseCall=pauseCall+1
+	if running then
+		A.db().ui.pausedUntil=nil
+		A.trace("pause",{state="ended",source="resume"})
+		if A.notifyPauseSetting then
+			A.notifyPauseSetting()
+		end
+	end
+	return running
+end
+
+function A.captureRefusal(kind)
+	local reason
+	if not A.characterRecorded()then
+		reason="muted"
+	elseif A.pausedUntil()~=nil then
+		reason="paused"
+	end
+	if reason then
+		A.trace("skip",{reason=reason,kind=kind})
+	end
+	return reason
+end
+
+function A.pauseLoginLine()
+	local at=A.pausedUntil()
+	if at==nil then
+		return nil
+	end
+	return("recording is paused until %s. /pvph resume starts it again"):format(A.pauseClock(at))
+end
+
 local function openMatch(stateName)
 	if A.sandboxed()and A.endSandbox()then
 		A.trace("sandbox",{state="ended",reason="match"},"data")
 	end
 	local db=A.db()
 	if not db or db.active then
+		return
+	end
+	if A.captureRefusal("match")then
 		return
 	end
 	local record={
@@ -88,6 +281,9 @@ local function scheduleRoundWins(record,round,index)
 			round.winsPost=wins
 		end
 		A.trace("roundwins",{n=index,wins=wins,widget=widget,reason=reason})
+		if A.tallyWins then
+			A.tallyWins(record)
+		end
 	end)
 end
 
@@ -151,7 +347,7 @@ local function sampleSeason(record)
 	else
 		fields.reason="no-season"
 	end
-	A.trace("season",fields)
+	A.trace("season",fields,"data")
 end
 
 local function onComplete(record)
@@ -211,6 +407,15 @@ local function onComplete(record)
 	A.scheduleHarvest(record)
 end
 
+local function noteEntry(kind,record,errorSource)
+	local ok,noted=pcall(A.noteIncomplete,kind,record)
+	if ok and type(noted)=="table"then
+		A.say(A.incompleteLine(noted),"event")
+	elseif not ok then
+		A.noteError(noted,errorSource)
+	end
+end
+
 local function onState(event)
 	local db=A.db()
 	if not db then
@@ -233,12 +438,7 @@ local function onState(event)
 		end
 		if record and not record.harvesting then
 			A.drop("left-before-complete",A.dropContext(record))
-			local ok,noted=pcall(A.noteIncomplete,"left",record)
-			if ok and type(noted)=="table"then
-				A.say(A.incompleteLine(noted),"event")
-			elseif not ok then
-				A.noteError(noted,"incomplete-left")
-			end
+			noteEntry("left",record,"incomplete-left")
 			db.active=nil
 			if A.perfDiscard then
 				A.perfDiscard()
@@ -250,6 +450,9 @@ local function onState(event)
 		end
 		A.trace("transition",{state="Inactive",reason=why,source=event,
 			rounds=record and A.roundList(record)and#record.rounds or nil})
+		if A.tallyMatchState then
+			A.tallyMatchState(record,"Inactive")
+		end
 		return
 	end
 
@@ -316,16 +519,14 @@ local function onState(event)
 	if A.announceRoster then
 		A.announceRoster(record,name)
 	end
+	if A.tallyMatchState then
+		A.tallyMatchState(record,name)
+	end
 end
 
 local function abandon(db)
 	A.drop("abandoned-across-session",A.dropContext(db.active))
-	local ok,noted=pcall(A.noteIncomplete,"abandoned",db.active)
-	if ok and type(noted)=="table"then
-		A.say(A.incompleteLine(noted),"event")
-	elseif not ok then
-		A.noteError(noted,"incomplete-abandoned")
-	end
+	noteEntry("abandoned",db.active,"incomplete-abandoned")
 	db.active=nil
 end
 
@@ -384,6 +585,9 @@ local function resume()
 
 	if name=="StartUp"and A.announceRoster then
 		A.announceRoster(db.active,name)
+	end
+	if A.tallyMatchState then
+		A.tallyMatchState(db.active,name)
 	end
 end
 

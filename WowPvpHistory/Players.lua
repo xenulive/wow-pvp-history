@@ -1,11 +1,11 @@
--- WowPvpHistory 0.70.33
+-- WowPvpHistory 0.75.26
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
 -- License: MIT, see LICENSE
 local _,A=...
 
-A.indexVersion=8
+A.indexVersion=9
 
 local function newEntry()
 	return{
@@ -16,6 +16,7 @@ local function newEntry()
 		against={count=0,wins=0,decided=0,manualDecided=0,draws=0},
 		undetermined=0,
 		ratings={},
+		firstRatings={},
 		fixture=0,
 	}
 end
@@ -24,7 +25,7 @@ local function traceRepair(field,found)
 	A.trace("repair",{field=field,foundType=type(found)})
 end
 
-local ENTRY_TABLES={"names","formats","ratings"}
+local ENTRY_TABLES={"names","formats","ratings","firstRatings"}
 local ENTRY_SIDES={"with","against"}
 local SIDE_COUNTS={"count","wins","decided","manualDecided","draws"}
 local ENTRY_COUNTS={"matches","undetermined","fixture"}
@@ -37,10 +38,8 @@ local function numberField(holder,key,field,fallback)
 	end
 	if value~=nil then
 		traceRepair(field,value)
-		holder[key]=fallback
-	elseif fallback~=nil then
-		holder[key]=fallback
 	end
+	holder[key]=fallback
 end
 
 local function shapedEntry(entry)
@@ -123,6 +122,18 @@ local function noteRating(entry,record,participant,format)
 		entry.ratings=ratings
 	end
 
+	if type(reading.rating)=="number"then
+		local firsts=entry.firstRatings
+		if type(firsts)~="table"then
+			firsts={}
+			entry.firstRatings=firsts
+		end
+		local first=firsts[format]
+		if type(first)~="table"or type(first.epoch)~="number"or epoch<first.epoch then
+			firsts[format]={rating=reading.rating,epoch=epoch}
+		end
+	end
+
 	local held=ratings[format]
 	if type(held)=="table"and type(held.epoch)=="number"and held.epoch>epoch then
 		return
@@ -134,6 +145,33 @@ local function noteRating(entry,record,participant,format)
 		at=stamp,
 		epoch=epoch,
 	}
+end
+
+function A.playerTrend(entry,only)
+	if type(entry)~="table"or type(entry.firstRatings)~="table"or type(entry.ratings)~="table"then
+		return nil
+	end
+	local formats=type(entry.formats)=="table"and entry.formats or{}
+	local best,bestCount
+	for format,first in pairs(entry.firstRatings)do
+		local newest=entry.ratings[format]
+		if type(format)=="string"and(only==nil or format==only)
+			and type(first)=="table"and type(newest)=="table"
+			and type(first.rating)=="number"and type(newest.rating)=="number"
+			and type(first.epoch)=="number"and type(newest.epoch)=="number"
+			and newest.epoch>first.epoch
+		then
+			local count=tonumber(formats[format])or 0
+			if best==nil or count>bestCount or(count==bestCount and format<best)then
+				best,bestCount=format,count
+			end
+		end
+	end
+	if best==nil then
+		return nil
+	end
+	local from,to=entry.firstRatings[best].rating,entry.ratings[best].rating
+	return{change=to-from,from=from,to=to,format=best}
 end
 
 local function noteName(entry,name)
@@ -325,23 +363,15 @@ function A.playerByName(index,name)
 	if bare==nil or bare==name then
 		return nil
 	end
-	held=index[bare]
-	if held then
-		return held
-	end
-	return nil
+	return index[bare]or nil
 end
 
 local function placeholder()
-	local text=UNKNOWNOBJECT
-	if type(text)=="string"and A.canRead(text)and text~=""then
-		return text
-	end
-	return nil
+	return A.readableString(UNKNOWNOBJECT)
 end
 
 local function usableName(name)
-	if type(name)~="string"or not A.canRead(name)or name==""then
+	if not A.readableString(name)then
 		return false
 	end
 	return name~=placeholder()
@@ -358,7 +388,7 @@ function A.unitNames(token)
 		return names
 	end
 	names[1]=bare
-	if type(realm)=="string"and A.canRead(realm)and realm~=""then
+	if A.readableString(realm)then
 		names[2]=bare.."-"..realm
 	end
 	return names
@@ -653,6 +683,8 @@ local function retarget(matches,nameKey,guid)
 	return moved
 end
 
+local MERGED_OPINIONS={"rating","attitude","text"}
+
 local function mergeNotes(notes,nameKey,guid)
 	local from=notes[nameKey]
 	if type(from)~="table"then
@@ -672,21 +704,14 @@ local function mergeNotes(notes,nameKey,guid)
 	local kept={name=nameKey}
 	local keeping=false
 
-	if from.rating~=nil then
-		if into.rating==nil then
-			into.rating=from.rating
-		else
-			kept.rating=from.rating
-			keeping=true
-		end
-	end
-
-	if from.text~=nil then
-		if into.text==nil then
-			into.text=from.text
-		else
-			kept.text=from.text
-			keeping=true
+	for _,key in ipairs(MERGED_OPINIONS)do
+		if from[key]~=nil then
+			if into[key]==nil then
+				into[key]=from[key]
+			else
+				kept[key]=from[key]
+				keeping=true
+			end
 		end
 	end
 
@@ -855,8 +880,13 @@ function A.rebuildIndex(db)
 	if type(A.dropNotesIndex)=="function"then
 		pcall(A.dropNotesIndex)
 	end
-
 	local list=db.matches or{}
+	local carried={}
+	for guid,entry in pairs(type(db.players)=="table"and db.players or{})do
+		if type(entry)=="table"and entry.carried==true then
+			carried[guid]=entry
+		end
+	end
 	local walked,stored,repaired
 	local function walk()
 		db.players={}
@@ -891,6 +921,17 @@ function A.rebuildIndex(db)
 		end
 	end
 
+	local kept=0
+	for guid,entry in pairs(carried)do
+		if db.players[guid]==nil then
+			db.players[guid]=entry
+			kept=kept+1
+		end
+	end
+	if type(A.dropHeldStoredSize)=="function"then
+		pcall(A.dropHeldStoredSize)
+	end
+
 	local census=A.indexCensus(db)
 	local people,encounters=census.players,census.encounters
 
@@ -899,7 +940,7 @@ function A.rebuildIndex(db)
 	end
 
 	A.trace("rebuild",{n=people,rows=walked,repaired=repaired>0 and repaired or nil,
-		folded=folded>0 and folded or nil},"data")
+		folded=folded>0 and folded or nil,carried=kept>0 and kept or nil},"data")
 
 	return{
 		matches=walked,
@@ -908,7 +949,121 @@ function A.rebuildIndex(db)
 		stored=stored,
 		repaired=repaired,
 		folded=folded,
+		carried=kept,
 	}
+end
+
+A.TIDY_AGE=365*86400
+
+function A.tidyCandidates(now,total)
+	local reading={guids={},count=0,bytes=0,total=0,share=0}
+	local db=A.db()
+	if not(db and type(db.players)=="table")then
+		reading.reason="no-database"
+		return reading
+	end
+	now=type(now)=="number"and now or time()
+	local cutoff=now-A.TIDY_AGE
+	for guid,entry in pairs(db.players)do
+		if type(guid)=="string"and type(entry)=="table"and entry.matches==1 and entry.carried~=true
+			and type(entry.lastEpoch)=="number"and entry.lastEpoch<cutoff
+			and A.noteFor(guid)==nil and not A.isOwnCharacter(guid)
+		then
+			reading.guids[#reading.guids+1]=guid
+			reading.bytes=reading.bytes+A.indexEntryBytes(guid,entry)
+		end
+	end
+	table.sort(reading.guids)
+	reading.count=#reading.guids
+	if type(total)~="number"then
+		total=A.storedSize().total
+	end
+	reading.total=total
+	reading.share=total>0 and math.floor(reading.bytes*100/total)or 0
+	return reading
+end
+
+local function traceTidy(state,reading,reason)
+	A.trace("tidy",{
+		state=state,
+		count=reading and reading.count or nil,
+		share=reading and reading.share or nil,
+		reason=reason or"none",
+	},"data")
+end
+
+local tidySeen
+
+function A.tidyDryRun(total)
+	local reading=A.tidyCandidates(nil,total)
+	if reading.reason then
+		traceTidy("refused",nil,reading.reason)
+	else
+		tidySeen=reading.count
+		traceTidy("dry",reading)
+	end
+	return reading
+end
+
+function A.tidySeenCount()
+	return tidySeen
+end
+
+function A.tidyDrop(expected)
+	local reading=A.tidyCandidates()
+	if reading.reason then
+		traceTidy("refused",nil,reading.reason)
+		return false,reading.reason,reading
+	end
+	if reading.count==0 then
+		traceTidy("refused",reading,"nothing")
+		return false,"nothing",reading
+	end
+	if type(expected)=="number"and expected~=reading.count then
+		traceTidy("refused",reading,"moved")
+		return false,"moved",reading
+	end
+
+	local ran,backup=pcall(A.takeBackup)
+	if not ran then
+		A.noteError(backup,"tidy.backup")
+		backup={ok=false,reason="error"}
+	end
+
+	local db=A.db()
+	local players=db.players
+	for i=1,#reading.guids do
+		players[reading.guids[i]]=nil
+	end
+	local noted,err=pcall(A.notePrune,"tidy",#db.matches)
+	if not noted then
+		A.noteError(err,"tidy.prune")
+	end
+	A.storeReplaced()
+	traceTidy("dropped",reading)
+	return true,nil,reading,backup
+end
+
+function A.tidySentences(reading)
+	if type(reading)~="table"or reading.reason then
+		return{"No database, so there is nothing to tidy"}
+	end
+	local n=reading.count
+	if n==0 then
+		return{"No player was met once, over a year ago, with nothing written",
+			"Rebuild the index brings back any player a tidy dropped"}
+	end
+	return{
+		("%d %s met once, over a year ago, with nothing written"):format(n,n==1 and"player"or"players"),
+		("Dropping them frees about %d%% of the file. Their matches keep them"):format(reading.share),
+		"Rebuild the index brings them back",
+	}
+end
+
+function A.tidyLine(reading)
+	local sentences=A.tidySentences(reading)
+	local line=table.concat(sentences,". ")
+	return line:sub(1,1):lower()..line:sub(2)
 end
 
 local function backfill()

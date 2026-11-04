@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.33
+-- WowPvpHistory 0.75.26
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -58,7 +58,7 @@ local function restricted()
 	return(A.pvpRestricted())
 end
 
-local function refusal()
+local function clientRefusal()
 	if inInstance()then
 		return"instance"
 	end
@@ -72,6 +72,21 @@ local function refusal()
 		return"warmode"
 	end
 	return nil
+end
+
+local function settingRefusal()
+	if A.sandboxed()and A.endSandbox()then
+		A.trace("sandbox",{state="ended",reason="world"},"data")
+	end
+	if not A.worldEnabled()then
+		A.trace("skip",{reason="switch",kind="world"})
+		return"switch"
+	end
+	return A.captureRefusal("world")
+end
+
+local function refusal()
+	return clientRefusal()or settingRefusal()
 end
 
 local function openRecord(db)
@@ -94,11 +109,15 @@ local function openRecord(db)
 	return nil
 end
 
-local function close(record,reason,db)
+local function endOutingRecord(record)
 	record.worldOpen=nil
 	if type(record.completedEpoch)=="number"and type(record.openedEpoch)=="number"then
 		record.duration=record.completedEpoch-record.openedEpoch
 	end
+end
+
+local function close(record,reason,db)
+	endOutingRecord(record)
 	if record==current then
 		current,currentIndex=nil,nil
 	end
@@ -203,9 +222,6 @@ local function touch(record,now)
 end
 
 local function recordFor(now)
-	if A.sandboxed()and A.endSandbox()then
-		A.trace("sandbox",{state="ended",reason="world"},"data")
-	end
 	local db=A.db()
 	if not(db and type(db.matches)=="table")then
 		return nil
@@ -345,7 +361,7 @@ local function resolve(record,guid,tries,tok)
 end
 
 local function onPartyKill(attackerGuid,targetGuid)
-	local why=refusal()
+	local why=clientRefusal()
 	if why then
 		A.trace("worldkill",{state="refused",reason=why})
 		return
@@ -376,6 +392,11 @@ local function onPartyKill(attackerGuid,targetGuid)
 	end
 	if A.isBotGuid(target)then
 		A.trace("worldkill",{state="refused",reason="bot"})
+		return
+	end
+	why=settingRefusal()
+	if why then
+		A.trace("worldkill",{state="refused",reason=why})
 		return
 	end
 
@@ -502,6 +523,24 @@ function A.closeWorldSession(reason)
 	end
 	close(record,reason,db)
 	return true
+end
+
+function A.settleWorldRecords(db,source)
+	current,currentIndex=nil,nil
+	local settled=0
+	local matches=type(db)=="table"and db.matches
+	if type(matches)~="table"then
+		return settled
+	end
+	for i=1,#matches do
+		local record=matches[i]
+		if type(record)=="table"and record.format=="world"and record.worldOpen then
+			endOutingRecord(record)
+			settled=settled+1
+		end
+	end
+	A.trace("world",{state="boundary",source=source,n=settled})
+	return settled
 end
 
 local function onLogout()

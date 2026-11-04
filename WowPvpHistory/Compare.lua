@@ -1,4 +1,4 @@
--- WowPvpHistory 0.70.33
+-- WowPvpHistory 0.75.26
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -104,8 +104,10 @@ local function tracePick(action,id,via,reason)
 	},"ui")
 end
 
+local HALVES={"matches","players"}
+
 local function halvesShown()
-	for _,kind in ipairs({"matches","players"})do
+	for _,kind in ipairs(HALVES)do
 		local frame=type(A.windowFrameOf)=="function"and A.windowFrameOf(kind)or nil
 		if type(frame)=="table"then
 			local ok,shown=pcall(frame.IsShown,frame)
@@ -125,7 +127,7 @@ local function afterHalfHid()
 end
 
 local function hookHalves()
-	for _,kind in ipairs({"matches","players"})do
+	for _,kind in ipairs(HALVES)do
 		local frame=type(A.windowFrameOf)=="function"and A.windowFrameOf(kind)or nil
 		if type(frame)=="table"and not hooked[frame]then
 			local ok=pcall(frame.HookScript,frame,"OnHide",function()
@@ -279,10 +281,7 @@ function A.compareMenuRun(id,record)
 end
 
 local function ctrlHeld()
-	local ok,down=pcall(function()
-		return IsControlKeyDown()
-	end)
-	return ok and down==true
+	return A.guardedCall(IsControlKeyDown)==true
 end
 
 function A.compareCtrlClick(id,record)
@@ -557,8 +556,7 @@ function A.paintCompareBar(frame,listing)
 	end
 	bar.ground:SetColorTexture(A.color("pinGround"))
 	bar.rule:SetColorTexture(A.color("hairline"))
-	local pickedText=A.compareSetCountText()
-	bar.count:SetText(pickedText and(pickedText.." picked")or nil)
+	bar.count:SetText(A.compareSetCountText().." picked")
 	A.style(bar.count,"bodyText","text")
 	bar.compare:SetText(("Compare %d"):format(count))
 	A.setControlTone(bar.compare,"accent")
@@ -677,11 +675,8 @@ local ROWS={
 }
 
 local function rowApplies(spec,format)
-	if(spec.only and not spec.only[format])or(spec.skip and spec.skip[format])
-		or(spec.rated and not A.movesRating(format))then
-		return false
-	end
-	return true
+	return not((spec.only and not spec.only[format])or(spec.skip and spec.skip[format])
+		or(spec.rated and not A.movesRating(format)))
 end
 
 local function cellFor(spec,record)
@@ -738,7 +733,7 @@ local function holds(cell)
 end
 
 local function foldable(spec,key,cells)
-	if#cells<2 or not(spec.kind=="text"or key=="length")then
+	if#cells<2 or(spec.kind~="text"and key~="length")then
 		return false
 	end
 	local text=cells[1].text
@@ -899,7 +894,7 @@ function A.compareResultWord(record)
 		return nil
 	end
 	local decided=A.effectiveResult(record)
-	local word=decided~=nil and RESULT_WORDS[decided]or nil
+	local word=RESULT_WORDS[decided]
 	if word==nil then
 		local verdict,won,played=A.roundsVerdict(record)
 		if verdict=="draw"then
@@ -935,7 +930,7 @@ end
 
 function A.compareHeadLines(record)
 	local map=type(record.map)=="table"and type(record.map.name)=="string"and record.map.name or"-"
-	return"#"..A.matchIdText(record.id),map,A.stampWords(record.openedAt)or"-"
+	return"#"..A.matchIdText(record.id),map,A.stampWords(record.openedAt or record.completedAt)or"-"
 end
 
 function A.compareRowLines(records,rows)
@@ -1087,9 +1082,10 @@ function A.compareLobby(records)
 	if not BATTLEGROUNDS[format]then
 		lobby.shared={"base"}
 		local baseKeyed=groupsOf[1].keyed
+		local baseRead=#groupsOf[1].list>0
 		for c=2,#records do
 			local list=groupsOf[c].list
-			if#list==0 then
+			if#list==0 or not baseRead then
 				lobby.shared[c]="-"
 			else
 				local n=0
@@ -1122,16 +1118,16 @@ function A.compareRoundLines(records)
 		local line={id="#"..A.matchIdText(record.id),word=word,tone=tone,rounds={}}
 		local rounds=type(record.rounds)=="table"and record.rounds or{}
 		for r=1,#rounds do
-			local won=nil
+			local won,typed=nil,false
 			if type(A.roundResult)=="function"then
-				local ok,got=pcall(A.roundResult,record,r)
+				local ok,got,_,byHand=pcall(A.roundResult,record,r)
 				if ok and type(got)=="boolean"then
-					won=got
+					won,typed=got,byHand==true
 				end
 			end
-			local card={n=r,letter="-",tone="dim",mates={}}
+			local card={n=r,letter="-",tone="dim",mates={},typed=typed}
 			if won~=nil then
-				card.letter,card.tone=won and"W"or"L",won and"win"or"loss"
+				card.letter,card.tone=(won and"W"or"L")..(typed and"*"or""),won and"win"or"loss"
 			end
 			local mates=type(A.roundSides)=="function"and A.roundSides(record,rounds[r])or nil
 			for _,entry in ipairs(type(mates)=="table"and mates or{})do
@@ -1216,9 +1212,9 @@ local function newestOnTab(n,sameFormat)
 	for _,entry in ipairs(A.drawnEntries())do
 		if entry.kind=="match"then
 			if format==nil then
-				format=type(entry.subject)=="table"and entry.subject.format or nil
+				format=type(entry.subject)=="table"and(entry.subject.format or"unknown")or"unknown"
 			end
-			if not sameFormat or(type(entry.subject)=="table"and entry.subject.format==format)then
+			if not sameFormat or(type(entry.subject)=="table"and A.recordInFormat(entry.subject,format))then
 				seen=seen+1
 				if seen==n then
 					return entry.subject
@@ -1269,14 +1265,15 @@ local function typedRecord(word,count,verb)
 end
 
 function A.compareSetLine()
-	if#picked.ids==0 then
+	local count=A.compareCountText()
+	if count==nil then
 		return"compare: nothing picked"
 	end
 	local ids={}
 	for i=1,#picked.ids do
 		ids[i]="#"..A.matchIdText(picked.ids[i])
 	end
-	return("compare: %s, base %s; columns %s; tab %s"):format(A.compareCountText(),ids[1],
+	return("compare: %s, base %s; columns %s; tab %s"):format(count,ids[1],
 		table.concat(ids,", "),A.compareTab())
 end
 
@@ -1347,8 +1344,9 @@ function A.reportCompare(words)
 		return
 	end
 	if verb=="open"then
-		if#picked.ids<2 then
-			A.say(("compare: open needs two matches, %d picked"):format(#picked.ids))
+		local count=A.compareCount()
+		if count<2 then
+			A.say(("compare: open needs two matches, %d picked"):format(count))
 			return
 		end
 		local opened=type(A.showCompareWindow)=="function"and A.showCompareWindow()
