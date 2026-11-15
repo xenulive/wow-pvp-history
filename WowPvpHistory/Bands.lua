@@ -1,4 +1,4 @@
--- WowPvpHistory 0.75.26
+-- WowPvpHistory 0.75.68
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -395,9 +395,6 @@ function A.recordedViewports()
 end
 
 function A.unshownViewportLine()
-	if type(A.recordedViewports)~="function"then
-		return nil
-	end
 	local unshown=A.recordedViewports().unshown
 	if type(unshown)~="table"or#unshown==0 then
 		return nil

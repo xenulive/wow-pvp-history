@@ -1,4 +1,4 @@
--- WowPvpHistory 0.75.26
+-- WowPvpHistory 0.75.68
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -263,12 +263,12 @@ local function participant(fields)
 	local p={
 		name=fields.name,
 		faction=fields.faction,
-		race="Human",
+		race=fields.race or"Human",
 		class=fields.class,
 		classToken=fields.token,
 		spec=fields.spec,
 		role=fields.role or 8,
-		honorLevel=40+(fields.seat or 1),
+		honorLevel=fields.honorLevel or(40+(fields.seat or 1)),
 		killingBlows=fields.kb or 0,
 		honorableKills=fields.hk or 0,
 		deaths=fields.deaths or 0,
@@ -346,13 +346,11 @@ local altName=ALT_NAME.."-"..STAND_IN_REALM
 local selfFrom="stand-in"
 
 local function ownIdentity()
-	if type(UnitName)=="function"then
-		local ok,own=pcall(UnitName,"player")
-		if ok and A.readableString(own)then
-			local realm=type(A.ownRealm)=="function"and A.ownRealm()or nil
-			if realm~=nil then
-				return own,realm,"client"
-			end
+	local own=A.ownFullName()
+	if own then
+		local realm=A.ownRealm()
+		if realm~=nil then
+			return own,realm,"client"
 		end
 	end
 	return STAND_IN_NAME,STAND_IN_REALM,"stand-in"
@@ -360,10 +358,11 @@ end
 
 local function takeRecorder()
 	local name,realm,from=STAND_IN_NAME,STAND_IN_REALM,"stand-in"
-	if type(A.sandboxed)=="function"and A.sandboxed()then
+	if A.sandboxed()then
 		name,realm,from=ownIdentity()
 	end
-	SELF.name=name.."-"..realm
+	SELF.realm=realm
+	SELF.name=(from=="client"and A.surnameClient())and name or(name.."-"..realm)
 	selfFrom=from
 end
 
@@ -414,7 +413,7 @@ local function fixtureTalents(own)
 		pvp=pvp}
 end
 
-local function close(r,rows)
+local function close(r,rows,noBuild)
 	local n=0
 	for i=1,#rows do
 		r.participants[rows[i].guid]=rows[i].p
@@ -422,14 +421,23 @@ local function close(r,rows)
 	end
 	r.participantCount=n
 	r.character=rows[1]and rows[1].guid or nil
-	if r.format~="duel"and r.format~="world"then
+	if not noBuild and r.format~="duel"and r.format~="world"then
 		r.talents=fixtureTalents(rows[1]and rows[1].p or nil)
 	end
 	return r
 end
 
-local function sandboxExtras(now,records)
-	local recorder=recorderGuid(0)
+local FOREVER_ZONES={Voidstorm="Stranglethorn Vale",Harandar="Hillsbrad Foothills"}
+
+local function retailZone(name)
+	return name
+end
+
+local function foreverZone(name)
+	return FOREVER_ZONES[name]or name
+end
+
+local function fixtureDuels(now,recorder,zone)
 	local out={}
 	local opponents={
 		{name="Rowenna-"..REALMS[1],guid=characterGuid(901)},
@@ -447,7 +455,7 @@ local function sandboxExtras(now,records)
 	for i,duel in ipairs(duels)do
 		local opponent=opponents[duel.who]
 		local r=record({format="duel",rated=false,epoch=now-(#duels-i+4)*600,
-			duration=30+i*9,map={name="Harandar",instanceType="none"}})
+			duration=30+i*9,map={name=zone("Harandar"),instanceType="none"}})
 		if duel.untimed then
 			r.openedEpoch,r.openedAt,r.duration=nil,nil,nil
 		end
@@ -460,6 +468,11 @@ local function sandboxExtras(now,records)
 			{guid=opponent.guid or opponent.name,p={name=opponent.name,side="against"}},
 		})
 	end
+	return out
+end
+
+local function fixtureOutings(now,recorder,zone,warMode)
+	local out={}
 	local okDay,today=pcall(date,"%Y-%m-%d",now)
 	local y,m,d=(okDay and tostring(today)or""):match("^(%d+)%-(%d+)%-(%d+)$")
 	local function twoBack(hour,minute)
@@ -483,15 +496,50 @@ local function sandboxExtras(now,records)
 		local opened=outing.starts and twoBack(outing.starts[1],outing.starts[2])
 		local closed=opened and opened+outing.duration or now-outing.ends
 		local world=record({format="world",rated=false,epoch=closed,
-			duration=outing.duration,map={name=outing.zone,instanceType="none"}})
+			duration=outing.duration,map={name=zone(outing.zone),instanceType="none"}})
 		world.rounds=nil
 		world.openedState=nil
-		world.warMode=true
+		world.warMode=warMode
 		world.kills=outing.kills
 		world.deaths=outing.deaths
 		out[#out+1]=close(world,{
 			{guid=recorder,p={name=SELF.name,side="with"}},
 		})
+	end
+	return out
+end
+
+local function unknownRecord(now,recorder,own,noBuild)
+	local other=record({format="unknown",epoch=now-300,duration=95,
+		map={name="Arathi Basin",instanceType="pvp",instanceId=9003}})
+	return close(other,{
+		{guid=recorder,p=participant({name=SELF.name,class=own.class,token=own.token,
+			spec=own.spec,race=own.race,faction=0})},
+	},noBuild)
+end
+
+local function leftEntries(now,recorder,forever)
+	local abandoned={reason="abandoned",openedAt=A.stampAt(now-9000),endedAt=A.stampAt(now-8000),
+		rated=true,character=recorder,map={name="Mugambala",instanceType="arena"}}
+	if forever then
+		abandoned.rated=nil
+		abandoned.map={name="Warsong Gulch",instanceType="pvp"}
+	end
+	return{
+		{reason="left",openedAt=A.stampAt(now-200),endedAt=A.stampAt(now-80),
+			seconds=120,character=recorder,map={name="Arathi Basin",instanceType="pvp"}},
+		abandoned,
+	}
+end
+
+local function sandboxExtras(now,records,forever)
+	local recorder=recorderGuid(0)
+	if forever then
+		return{},leftEntries(now,recorder,true)
+	end
+	local out=fixtureDuels(now,recorder,retailZone)
+	for _,world in ipairs(fixtureOutings(now,recorder,retailZone,true))do
+		out[#out+1]=world
 	end
 	local ladderOut=nil
 	for i=#(records or{}),1,-1 do
@@ -520,65 +568,21 @@ local function sandboxExtras(now,records)
 				rating=ladderOut,ratingChange=16,mmrPre=1700,mmrPost=1716})},
 		})
 	end
-	local other=record({format="unknown",epoch=now-300,duration=95,
-		map={name="Arathi Basin",instanceType="pvp",instanceId=9003}})
-	out[#out+1]=close(other,{
-		{guid=recorder,p=participant({name=SELF.name,class=SELF.class,token=SELF.token,
-			spec=SELF.spec,faction=0})},
-	})
-	local left={
-		{reason="left",openedAt=A.stampAt(now-200),endedAt=A.stampAt(now-80),
-			seconds=120,character=recorder,map={name="Arathi Basin",instanceType="pvp"}},
-		{reason="abandoned",openedAt=A.stampAt(now-9000),endedAt=A.stampAt(now-8000),
-			rated=true,character=recorder,map={name="Mugambala",instanceType="arena"}},
-	}
-	return out,left
+	out[#out+1]=unknownRecord(now,recorder,SELF)
+	return out,leftEntries(now,recorder,false)
 end
 
-local function compCounts(n)
-	local counts,used={},0
-	for i=1,#COMP_SHARES do
-		counts[i]=math.floor(n*COMP_SHARES[i])
-		used=used+counts[i]
-	end
-	counts[1]=counts[1]+(n-used)
-	return counts
-end
-
-function A.fixtureRecords(n,now,options)
-	n=tonumber(n)
-	if n==nil or n~=n then
-		n=DEFAULT_ARENA
-	end
-	n=math.floor(n)
-	if n<MIN_ARENA then
-		n=MIN_ARENA
-	elseif n>MAX_ARENA then
-		n=MAX_ARENA
-	end
-
-	now=tonumber(now)or time()
-	takeRecorder()
-
-	options=type(options)=="table"and options or{}
-	local healerSeat=options.seat=="healer"
-	local sameSpec=options.sameSpec and true or false
-	local winning=options.winning and true or false
-
-	local rand=sequence(20260826)
-	local out={}
-	local person=0
-
-	local clock=sequence(20261014)
-	local lastEnd=0
+local function sessionClock(seed)
+	local clock=sequence(seed)
+	local state={lastEnd=0}
 	local blockLeft,sessionLeft=0,0
 
-	local function startBlock(count)
+	function state.start(count)
 		blockLeft=count
 		sessionLeft=0
 	end
 
-	local function nextEpoch(duration)
+	function state.next(duration)
 		local opening=sessionLeft<=0
 		if opening then
 			local length=math.max(blockLeft,1)
@@ -593,9 +597,229 @@ function A.fixtureRecords(n,now,options)
 		sessionLeft=sessionLeft-1
 		blockLeft=blockLeft-1
 		local gap=opening and(89+clock(91))*60 or(14+clock(11))*60
-		lastEnd=lastEnd+gap+duration
-		return lastEnd
+		state.lastEnd=state.lastEnd+gap+duration
+		return state.lastEnd
 	end
+
+	return state
+end
+
+local function shiftRecords(records,shift)
+	for i=1,#records do
+		local r=records[i]
+		r.openedEpoch=r.openedEpoch+shift
+		r.openedAt=A.stampAt(r.openedEpoch)
+		r.completedEpoch=r.completedEpoch+shift
+		r.completedAt=A.stampAt(r.completedEpoch)
+		local rounds=r.rounds
+		for rnd=1,#rounds do
+			rounds[rnd].endedEpoch=rounds[rnd].endedEpoch+shift
+		end
+	end
+end
+
+local FOREVER_MAPS={
+	wsg={name="Warsong Gulch",side=10,instanceId=9101,columns={
+		{id=42,order=1,name="Flag Captures"},{id=44,order=2,name="Flag Returns"}}},
+	ab={name="Arathi Basin",side=15,instanceId=9102,columns={
+		{id=122,order=1,name="Bases Assaulted"},{id=123,order=2,name="Bases Defended"}}},
+	di={name="Darkspear Islands",side=15,instanceId=9103,columns={
+		{id=1026,order=1,name="Flag Captures"},{id=1027,order=2,name="Bases Assaulted"},
+		{id=1028,order=3,name="Bases Assaulted"}}},
+	av={name="Alterac Valley",side=40,instanceId=9104,columns={
+		{id=61,order=1,name="Towers Assaulted"},{id=63,order=2,name="Graveyards Assaulted"},
+		{id=64,order=3,name="Towers Defended"},{id=65,order=4,name="Graveyards Defended"},
+		{id=82,order=5,name="Secondary Objectives"}}},
+}
+
+local FOREVER_ROTATION={"wsg","ab","di","wsg","av","ab","di","wsg","ab","av",
+	"di","wsg","ab","di","av","wsg","ab","di","wsg","av"}
+
+local FOREVER_DEFAULT=#FOREVER_ROTATION
+
+local FOREVER_CLASSES={
+	{class="Warrior",token="WARRIOR"},{class="Paladin",token="PALADIN",heal=true},
+	{class="Hunter",token="HUNTER"},{class="Rogue",token="ROGUE"},
+	{class="Priest",token="PRIEST",heal=true},{class="Shaman",token="SHAMAN",heal=true},
+	{class="Mage",token="MAGE"},{class="Warlock",token="WARLOCK"},
+	{class="Druid",token="DRUID",heal=true},
+}
+
+local FOREVER_RACES={
+	{race="Human",faction=1,takes="WARRIOR PALADIN HUNTER ROGUE PRIEST MAGE WARLOCK"},
+	{race="Dwarf",faction=1,takes="WARRIOR PALADIN HUNTER ROGUE PRIEST SHAMAN"},
+	{race="Night Elf",faction=1,takes="WARRIOR HUNTER ROGUE PRIEST DRUID"},
+	{race="Gnome",faction=1,takes="WARRIOR ROGUE PRIEST MAGE WARLOCK"},
+	{race="High Order Skyborne",faction=1,takes="WARRIOR HUNTER ROGUE MAGE DRUID"},
+	{race="Orc",faction=0,takes="WARRIOR HUNTER ROGUE SHAMAN MAGE WARLOCK"},
+	{race="Undead",faction=0,takes="WARRIOR PALADIN ROGUE PRIEST MAGE WARLOCK"},
+	{race="Tauren",faction=0,takes="WARRIOR HUNTER SHAMAN DRUID"},
+	{race="Troll",faction=0,takes="WARRIOR HUNTER ROGUE PRIEST SHAMAN MAGE WARLOCK"},
+	{race="Windshaper Skyborne",faction=0,takes="WARRIOR HUNTER ROGUE SHAMAN DRUID"},
+}
+
+local FOREVER_POOL_SIDE=45
+
+local FOREVER_SELF={class="Warlock",token="WARLOCK",spec="Warlock",race="Orc",role=8}
+local FOREVER_ALT={class="Paladin",token="PALADIN",spec="Paladin",race="Undead",role=8}
+
+local function foreverRace(faction,token,turn)
+	local fits={}
+	for _,entry in ipairs(FOREVER_RACES)do
+		if entry.faction==faction and(" "..entry.takes.." "):find(" "..token.." ",1,true)then
+			fits[#fits+1]=entry.race
+		end
+	end
+	return fits[(turn%#fits)+1]
+end
+
+local function sampleCount(n,default)
+	n=tonumber(n)
+	if n==nil or n~=n then
+		n=default
+	end
+	n=math.floor(n)
+	if n<MIN_ARENA then
+		n=MIN_ARENA
+	elseif n>MAX_ARENA then
+		n=MAX_ARENA
+	end
+	return n
+end
+
+local function foreverRecords(n,now,options,formats)
+	n=sampleCount(n,FOREVER_DEFAULT)
+	now=tonumber(now)or time()
+	takeRecorder()
+
+	local rand=sequence(20261110)
+	local sessions=sessionClock(20261111)
+	local out={}
+
+	local pools={[0]={},[1]={}}
+	local person=0
+	for faction=0,1 do
+		for i=1,FOREVER_POOL_SIDE do
+			local pick=FOREVER_CLASSES[((i-1)%#FOREVER_CLASSES)+1]
+			person=person+1
+			pools[faction][i]={name=generatedName(person),guid=characterGuid(person),
+				class=pick.class,token=pick.token,heal=pick.heal,
+				race=foreverRace(faction,pick.token,math.floor((i-1)/#FOREVER_CLASSES)),
+				rank=(i-1)%15}
+		end
+	end
+
+	local bg=0
+	if formats.bg then
+		sessions.start(n)
+		for r=1,n do
+			local map=FOREVER_MAPS[FOREVER_ROTATION[((r-1)%#FOREVER_ROTATION)+1]]
+			local won=rand(10)>4
+			local index=#out
+			local own=index%RECORDERS==0 and FOREVER_SELF or FOREVER_ALT
+			local function stats(least)
+				local held={}
+				for c=1,#map.columns do
+					held[map.columns[c].id]=least+rand(4)-1
+				end
+				return held
+			end
+			local rows={{guid=recorderGuid(index),p=participant({
+				name=recorderName(index),faction=0,class=own.class,token=own.token,
+				spec=own.spec,race=own.race,role=own.role,
+				honorLevel=8+math.floor((r-1)*6/n),
+				damage=spread(400000+map.side*9000,1),healing=20000+rand(9000),
+				kb=rand(4)-1,hk=6+rand(map.side),deaths=rand(4)-1,honor=150+rand(100),
+				stats=stats(1)})}}
+			for _,side in ipairs({{faction=0,take=map.side-1,from=r*7},
+				{faction=1,take=map.side,from=r*11}})do
+				local pool=pools[side.faction]
+				for k=1,side.take do
+					local who=pool[((side.from+k-1)%#pool)+1]
+					local seat=#rows+1
+					rows[seat]={guid=who.guid,p=participant({
+						name=who.name,faction=side.faction,class=who.class,token=who.token,
+						spec=who.class,race=who.race,role=8,honorLevel=who.rank,
+						damage=spread(380000+map.side*8000,seat),
+						healing=who.heal and spread(300000,seat)or nil,
+						kb=rand(4)-1,hk=rand(map.side+5),deaths=rand(5)-1,honor=90+seat,
+						stats=stats(0)})}
+				end
+			end
+			local duration=600+rand(900)+(map.side>=40 and 900 or 0)
+			out[#out+1]=close(record({
+				format="bg",rated=false,bracket=3,epoch=sessions.next(duration),
+				duration=duration,season=FIXTURE_SEASON,
+				map={name=map.name,instanceType="pvp",instanceId=map.instanceId},
+				columns=map.columns,result=won and"win"or"loss",
+				winnerFaction=won and 0 or 1,selfFaction=0}),rows,true)
+			bg=bg+1
+		end
+		shiftRecords(out,now-3600-sessions.lastEnd)
+	end
+
+	local recorder=recorderGuid(0)
+	local duel,world=0,0
+	if formats.duel then
+		for _,r in ipairs(fixtureDuels(now,recorder,foreverZone))do
+			out[#out+1]=r
+			duel=duel+1
+		end
+	end
+	if formats.world then
+		for _,r in ipairs(fixtureOutings(now,recorder,foreverZone,nil))do
+			out[#out+1]=r
+			world=world+1
+		end
+	end
+	out[#out+1]=unknownRecord(now,recorder,FOREVER_SELF,true)
+
+	return out,{
+		arena2=0,arena3=0,blitz=0,shuffle=0,["arena-unrated"]=0,bg=bg,
+		duel=duel,world=world,unknown=1,
+		unrated=options.unrated and true or false,
+		compsCleared=0,
+		floor=A.rankFloor and A.rankFloor("comps")or 10,
+		asked=n,
+		seat="damage",
+		sameSpec=false,
+		winning=false,
+		healerSeats=0,
+		formatSet="forever",
+	}
+end
+
+local function compCounts(n)
+	local counts,used={},0
+	for i=1,#COMP_SHARES do
+		counts[i]=math.floor(n*COMP_SHARES[i])
+		used=used+counts[i]
+	end
+	counts[1]=counts[1]+(n-used)
+	return counts
+end
+
+function A.fixtureRecords(n,now,options)
+	options=type(options)=="table"and options or{}
+	if A.clientHasNoRatedMode()then
+		return foreverRecords(n,now,options,(A.clientFormats()))
+	end
+
+	n=sampleCount(n,DEFAULT_ARENA)
+
+	now=tonumber(now)or time()
+	takeRecorder()
+
+	local healerSeat=options.seat=="healer"
+	local sameSpec=options.sameSpec and true or false
+	local winning=options.winning and true or false
+
+	local rand=sequence(20260826)
+	local out={}
+	local person=0
+
+	local sessions=sessionClock(20261014)
+	local startBlock,nextEpoch=sessions.start,sessions.next
 
 	local function mint(fields)
 		person=person+1
@@ -940,18 +1164,7 @@ function A.fixtureRecords(n,now,options)
 		bg=bg+1
 	end
 
-	local shift=now-lastEnd
-	for i=1,#out do
-		local r=out[i]
-		r.openedEpoch=r.openedEpoch+shift
-		r.openedAt=A.stampAt(r.openedEpoch)
-		r.completedEpoch=r.completedEpoch+shift
-		r.completedAt=A.stampAt(r.completedEpoch)
-		local rounds=r.rounds
-		for rnd=1,#rounds do
-			rounds[rnd].endedEpoch=rounds[rnd].endedEpoch+shift
-		end
-	end
+	shiftRecords(out,now-sessions.lastEnd)
 
 	if options.unrated then
 		local kept={}
@@ -975,6 +1188,7 @@ function A.fixtureRecords(n,now,options)
 		sameSpec=sameSpec,
 		winning=winning,
 		healerSeats=healerSeats,
+		formatSet="retail",
 	}
 end
 
@@ -988,7 +1202,7 @@ function A.fixtureRefusal(adding)
 		return"in-flight"
 	end
 
-	if type(A.pvpRestricted)=="function"and A.pvpRestricted()then
+	if A.pvpRestricted()then
 		return"restriction"
 	end
 
@@ -1021,6 +1235,9 @@ function A.fixtureRefusalText(reason)
 	if reason=="restriction"or reason=="in-instance"then
 		return"this is a PvP match. Leave the instance first: generated records in the middle of "
 			.."a real history are what nobody can untangle afterwards"
+	end
+	if reason=="no-formats"then
+		return"this client's list of match kinds is empty, so the sample would hold nothing"
 	end
 	if reason=="too-many"then
 		return("%d generated records already stand in the history, which is the most the fixture "
@@ -1080,13 +1297,46 @@ function A.fixtureReadings(records)
 	return rounded,breaks
 end
 
+local FORMAT_ORDER={"arena2","arena3","blitz","shuffle","arena-unrated","bg","duel","world","unknown"}
+
+local function writtenFormats(records,extras)
+	local seen={}
+	for _,list in ipairs({records,extras})do
+		for i=1,#list do
+			seen[tostring(list[i].format)]=true
+		end
+	end
+	local out={}
+	for _,format in ipairs(FORMAT_ORDER)do
+		if seen[format]then
+			out[#out+1]=format
+			seen[format]=nil
+		end
+	end
+	local rest={}
+	for format in pairs(seen)do
+		rest[#rest+1]=format
+	end
+	table.sort(rest)
+	for _,format in ipairs(rest)do
+		out[#out+1]=format
+	end
+	return table.concat(out,",")
+end
+
 function A.generateFixture(n,options)
+	local formats,formatSet=A.clientFormats()
+	if next(formats)==nil then
+		A.trace("fixture",{state="refused",reason="no-formats"},"data")
+		return nil,"no-formats"
+	end
+
 	local records,report=A.fixtureRecords(n,nil,options)
 
-	local sandboxed=type(A.sandboxed)=="function"and A.sandboxed()
+	local sandboxed=A.sandboxed()
 	local extras,left={},{}
 	if sandboxed then
-		extras,left=sandboxExtras(time(),records)
+		extras,left=sandboxExtras(time(),records,formatSet=="forever")
 		if type(options)=="table"and options.unrated then
 			local kept={}
 			for i=1,#extras do
@@ -1159,7 +1409,11 @@ function A.generateFixture(n,options)
 
 		db.characters=type(db.characters)=="table"and db.characters or{}
 		for index=0,RECORDERS-1 do
-			local name,realm=recorderName(index):match("^([^-]+)-(.+)$")
+			local full=recorderName(index)
+			local name,realm=full:match("^([^-]+)-(.+)$")
+			if name==nil then
+				name,realm=full,SELF.realm
+			end
 			db.characters[recorderGuid(index)]={name=name,realm=realm,at=A.stamp()}
 		end
 	end
@@ -1205,6 +1459,8 @@ function A.generateFixture(n,options)
 		selfName=selfFrom,
 		selfClass=SELF.token,
 		healerSeats=report.healerSeats,
+		formatSet=formatSet,
+		formats=writtenFormats(records,extras),
 	},"data")
 
 	local extraCounts={}

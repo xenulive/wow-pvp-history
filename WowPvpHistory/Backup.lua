@@ -1,4 +1,4 @@
--- WowPvpHistory 0.75.26
+-- WowPvpHistory 0.75.68
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -507,9 +507,11 @@ local function mergeCharacters(live,backup)
 end
 
 local LOAD_PASSES={
+	{"forgetFabricated","backup-fabricated-seasons"},
 	{"backfillGameSeason","backup-game-season"},
 	{"refileArenaMapBattlegrounds","backup-refile"},
 	{"supersedeTypedResults","backup-typed-results"},
+	{"repairSurnameNames","backup-surname-names"},
 }
 
 local function refill(db,value,keep,mergeRegistry,source)
@@ -557,6 +559,7 @@ local function refill(db,value,keep,mergeRegistry,source)
 	db.ui=db.ui or{}
 	A.dropRetiredUiKeys(db.ui)
 	A.convertAnnounceTime()
+	A.adoptAccountChatWindow()
 
 	db.active=nil
 
@@ -1102,10 +1105,9 @@ function A.buildCopyWindow(name,widthKey,heightKey)
 	frame:SetMovable(true)
 	frame:EnableMouse(true)
 	frame:RegisterForDrag("LeftButton")
-	frame:SetScript("OnDragStart",frame.StartMoving)
-	frame:SetScript("OnDragStop",function(self)
-		A.stopDrag(self)
-	end)
+	frame:SetScript("OnDragStart",A.startDrag)
+	frame:SetScript("OnDragStop",A.stopDrag)
+	A.stopDragOnHide(frame,nil,name)
 	frame:Hide()
 
 	frame.title=A.windowTitle(frame)
@@ -1458,9 +1460,11 @@ function A.applyRoom(pending)
 
 	local held=A.backupStore()
 	local current=held and held.current
-	if not A.sandboxed()and type(current)=="table"and type(current.matches)=="number"
-		and current.matches>#db.matches then
-		held.previous,held.current,held.refused=current,nil,nil
+	if not A.sandboxed()and type(current)=="table"and type(current.matches)=="number"then
+		local heldReal,keptReal=gatePair(current.matches,current.generated,#db.matches,generatedCount(db))
+		if heldReal>keptReal then
+			held.previous,held.current,held.refused=current,nil,nil
+		end
 	end
 
 	local pruned,pruneError=pcall(A.notePrune,"room",before)
@@ -1571,9 +1575,10 @@ end
 local SETTINGS_KEYS={
 	alerts="on",announce="on",announceComp="on",announceRematch="on",chatMark="on",
 	closeWithMain="on",contextMenu="on",duels="on",finder="on",finderDocked="on",
-	groupNotes="on",hold="on",loginLine="on",minimapShown="on",mmrLine="on",
+	groupNotes="on",hold="on",killLine="on",loginLine="on",minimapShown="on",mmrLine="on",
 	openAfterMatch="on",overlayCombat="on",postGame="on",realms="on",rememberFilters="on",
-	rememberTab="on",sight="on",tally="on",toast="on",tooltip="on",world="on",
+	rememberTab="on",rivals="on",sight="on",tally="on",toast="on",tooltip="on",world="on",
+	weekRecap="on",
 
 	overlayShown="off",overlayTwo="off",soundBad="off",soundBest="off",soundSaved="off",
 	figuresFollow="off",largeText="off",denseRows="off",
@@ -1600,6 +1605,9 @@ local SETTINGS_KEYS={
 	cardsFolded="machine",lobbySort="machine",lobbySortUp="machine",seasonScope="machine",
 	statsView="machine",debug="machine",debugText="machine",
 
+	chatWindows="machine",
+	chatWindow="machine",
+
 	announceTime="machine",
 }
 
@@ -1611,8 +1619,10 @@ local SETTING_SETTERS={
 	hold={"setHold"},loginLine={"setLoginLine"},minimapShown={"setMinimapShown"},
 	mmrLine={"setMmrLine"},openAfterMatch={"setOpenAfterMatch"},
 	overlayCombat={"setOverlayCombat"},postGame={"setPostGame"},realms={"setRealms"},
-	rememberFilters={"setRememberFilters"},rememberTab={"setRememberTab"},sight={"setSight"},
+	rememberFilters={"setRememberFilters"},rememberTab={"setRememberTab"},rivals={"setRivals"},sight={"setSight"},
 	tally={"setTally"},toast={"setToast"},tooltip={"setTooltip"},world={"setWorld"},
+	killLine={"setKillLine"},
+	weekRecap={"setWeekRecap"},
 
 	overlayShown={"setOverlay"},overlayTwo={"setOverlayTwo"},
 	soundBad={"setSound","badArrival"},soundBest={"setSound","newBest"},

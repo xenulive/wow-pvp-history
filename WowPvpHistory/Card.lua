@@ -1,4 +1,4 @@
--- WowPvpHistory 0.75.26
+-- WowPvpHistory 0.75.68
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -194,7 +194,7 @@ local function placeChip(f)
 end
 
 local function nameClass(said,finderClass)
-	if A.canRead(finderClass)and type(finderClass)=="string"and finderClass~=""then
+	if A.readableString(finderClass)then
 		return finderClass,"finder"
 	end
 	if type(said.classToken)=="string"and said.classToken~=""then

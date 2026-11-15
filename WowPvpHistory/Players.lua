@@ -1,4 +1,4 @@
--- WowPvpHistory 0.75.26
+-- WowPvpHistory 0.75.68
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -388,9 +388,7 @@ function A.unitNames(token)
 		return names
 	end
 	names[1]=bare
-	if A.readableString(realm)then
-		names[2]=bare.."-"..realm
-	end
+	names[2]=A.qualifiedName(bare,realm)
 	return names
 end
 
@@ -407,6 +405,9 @@ function A.unitNameFromGuid(guid)
 	end
 	if type(realm)~="string"or not A.canRead(realm)then
 		return nil
+	end
+	if A.surnameClient()then
+		return A.fullName(bare,realm)
 	end
 	realm=(realm:gsub("%s",""))
 	if realm==""or realm==A.ownRealm()then
@@ -430,8 +431,12 @@ function A.nameplateTokens()
 	for i=1,#list do
 		local plate=list[i]
 		if type(plate)=="table"then
-			local token=plate.namePlateUnitToken
-			if A.canRead(token)and type(token)=="string"and token~=""then
+			local token=A.readableString(plate.namePlateUnitToken)
+			if not token then
+				local unitFrame=plate.UnitFrame
+				token=type(unitFrame)=="table"and A.readableString(unitFrame.unit)or nil
+			end
+			if token then
 				tokens[#tokens+1]=token
 			end
 		end
@@ -1066,12 +1071,59 @@ function A.tidyLine(reading)
 	return line:sub(1,1):lower()..line:sub(2)
 end
 
+local function withoutRealmString(name)
+	local bare,last=name:match("^(.-) (%S+)$")
+	if bare and bare~=""and A.realmRuleset(last)then
+		return bare
+	end
+	return nil
+end
+
+function A.repairSurnameNames(db)
+	db=db or A.db()
+	if not(type(db)=="table"and A.surnameClient())then
+		return nil,nil
+	end
+
+	local changed,read=0,0
+	for _,entry in pairs(type(db.players)=="table"and db.players or{})do
+		local names=type(entry)=="table"and entry.names
+		if type(names)=="table"then
+			for i=1,#names do
+				if type(names[i])=="string"then
+					read=read+1
+					local fixed=withoutRealmString(names[i])
+					if fixed then
+						names[i]=fixed
+						changed=changed+1
+					end
+				end
+			end
+		end
+	end
+	for _,note in pairs(type(db.notes)=="table"and db.notes or{})do
+		if type(note)=="table"and type(note.name)=="string"then
+			read=read+1
+			local fixed=withoutRealmString(note.name)
+			if fixed then
+				note.name=fixed
+				changed=changed+1
+			end
+		end
+	end
+
+	A.trace("names",{repaired=changed,n=read},"data")
+	return changed,read
+end
+
 local function backfill()
 	local db=A.db()
 	if not db then
 		A.trace("rebuild",{state="refused",reason="no-database",source="login"},"data")
 		return
 	end
+
+	A.repairSurnameNames(db)
 
 	local stamped=db.playerIndexVersion
 	if type(stamped)=="number"and stamped>=A.indexVersion then

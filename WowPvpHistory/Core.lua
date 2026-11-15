@@ -1,4 +1,4 @@
--- WowPvpHistory 0.75.26
+-- WowPvpHistory 0.75.68
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -75,6 +75,14 @@ function A.readableString(value)
 		return nil
 	end
 	return value
+end
+
+function A.specAndClass(spec,class)
+	spec,class=A.readableString(spec),A.readableString(class)
+	if spec and class then
+		return spec:lower()==class:lower()and class or spec.." "..class
+	end
+	return spec or class
 end
 
 function A.put(record,key,value)
@@ -674,6 +682,239 @@ function A.chatCollector()
 	end
 end
 
+local SAY_ROUTE_MAIN="main/nil"
+local sayRouteTraced=SAY_ROUTE_MAIN
+
+function A.chatWindowCount()
+	local constants=type(Constants)=="table"and Constants.ChatFrameConstants
+	local count=type(constants)=="table"and constants.MaxChatWindows or NUM_CHAT_WINDOWS
+	return type(count)=="number"and count or nil
+end
+
+function A.chatWindowReserved()
+	local info=C_ChatInfo
+	if type(info)=="table"and type(info.GetNumReservedChatWindows)=="function"then
+		local ok,count=pcall(info.GetNumReservedChatWindows)
+		if ok and type(count)=="number"and count>=2 and count==math.floor(count)then
+			return count
+		end
+	end
+	return 2
+end
+
+local function chatWindowTable()
+	local store=A.db()
+	local ui=store and type(store.ui)=="table"and store.ui or nil
+	return ui and type(ui.chatWindows)=="table"and ui.chatWindows or nil
+end
+
+local function storedChatWindow()
+	local held,guid=chatWindowTable(),A.ownGuid()
+	return held and guid and held[guid]or nil
+end
+
+local function chatWindowInRange(index)
+	local count=A.chatWindowCount()
+	return type(index)=="number"and index==math.floor(index)and index>A.chatWindowReserved()
+		and count~=nil and index<=count
+end
+
+local function chatWindowReservedSlot(index)
+	return type(index)=="number"and index==math.floor(index)and index>=2
+		and index<=A.chatWindowReserved()
+end
+
+function A.chatWindowState(index)
+	if not chatWindowInRange(index)or type(GetChatWindowInfo)~="function"
+		or type(FCF_IsChatWindowIndexActive)~="function"then
+		return nil,false
+	end
+	local okName,name=pcall(GetChatWindowInfo,index)
+	local okOpen,open=pcall(FCF_IsChatWindowIndexActive,index)
+	return okName and type(name)=="string"and name or nil,okOpen and open and true or false
+end
+
+function A.chatRoute()
+	local held=storedChatWindow()
+	if held==nil then
+		return nil,"main",nil,nil,nil
+	end
+	if chatWindowReservedSlot(held)then
+		return nil,"main","closed",held,nil
+	end
+	if not chatWindowInRange(held)then
+		return nil,"main","none",held,nil
+	end
+	local name,open=A.chatWindowState(held)
+	if not open then
+		return nil,"main","closed",held,name
+	end
+	local okFrame,frame=false,nil
+	if type(FCF_GetChatFrameByID)=="function"then
+		okFrame,frame=pcall(FCF_GetChatFrameByID,held)
+	end
+	if not okFrame or type(frame)~="table"or type(frame.AddMessage)~="function"then
+		return nil,"main","none",held,name
+	end
+	return frame,tostring(held),nil,held,name
+end
+
+function A.chatWindow()
+	local held=storedChatWindow()
+	return chatWindowInRange(held)and held or nil
+end
+
+function A.setChatWindow(index)
+	local store=A.db()
+	local guid=A.ownGuid()
+	if not store or guid==nil then
+		return false
+	end
+	if index==1 then
+		index=nil
+	end
+	if index~=nil and not chatWindowInRange(index)then
+		return false
+	end
+	store.ui=store.ui or{}
+	local held=store.ui.chatWindows
+	if type(held)~="table"then
+		held={}
+	end
+	held[guid]=index
+	store.ui.chatWindows=next(held)~=nil and held or nil
+	sayRouteTraced=nil
+	if A.notifyChatWindowSetting then
+		A.notifyChatWindowSetting()
+	end
+	return true
+end
+
+function A.adoptAccountChatWindow()
+	local store=A.db()
+	local ui=store and type(store.ui)=="table"and store.ui or nil
+	local guid=A.ownGuid()
+	if not ui or ui.chatWindow==nil or guid==nil then
+		return false
+	end
+	local old=ui.chatWindow
+	ui.chatWindow=nil
+	local held=type(ui.chatWindows)=="table"and ui.chatWindows or{}
+	local kept=held[guid]~=nil
+	if not kept then
+		held[guid]=old
+	end
+	ui.chatWindows=next(held)~=nil and held or nil
+	sayRouteTraced=nil
+	A.trace("settings",{
+		source="chat-window-adopted",
+		window=tostring(old),
+		state=kept and"kept"or"moved",
+	},"ui")
+	return true
+end
+
+function A.chatWindowChoice()
+	local held=A.chatWindow()
+	return held and tostring(held)or"main"
+end
+
+function A.setChatWindowChoice(value)
+	if value=="main"then
+		return A.setChatWindow(nil)
+	end
+	local index=tonumber(value)
+	if index==nil then
+		return false
+	end
+	return A.setChatWindow(index)
+end
+
+local function chatWindowLabel(index,name)
+	return(name and name~="")and name or("Window %d"):format(index)
+end
+
+function A.chatWindowChoices()
+	local choices={{value="main",label="Main chat"}}
+	local count=A.chatWindowCount()or 0
+	local held=A.chatWindow()
+	for index=A.chatWindowReserved()+1,count do
+		local name,open=A.chatWindowState(index)
+		if open or index==held then
+			choices[#choices+1]={value=tostring(index),label=chatWindowLabel(index,name)}
+		end
+	end
+	return choices
+end
+
+local CHAT_TAB_NAME="PvPHistory"
+
+local CHAT_TAB_FAULTS={
+	full="no chat window could be opened: the client holds as many as it allows",
+	refused="no chat window could be opened: the client's chat window call failed",
+	stray="no chat window could be opened: the client answered a window this addon does not use",
+}
+
+function A.makeChatTab()
+	if type(C_Timer)~="table"or type(C_Timer.After)~="function"then
+		return false
+	end
+	C_Timer.After(0,function()
+		local count=A.chatWindowCount()or 0
+		for index=A.chatWindowReserved()+1,count do
+			local name,open=A.chatWindowState(index)
+			if open and name==CHAT_TAB_NAME then
+				A.setChatWindow(index)
+				A.trace("chat-tab",{state="reused",window=tostring(index)},"ui")
+				A.say(("lines print in the %s chat window"):format(CHAT_TAB_NAME))
+				return
+			end
+		end
+		local ok,frame,index=false,nil,nil
+		if type(FCF_OpenNewWindow)=="function"then
+			ok,frame,index=pcall(FCF_OpenNewWindow,CHAT_TAB_NAME,true)
+		end
+		local state=(not ok and"refused")or(frame==nil and"full")
+			or(not chatWindowInRange(index)and"stray")or nil
+		if state~=nil then
+			A.trace("chat-tab",{state=state},"ui")
+			A.say(CHAT_TAB_FAULTS[state],"fault")
+			return
+		end
+		A.setChatWindow(index)
+		A.trace("chat-tab",{state="made",window=tostring(index)},"ui")
+		A.say(("lines print in the new %s chat window"):format(CHAT_TAB_NAME))
+	end)
+	return true
+end
+
+local function chatRouteLine()
+	local frame,_,fell,held,name=A.chatRoute()
+	if frame~=nil then
+		return("lines print in the %s chat window, window %d"):format(
+			(name and name~="")and name or"unnamed",held)
+	end
+	if fell=="closed"then
+		return("chat window %d is closed, so lines print in the main chat. Messages print in on "
+			.."the General settings page chooses another"):format(held)
+	end
+	if fell=="none"then
+		return("the chosen chat window, %s, is not one this client has, so lines print in the "
+			.."main chat"):format(tostring(held))
+	end
+	return"lines print in the main chat"
+end
+
+function A.chatWindowLines()
+	local offered={}
+	local choices=A.chatWindowChoices()
+	for i=1,#choices do
+		local choice=choices[i]
+		offered[i]=choice.value=="main"and choice.label or("%s (%s)"):format(choice.label,choice.value)
+	end
+	return{chatRouteLine(),"the settings offer "..table.concat(offered,", ")}
+end
+
 function A.say(msg,register)
 	local prefix=A.chatPrefix and A.chatPrefix()or"|cff00ff00PvPHistory:|r "
 	local text=tostring(msg)
@@ -685,7 +926,19 @@ function A.say(msg,register)
 		end
 	end
 
-	print(prefix..text)
+	local frame,window,fell=A.chatRoute()
+	if frame~=nil and not pcall(frame.AddMessage,frame,prefix..text)then
+		frame,window,fell=nil,"main","none"
+	end
+	if frame==nil then
+		print(prefix..text)
+	end
+
+	local route=window.."/"..tostring(fell)
+	if route~=sayRouteTraced and type(A.trace)=="function"then
+		sayRouteTraced=route
+		A.trace("say",{window=window,fell=fell},"ui")
+	end
 end
 
 function A.stamp()
@@ -1181,10 +1434,7 @@ function A.ownGuid()
 		return nil
 	end
 	local ok,guid=pcall(UnitGUID,"player")
-	if ok and A.canRead(guid)and type(guid)=="string"and guid~=""then
-		return guid
-	end
-	return nil
+	return ok and A.readableString(guid)or nil
 end
 
 function A.isOwnCharacter(guid)
@@ -1229,6 +1479,64 @@ end
 
 function A.ownRealm()
 	return A.readableString(A.guardedCall(GetNormalizedRealmName))
+end
+
+function A.surnameClient()
+	local info=C_PlayerInfo
+	return type(info)=="table"and type(info.ShouldDisplaySurname)=="function"
+end
+
+function A.qualifiedName(bare,second)
+	local part=A.readableString(second)
+	if not part then
+		return nil
+	end
+	return bare..(A.surnameClient()and" "or"-")..part
+end
+
+function A.fullName(bare,second)
+	return A.surnameClient()and A.qualifiedName(bare,second)or bare
+end
+
+local RULESET_WORDS={PvE="Normal",RP="RP",PvP="PVP",RPPvP="RP-PVP"}
+
+function A.realmRuleset(realm)
+	return type(realm)=="string"and RULESET_WORDS[realm:match("Realm%d+(%a+)$")]or nil
+end
+
+local function nameSharedAcrossRealms(name,realm)
+	local store=A.db()
+	for _,held in pairs(store and type(store.characters)=="table"and store.characters or{})do
+		if type(held)=="table"and held.name==name and held.realm~=realm then
+			return true
+		end
+	end
+	return false
+end
+
+function A.readerCharacterName(name,realm)
+	if type(realm)~="string"or realm==""then
+		return name
+	end
+	if not A.surnameClient()then
+		return name.."-"..realm
+	end
+	local ruleset=A.realmRuleset(realm)
+	if ruleset and nameSharedAcrossRealms(name,realm)then
+		return("%s (%s)"):format(name,ruleset)
+	end
+	return name
+end
+
+function A.ownFullName()
+	if type(UnitName)~="function"then
+		return nil
+	end
+	local ok,bare,second=pcall(UnitName,"player")
+	if not(ok and A.readableString(bare))then
+		return nil
+	end
+	return A.fullName(bare,second)
 end
 
 function A.pvpRestriction()

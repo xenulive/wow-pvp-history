@@ -17,7 +17,8 @@
 # the job's summary names it with the site's answer.
 #
 # A release arrives here as a pull request from release/v<version>, carrying the stripped addon,
-# LICENSE, wiki/ and this file, beside a draft release for v<version> with the zip attached. Merging
+# LICENSE, the README, the contributing note, the issue forms, screenshots/, wiki/ and this file,
+# beside a draft release for v<version> with the zip attached. Merging
 # that pull request is the decision to release. A push runs the workflow file in the pushed commit,
 # so the merged commit's own copy of this file is the one that runs, the first release included.
 #
@@ -284,8 +285,9 @@ jobs:
           Write-Host "wiki: $local pushed, $($pages.Count) pages and $images images"
           'state=pushed', "commit=$local", "pages=$($pages.Count)", "images=$images" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
-      # Runs once the wiki push succeeded, so main keeps the addon, the README, LICENSE and this file,
-      # and the pages live only on the wiki; the README reads its pictures from the wiki. It works on
+      # Runs once the wiki push succeeded, so main keeps the addon, the README, LICENSE, screenshots/
+      # and this file, and the pages live only on the wiki; the README reads its pictures from
+      # screenshots/, which stays on main. It works on
       # main's tip rather than the pushed commit and pushes without force, so a main that moved during
       # the step refuses the push rather than losing a commit.
       - name: Remove the wiki folder from main

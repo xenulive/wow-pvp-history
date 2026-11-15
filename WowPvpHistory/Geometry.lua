@@ -1,4 +1,4 @@
--- WowPvpHistory 0.75.26
+-- WowPvpHistory 0.75.68
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -13,6 +13,8 @@ local placedWindows={}
 local queued={}
 
 local typedSize={}
+
+local pooledKinds=setmetatable({},{__mode="k"})
 
 local SIZE_STEPS=8
 
@@ -361,8 +363,27 @@ function A.screenSizeFor(frame)
 end
 
 function A.stopDrag(frame)
+	frame.dragging=nil
 	pcall(frame.StopMovingOrSizing,frame)
 	pcall(frame.SetUserPlaced,frame,false)
+end
+
+function A.startDrag(frame)
+	frame.dragging=pcall(frame.StartMoving,frame)or nil
+end
+
+function A.stopDragOnHide(frame,stop,label)
+	frame:HookScript("OnHide",function(self)
+		if not self.dragging then
+			return
+		end
+		local dropped=stop~=nil and pcall(stop,self)
+		if self.dragging then
+			A.stopDrag(self)
+		end
+		A.trace("view",{source="drag-hide",state=dropped and"dropped"or"stopped",
+			kind=label or self.windowName},"ui")
+	end)
 end
 
 function A.standMovableWindow(frame)
@@ -372,7 +393,13 @@ function A.standMovableWindow(frame)
 	frame:SetMovable(true)
 	frame:EnableMouse(true)
 	frame:RegisterForDrag("LeftButton")
-	frame:SetScript("OnDragStart",frame.StartMoving)
+	frame:SetScript("OnDragStart",A.startDrag)
+	A.stopDragOnHide(frame,function(self)
+		local drop=self:GetScript("OnDragStop")
+		if drop then
+			drop(self)
+		end
+	end)
 end
 
 function A.placeWindowHeading(frame)
@@ -478,13 +505,31 @@ function A.applyWindowScale(from,stored)
 			refused=refused+1
 		end
 		local screenW,screenH=A.screenSizeFor(frame)
+		local pooled=pooledKinds[frame]
+		local kind=pooled
+		for k=1,#order do
+			kind=kind or(specs[order[k]].frame==frame and order[k])or nil
+		end
+		local floorW,floorH
+		if kind then
+			floorW,floorH=A.windowFloor(kind)
+		end
+		local capW=type(screenW)=="number"and math.max(screenW,floorW or 0)or nil
+		local capH=type(screenH)=="number"and math.max(screenH,floorH or 0)or nil
 		local okW,width=pcall(frame.GetWidth,frame)
 		local okH,height=pcall(frame.GetHeight,frame)
-		if okW and type(width)=="number"and type(screenW)=="number"and width>screenW then
-			pcall(frame.SetWidth,frame,screenW)
+		local cut=false
+		if okW and type(width)=="number"and capW and width>capW then
+			cut=pcall(frame.SetWidth,frame,capW)or cut
 		end
-		if okH and type(height)=="number"and type(screenH)=="number"and height>screenH then
-			pcall(frame.SetHeight,frame,screenH)
+		if okH and type(height)=="number"and capH and height>capH then
+			cut=pcall(frame.SetHeight,frame,capH)or cut
+		end
+		if cut and kind and not pooled then
+			typedSize[ownerOf(kind)]=true
+		end
+		if pooled and type(floorW)=="number"then
+			pcall(frame.SetResizeBounds,frame,floorW,floorH,capW or floorW,capH or floorH)
 		end
 		if held.onScaled then
 			pcall(held.onScaled,frame,type(stored)=="number"and stored or nil)
@@ -496,13 +541,18 @@ function A.applyWindowScale(from,stored)
 		if spec and spec.frame then
 			pcall(boundResize,spec.frame,kind)
 		end
-		local entry=spec and ownerOf(kind)==kind and A.storedGeometry(kind)or nil
+		local owned=spec~=nil and ownerOf(kind)==kind
+		local entry=owned and A.storedGeometry(kind)or nil
 		if entry and type(stored)=="number"and entry.point then
 			entry.x,entry.y=(entry.x or 0)*stored,(entry.y or 0)*stored
 			A.setStoredGeometry(kind,entry)
-		elseif entry and stored=="restore"and spec.frame then
-			typedSize[ownerOf(kind)]=nil
-			A.applyStoredGeometry(kind)
+		elseif entry and stored=="restore"then
+			typedSize[kind]=nil
+			for _,member in ipairs(groupOf(kind))do
+				if specs[member].frame then
+					A.applyStoredGeometry(member)
+				end
+			end
 		end
 	end
 	if type(stored)=="number"then
@@ -760,11 +810,9 @@ function A.retireSharedGeometry()
 	return removed
 end
 
-if type(A.on)=="function"then
-	A.on("PLAYER_LOGIN",function()
-		pcall(A.retireSharedGeometry)
-	end)
-end
+A.on("PLAYER_LOGIN",function()
+	pcall(A.retireSharedGeometry)
+end)
 
 local ROOM_BRANCHES={
 	["absent"]=true,
@@ -826,7 +874,7 @@ function A.roomsAgree(composed,rect)
 	if type(composed)~="number"or type(rect)~="number"then
 		return false
 	end
-	local gap=composed-rect
+	local gap=A.unitFigure((A.unitFigure(composed)or composed)-(A.unitFigure(rect)or rect))or 0
 	if gap<0 then
 		gap=-gap
 	end
@@ -962,6 +1010,7 @@ end
 
 function A.replaceOtherWindows()
 	local names,refused=A.replacePlacedWindows()
+	pcall(A.resetFinderPosition)
 	pcall(A.clearPooledPoints)
 	local records={}
 	if type(A.recascadeMatchWindows)=="function"then
@@ -975,7 +1024,7 @@ function A.replaceOtherWindows()
 		local anchors,keys={},{}
 		for i=1,#records do
 			keys[#keys+1]=records[i].key or"?"
-			if records[i].frame and type(A.anchorState)=="function"then
+			if records[i].frame then
 				local state=A.anchorState(records[i].frame)
 				anchors[#anchors+1]=(records[i].key or"?").."="..(state or"unread")
 			end
@@ -1071,7 +1120,8 @@ end
 function A.replaceAnnouncements()
 	local heldLabels,builtLabels,names,anchors,reached={},{},{},{},false
 	for _,entry in ipairs(ANNOUNCEMENTS)do
-		local had=entry.position()~=nil
+		local okHad,position=pcall(entry.position)
+		local had=okHad and position~=nil
 		local ok,stored=pcall(entry.reset)
 		if ok then
 			names[#names+1]=entry.name
@@ -1079,8 +1129,8 @@ function A.replaceAnnouncements()
 			if had then
 				heldLabels[#heldLabels+1]=entry.label
 			end
-			local built=entry.frame()
-			if built then
+			local okBuilt,built=pcall(entry.frame)
+			if okBuilt and built then
 				builtLabels[#builtLabels+1]=entry.label
 				anchors[#anchors+1]=entry.name.."="..(A.anchorState(built)or"unread")
 			end
@@ -1386,7 +1436,7 @@ function A.attachResize(frame,kind,onResize)
 			kind=kind,
 			windowScale=A.windowScaleApplied(),
 			placesStored=ratio~=1 and"converted"or"as-read",
-			sizeFrom=resized and"drag"or keepSize and(typedSize[owner]and"typed-kept"or keptFrom)
+			sizeFrom=resized and"drag"or keepSize and((typedSize[owner]and ratio==1)and"typed-kept"or keptFrom)
 				or"frame",
 		},"ui")
 	end
@@ -1431,6 +1481,7 @@ function A.attachPooledResize(frame,kind,hooks)
 		return false
 	end
 	A.registerScaledWindow(frame)
+	pooledKinds[frame]=kind
 	local screenW,screenH=A.screenSizeFor(frame)
 
 	if not pcall(frame.SetResizable,frame,true)then
@@ -1576,7 +1627,7 @@ end
 local function sizeFigure(kind,word,axis,current,frame)
 	local number=type(word)=="string"and(word:match("^%-?%d+%.?%d*$")or word:match("^%-?%.%d+$"))and tonumber(word)or nil
 	if number then
-		if number~=number or number==math.huge or number==-math.huge then
+		if number==math.huge or number==-math.huge then
 			return nil
 		end
 		return number

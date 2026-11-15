@@ -1,4 +1,4 @@
--- WowPvpHistory 0.75.26
+-- WowPvpHistory 0.75.68
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -235,8 +235,9 @@ function A.ratingValue(word,scale)
 	if type(word)~="string"then
 		return nil
 	end
-	if RATING_WORDS[word]~=nil then
-		return RATING_WORDS[word]
+	local shorthand=RATING_WORDS[word]
+	if shorthand~=nil then
+		return shorthand
 	end
 	scale=scale or"skill"
 	local lowered=word:lower()

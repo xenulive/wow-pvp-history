@@ -1,4 +1,4 @@
--- WowPvpHistory 0.75.26
+-- WowPvpHistory 0.75.68
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -504,6 +504,8 @@ local function forgetFabricated()
 		.."season change. /pvph season start <n> <date> declares the real one")
 end
 
+A.forgetFabricated=forgetFabricated
+
 function A.backfillGameSeason()
 	local db=A.db()
 	if not db or db.gameSeasonFilled then
@@ -517,6 +519,18 @@ function A.backfillGameSeason()
 
 	local list=db.matches
 	if type(list)~="table"then
+		db.gameSeasonFilled=true
+		return
+	end
+
+	local pending=0
+	for i=1,#list do
+		local record=list[i]
+		if type(record)=="table"and record.gameSeason==nil and type(record.season)=="number"then
+			pending=pending+1
+		end
+	end
+	if pending==0 then
 		db.gameSeasonFilled=true
 		return
 	end
@@ -743,6 +757,209 @@ function A.goalProgress(character,count)
 	local day=A.goalResetDay()
 	return{lines=lines,reset=day and("resets "..day)or nil,
 		ring=("%d/%d"):format(count.played,count.won)}
+end
+
+local lastWeekWalk
+
+function A.lastWeek(character)
+	local start=A.weekStartEpoch()
+	if start==nil then
+		return nil,"no-week"
+	end
+	return A.paintHeld("lastWeek",lastWeekWalk,character,start-WEEK,start)
+end
+
+local function weekReading(record)
+	local participants=record.participants
+	local row=type(participants)=="table"and type(record.character)=="string"
+		and participants[record.character]or nil
+	if type(row)~="table"or type(row.rating)~="number"or type(row.ratingChange)~="number"
+		or row.rating==0 or A.ladderSilent(row)then
+		return nil
+	end
+	return row.rating,row.rating+row.ratingChange
+end
+
+lastWeekWalk=function(character,from,to)
+	local db=A.db()
+	if not(db and type(db.matches)=="table")then
+		return nil,"no-store"
+	end
+	local week={from=from,to=to,matches=0,rated={played=0,won=0},
+		unrated={played=0,won=0},world={outings=0,kills=0,deaths=0},ratings={}}
+	local ladders,order,refusals={},{},{}
+	local matches=db.matches
+	for i=1,#matches do
+		local record=matches[i]
+		local at=type(record)=="table"and A.recordedBy(record,character)and A.recordEpoch(record)or nil
+		local format=at~=nil and at>=from and at<to and record.format or nil
+		if format=="world"then
+			week.matches=week.matches+1
+			local world=week.world
+			world.outings=world.outings+1
+			world.kills=world.kills+(type(record.kills)=="number"and record.kills or 0)
+			world.deaths=world.deaths+(type(record.deaths)=="number"and record.deaths or 0)
+		elseif format~=nil and format~="duel"then
+			week.matches=week.matches+1
+			local side=record.rated==true and week.rated or week.unrated
+			side.played=side.played+1
+			if A.recordVerdict(record)=="win"then
+				side.won=side.won+1
+			end
+			local before,after=nil,nil
+			if record.rated==true then
+				before,after=weekReading(record)
+			end
+			if before~=nil then
+				refusals[format]=refusals[format]or A.ladderRefusals(format,nil,character)
+			end
+			if before~=nil and refusals[format][record]==nil then
+				local ladder=ladders[format]
+				if ladder==nil then
+					ladder={readings=0}
+					ladders[format]=ladder
+					order[#order+1]=format
+				end
+				ladder.readings=ladder.readings+1
+				if ladder.firstAt==nil or at<ladder.firstAt then
+					ladder.firstAt,ladder.first=at,before
+				end
+				if ladder.lastAt==nil or at>=ladder.lastAt then
+					ladder.lastAt,ladder.last=at,after
+				end
+			end
+		end
+	end
+	for _,format in ipairs(order)do
+		local ladder=ladders[format]
+		if ladder.readings>=2 then
+			week.ratings[#week.ratings+1]={format=format,change=ladder.last-ladder.first}
+		end
+	end
+	return week
+end
+
+local function counted(n,noun)
+	return("%d %s%s"):format(n,noun,n==1 and""or"s")
+end
+
+local function playedText(side,word)
+	return("%d %s, %d won"):format(side.played,word,side.won)
+end
+
+local function worldText(world)
+	return("%s %s %s"):format(counted(world.outings,"outing"),counted(world.kills,"kill"),
+		counted(world.deaths,"death"))
+end
+
+function A.lastWeekLines(week)
+	local lines={}
+	if week.rated.played>0 then
+		lines[#lines+1]=playedText(week.rated,"rated")
+	elseif week.unrated.played>0 then
+		lines[#lines+1]=playedText(week.unrated,"unrated")
+	end
+	if week.world.outings>0 then
+		lines[#lines+1]=worldText(week.world)
+	end
+	return lines
+end
+
+function A.lastWeekText(week)
+	if week.matches==0 then
+		return nil
+	end
+	local parts={}
+	if week.rated.played>0 then
+		parts[#parts+1]=playedText(week.rated,"rated")
+	end
+	for _,ladder in ipairs(week.ratings)do
+		parts[#parts+1]=("%s %s"):format(A.formatLabel(ladder.format),A.signedText(ladder.change))
+	end
+	if week.unrated.played>0 then
+		parts[#parts+1]=playedText(week.unrated,"unrated")
+	end
+	if week.world.outings>0 then
+		parts[#parts+1]=worldText(week.world)
+	end
+	return"last week: "..table.concat(parts,", ")
+end
+
+function A.lastWeekRing(week)
+	if week.matches==0 then
+		return"-"
+	end
+	return("%d/%d"):format(week.rated.played,week.rated.won)
+end
+
+function A.lastWeekReadout()
+	local guid=A.ownGuid()
+	if guid==nil then
+		return"last week cannot be counted: your character did not read"
+	end
+	local week,reason=A.lastWeek(guid)
+	if week==nil then
+		return reason=="no-week"and"last week cannot be counted: the client gives no weekly reset"
+			or("last week cannot be counted (%s)"):format(tostring(reason))
+	end
+	return A.lastWeekText(week)or"last week: no match recorded"
+end
+
+function A.weekRecapEnabled()
+	local db=A.db()
+	return not(db and type(db.ui)=="table"and db.ui.weekRecap==false)
+end
+
+function A.setWeekRecap(enabled)
+	local db=A.db()
+	if not db then
+		return false
+	end
+	db.ui=type(db.ui)=="table"and db.ui or{}
+	if enabled==false then
+		db.ui.weekRecap=false
+	else
+		db.ui.weekRecap=nil
+	end
+	if type(A.notifyWeekRecapSetting)=="function"then
+		A.notifyWeekRecapSetting()
+	end
+	return true
+end
+
+function A.weekRecapLogin()
+	local db=A.db()
+	local guid=A.ownGuid()
+	local start=A.weekStartEpoch()
+	local reason,line,week
+	if not db then
+		reason="no-store"
+	elseif not A.weekRecapEnabled()then
+		reason="off"
+	elseif start==nil then
+		reason="no-week"
+	elseif guid==nil then
+		reason="no-character"
+	else
+		local seen=type(db.weekRecapSeen)=="table"and db.weekRecapSeen[guid]or nil
+		if type(seen)=="number"and seen>start-WEEK/2 then
+			reason="seen"
+		else
+			local why
+			week,why=A.lastWeek(guid)
+			line=week and A.lastWeekText(week)or nil
+			if line==nil then
+				reason=week and"empty"or why
+			else
+				db.weekRecapSeen=type(db.weekRecapSeen)=="table"and db.weekRecapSeen or{}
+				db.weekRecapSeen[guid]=start
+			end
+		end
+	end
+	A.trace("weekrecap",{state=line and"printed"or"held",reason=reason,
+		matches=week and week.matches or nil,weekRated=week and A.lastWeekRing(week)or nil,
+		weekStart=start},"ui")
+	return line,reason
 end
 
 local TIER_QUALITY={[0]=0,[1]=1,[6]=1,[2]=2,[7]=2,[3]=3,[8]=3,[4]=4,[5]=5}

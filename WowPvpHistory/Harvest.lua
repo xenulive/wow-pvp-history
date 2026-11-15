@@ -1,4 +1,4 @@
--- WowPvpHistory 0.75.26
+-- WowPvpHistory 0.75.68
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -388,13 +388,10 @@ local function readOwnRating()
 		return nil
 	end
 	local gotSelf,own,realm=pcall(UnitName,"player")
-	if not(gotSelf and type(own)=="string"and A.canRead(own)and own~="")then
+	if not(gotSelf and A.readableString(own))then
 		return nil
 	end
-	local qualified=nil
-	if type(realm)=="string"and A.canRead(realm)and realm~=""then
-		qualified=own.."-"..realm
-	end
+	local qualified=A.qualifiedName(own,realm)
 
 	local ok,rows=pcall(GetNumBattlefieldScores)
 	if not ok or not A.canRead(rows)or type(rows)~="number"then
@@ -940,6 +937,7 @@ local function store(record,participants,kept,rows,attempt,readSeconds,readAt,st
 	local rateClause,rateSign=false,nil
 	local flagged
 	local streakWord,nudged,nudgeCount,rosterLinked
+	local milestoneKinds
 	local said,chatErr=pcall(function()
 		if not A.postGameEnabled()then
 			return
@@ -963,7 +961,8 @@ local function store(record,participants,kept,rows,attempt,readSeconds,readAt,st
 			A.say(nudgeLine)
 		end
 		line="bests"
-		local bestLine=A.newBestLine(bestsSet)
+		local bestLine
+		bestLine,milestoneKinds=A.afterMatchBestsLine(record,bestsSet)
 		if bestLine then
 			A.say(bestLine)
 		end
@@ -990,7 +989,7 @@ local function store(record,participants,kept,rows,attempt,readSeconds,readAt,st
 	pcall(A.trace,"chat-line",{source="harvest",
 		state=said and(line=="switch"and"switch"or"said")or line,id=record.id,err=chatErr,
 		rateClause=rateClause,rateSign=rateSign,flagged=flagged,streak=streakWord,
-		nudge=nudged,count=nudgeCount,rosterLink=rosterLinked})
+		nudge=nudged,count=nudgeCount,rosterLink=rosterLinked,milestones=milestoneKinds})
 
 	local cuedOk,cuedErr=pcall(function()
 		A.playCue("saved",record.id)

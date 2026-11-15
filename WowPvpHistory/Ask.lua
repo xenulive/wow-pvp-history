@@ -1,4 +1,4 @@
--- WowPvpHistory 0.75.26
+-- WowPvpHistory 0.75.68
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -114,7 +114,7 @@ local function countsMatches(format)
 		and(format=="duel"or(type(A.specMatchFormat)=="function"and A.specMatchFormat(format)))
 end
 
-local function specReadings(format,season,character,bound,comp)
+local function specReadings(format,season,character,bound)
 	local rounds=roundFormat(format)
 	local matches=type(A.specMatchFormat)=="function"and A.specMatchFormat(format)
 	if not rounds and not matches then
@@ -123,7 +123,7 @@ local function specReadings(format,season,character,bound,comp)
 	if type(A.specCards)~="function"then
 		return nil,nil,UNREADABLE,nil,"the comp readings did not load"
 	end
-	local ok,cards,floor,rows,_,_,read=pcall(A.specCards,format,season,character,bound,comp)
+	local ok,cards,floor,rows,_,_,read=pcall(A.specCards,format,season,character,bound)
 	if not ok then
 		return nil,nil,UNREADABLE,nil,"the comp readings could not be taken"
 	end
@@ -254,11 +254,11 @@ local function answerDuelBeats(season,character,bound)
 	return answer
 end
 
-local function answerBeats(format,season,character,bound,comp)
+local function answerBeats(format,season,character,bound)
 	if format=="duel"then
 		return answerDuelBeats(season,character,bound)
 	end
-	local _,rows,reason,_,fault,read=specReadings(format,season,character,bound,comp)
+	local _,rows,reason,_,fault,read=specReadings(format,season,character,bound)
 	if reason then
 		return{reason=reason,fault=fault,preview=NOTHING}
 	end
@@ -279,8 +279,8 @@ local function answerBeats(format,season,character,bound,comp)
 	},read,"against")
 end
 
-local function answerWorth(format,season,character,bound,comp)
-	local cards,rows,reason,_,fault,read=specReadings(format,season,character,bound,comp)
+local function answerWorth(format,season,character,bound)
+	local cards,rows,reason,_,fault,read=specReadings(format,season,character,bound)
 	if reason then
 		return{reason=reason,fault=fault,preview=NOTHING}
 	end
@@ -335,19 +335,19 @@ local function worstFirst(a,b)
 	return tostring(a.name)<tostring(b.name)
 end
 
-local function answerWhere(format,season,character,bound,comp)
+local function answerWhere(format,season,character,bound)
 	if type(A.mapTally)~="function"then
 		return{reason=UNREADABLE,fault="the map grouping did not load",
 			preview=NOTHING}
 	end
-	local ok,rows,considered,decided,unplaced=pcall(A.mapTally,format,season,character,bound,comp)
+	local ok,rows,considered,decided,unplaced=pcall(A.mapTally,format,season,character,bound)
 	if not ok or type(rows)~="table"then
 		return{reason=UNREADABLE,fault="the map grouping could not be taken",
 			preview=NOTHING}
 	end
 
 	if#rows==0 then
-		local reason=comp~=nil and"no round against this composition here yet"or"no matches here yet"
+		local reason="no matches here yet"
 		if(unplaced or 0)>0 then
 			reason=("no map was recorded for %d %s here"):format(unplaced,
 				unplaced==1 and"match"or"matches")
@@ -446,12 +446,12 @@ local ANSWERS={
 	comp=answerComp,
 }
 
-function A.askAnswer(key,format,season,character,bound,comp)
+function A.askAnswer(key,format,season,character,bound)
 	local question=A.askQuestion(key)
 	if question==nil then
 		return nil
 	end
-	local answer=ANSWERS[key](format,season,character,bound,comp)
+	local answer=ANSWERS[key](format,season,character,bound)
 	answer.key=key
 	answer.title=question.title
 	answer.group=question.group
@@ -463,7 +463,7 @@ function A.askAnswer(key,format,season,character,bound,comp)
 	end
 	answer.unit={"round","rounds"}
 	answer.floorUnit="rounds"
-	if key=="where"and comp==nil then
+	if key=="where"then
 		answer.unit={"decided","decided"}
 		answer.floorUnit="decided matches"
 	end
@@ -486,7 +486,6 @@ function A.askAnswer(key,format,season,character,bound,comp)
 		answer.group="THE CLASSES YOU MEET"
 	end
 	answer.table=question.table
-	answer.comp=comp
 	if type(answer.lead)=="table"and not A.askRecordFits(key,answer.lead)then
 		answer.lead=nil
 		answer.preview=NOTHING
@@ -551,11 +550,11 @@ function A.clickAskUnder()
 	return askUnderShown
 end
 
-function A.askAnswers(format,season,character,bound,comp)
+function A.askAnswers(format,season,character,bound)
 	local out={}
 	local keys=A.askKeys(format)
 	for i=1,#keys do
-		out[#out+1]=A.askAnswer(keys[i],format,season,character,bound,comp)
+		out[#out+1]=A.askAnswer(keys[i],format,season,character,bound)
 	end
 	return out
 end
@@ -1239,10 +1238,10 @@ function A.setSpecsView(shown)
 	else
 		specsViewShown=shown==true
 	end
-	if specsViewShown and type(A.mapsViewShown)=="function"and A.mapsViewShown()then
+	if specsViewShown and A.mapsViewShown()then
 		A.setMapsView(false)
 	end
-	if specsViewShown and type(A.setTableView)=="function"then
+	if specsViewShown then
 		A.setTableView(nil)
 	end
 	return specsViewShown
@@ -1266,7 +1265,7 @@ function A.mapsViewShown()
 	if mapsViewHeld~=nil then
 		return mapsViewHeld
 	end
-	local db=type(A.db)=="function"and A.db()or nil
+	local db=A.db()
 	return type(db)=="table"and type(db.ui)=="table"and db.ui.statsView=="maps"or false
 end
 
@@ -1313,7 +1312,7 @@ function A.clickTableView(view)
 end
 
 function A.storeMapsView(shown)
-	local db=type(A.db)=="function"and A.db()or nil
+	local db=A.db()
 	if type(db)~="table"or type(db.ui)~="table"then
 		return false
 	end

@@ -1,4 +1,4 @@
--- WowPvpHistory 0.75.26
+-- WowPvpHistory 0.75.68
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -264,6 +264,8 @@ local function newMatch(w)
 				reason=reason or"store-moved"
 			elseif r.format=="world"then
 				reason=reason or"world-record"
+			elseif r.format=="duel"then
+				reason=reason or"duel"
 			elseif r~=w.record then
 				return"new-match"
 			end

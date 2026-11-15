@@ -1,4 +1,4 @@
--- WowPvpHistory 0.75.26
+-- WowPvpHistory 0.75.68
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -1477,16 +1477,45 @@ function A.standingReading(format,season,character,bound,summary,_,listed)
 			sub[#sub+1]=record
 		end
 		local count=type(summary.matches)=="number"and summary.matches or nil
-		if count~=nil and count>0 and(wins==nil or wins+losses+draws~=count)then
-			sub[#sub+1]=("%d %s"):format(count,count==1 and"match"or"matches")
+		local outings=tonumber(summary.outings)or 0
+		local counted=nil
+		if outings>0 or(count~=nil and count>0 and(wins==nil or wins+losses+draws~=count))then
+			counted=A.matchesAndOutingsText(summary)
+			sub[#sub+1]=counted
+		end
+		local subForms={}
+		if avgText~=nil and#sub>0 then
+			subForms[#subForms+1]=table.concat(sub,", ")..", "..avgText
+		end
+		if#sub>0 then
+			subForms[#subForms+1]=table.concat(sub,", ")
+		end
+		if record~=nil and counted~=nil then
+			if(draws or 0)>0 then
+				subForms[#subForms+1]=("%d-%d, %s"):format(wins,losses,counted)
+			end
+			subForms[#subForms+1]=record
 		end
 		if avgText~=nil then
 			sub[#sub+1]=avgText
 		end
-		reading.figures={
-			{label="WIN RATE",value=A.percentText(rate),sub=#sub>0 and table.concat(sub,", ")or nil,
-				tone=A.winRateTone(rate)},
-		}
+		local first={label="WIN RATE",value=A.percentText(rate),tone=A.winRateTone(rate)}
+		if outings>0 and(wins or 0)+(losses or 0)+(draws or 0)==0 then
+			local held={}
+			for i=1,#records do
+				if records[i].format=="world"then
+					held[#held+1]=records[i]
+				end
+			end
+			local world=A.worldReading(held)
+			local tallied=world.tallied>0
+			first={label="KILLS AND DEATHS",value=tallied and A.kdPairText(world.kills,world.deaths)or"-",
+				tone=world.ratioTone}
+		end
+		first.sub=#sub>0 and table.concat(sub,", ")or nil
+		first.subForms=#subForms>1 and subForms or nil
+		reading.outings=outings
+		reading.figures={first}
 	else
 		local rate=select(4,A.winRecord(summary))
 		reading.record=A.winRecordText(summary,format)
@@ -1536,18 +1565,53 @@ function A.standingReading(format,season,character,bound,summary,_,listed)
 	return reading
 end
 
-local RECAP_CELLS={
-	{key="record",label="RECORD"},
-	{key="rating",label="RATING"},
-	{key="best",label="BEST WIN"},
-	{key="worst",label="WORST COMP MET"},
-	{key="with",label="PLAYED MOST WITH"},
+local RECAP_SETS={
+	retail={
+		{key="record",label="RECORD"},
+		{key="rating",label="RATING"},
+		{key="best",label="BEST WIN"},
+		{key="worst",label="WORST COMP MET"},
+		{key="with",label="PLAYED MOST WITH"},
+		giveWay={"with","worst"},
+	},
+	forever={
+		{key="record",label="RECORD"},
+		{key="kb",label="KILLING BLOWS"},
+		{key="bestMatch",label="BEST MATCH"},
+		{key="rank",label="PVP RANK"},
+		{key="with",label="PLAYED MOST WITH"},
+		giveWay={"with","bestMatch"},
+	},
 }
 
+function A.recapCellSet()
+	local name=A.clientHasNoRatedMode()and"forever"or"retail"
+	return RECAP_SETS[name],name
+end
+
 function A.sessionRecapLabels()
+	local cells=A.recapCellSet()
 	local out={}
-	for i=1,#RECAP_CELLS do
-		out[i]=RECAP_CELLS[i].label
+	for i=1,#cells do
+		out[i]=cells[i].label
+	end
+	return out
+end
+
+function A.recapKept(count)
+	local cells=A.recapCellSet()
+	local dropped={}
+	for i=1,math.max(0,#cells-(tonumber(count)or#cells))do
+		local key=cells.giveWay[i]
+		if key~=nil then
+			dropped[key]=true
+		end
+	end
+	local out={}
+	for i=1,#cells do
+		if not dropped[cells[i].key]then
+			out[#out+1]=i
+		end
 	end
 	return out
 end
@@ -1645,6 +1709,34 @@ local function countResult(held,record)
 	end
 end
 
+local function countOwnFigures(out,record)
+	local own=type(record.participants)=="table"and type(record.character)=="string"
+		and record.participants[record.character]or nil
+	if type(own)~="table"then
+		return
+	end
+	local kb=own.killingBlows
+	if type(kb)=="number"and kb==kb and kb>=0 then
+		local held=out.killingBlows or{total=0,best=0,matches=0}
+		out.killingBlows=held
+		held.total=held.total+kb
+		held.matches=held.matches+1
+		held.best=math.max(held.best,kb)
+		if A.resultTone(record)=="win"and(out.bestMatch==nil or kb>out.bestMatch.kb)then
+			local map=type(record.map)=="table"and A.readableString(record.map.name)or nil
+			out.bestMatch={id=record.id,kb=kb,map=map}
+		end
+	end
+	local level,title=A.pvpRank(record,own)
+	if level~=nil then
+		if out.rank==nil then
+			out.rank={level=level,title=title,from=level}
+		else
+			out.rank.from=level
+		end
+	end
+end
+
 function A.recapReads(format)
 	return format~="world"and format~="unknown"
 end
@@ -1688,6 +1780,7 @@ function A.sessionRecap(session,format,character)
 			end
 		end
 		countRecordComps(record,tally,order)
+		countOwnFigures(out,record)
 		for guid,row in pairs(recordMates(record))do
 			local held=mates[guid]
 			if held==nil then
@@ -1792,8 +1885,30 @@ function A.sessionRecapCells(recap)
 			tone=pairTone(with.wins,with.losses),role="nameMedium"}
 	end
 
-	for i=1,#RECAP_CELLS do
-		local cell=RECAP_CELLS[i]
+	local kb=recap.killingBlows
+	if kb~=nil then
+		values.kb={text=("%d, best %d"):format(kb.total,kb.best),tone="text"}
+	end
+
+	local bestMatch=recap.bestMatch
+	if bestMatch~=nil then
+		local text=bestMatch.map and("%d in %s"):format(bestMatch.kb,bestMatch.map)or("%d"):format(bestMatch.kb)
+		values.bestMatch={text=text,tone="win",match=bestMatch.id}
+	end
+
+	local rank=recap.rank
+	if rank~=nil then
+		local change=rank.level-rank.from
+		local text=rank.title or("%d"):format(rank.level)
+		if change~=0 then
+			text=("%s %s"):format(text,A.signedText(change))
+		end
+		values.rank={text=text,tone=change~=0 and pairTone(change,0)or"text"}
+	end
+
+	local cells=A.recapCellSet()
+	for i=1,#cells do
+		local cell=cells[i]
 		local value=values[cell.key]
 		out[i]={key=cell.key,label=cell.label,text=value and value.text or"-",
 			tone=value and value.tone or"dim",read=value~=nil,members=value and value.members or nil,

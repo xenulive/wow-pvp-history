@@ -19,7 +19,7 @@ companion app.
 [the website](https://pvphistory.xenu.live), or
 [report a problem](https://github.com/xenulive/wow-pvp-history/issues).
 
-![The match history window](https://raw.githubusercontent.com/wiki/xenulive/wow-pvp-history/images/history-window.png)
+![The match history window on the Arena (2v2) tab](screenshots/01-arena-history.png)
 
 ## What it does
 
@@ -33,17 +33,20 @@ companion app.
 - Solo Shuffle round by round: who was on your team each round, who won it, and how each player's
   results changed your rating.
 - The team comps, enemy healer pairs and specs you struggle against, taken from your own games.
-- **Ask** answers four questions from your own games: what beats you, your best teammate spec, the comp
-  you do worst against, and the map you lose on most.
-- Everyone you've met, with your own notes, tags and a rep from **Strong** to **Bad**. Your notes show
-  up on tooltips, in the group finder, and as a banner at the start of a match when someone you know is
-  in it.
-- Duel results, and your kills and deaths in the open world with War Mode on.
+- The **Stats** tab answers four questions from your own games: what beats you, your best teammate,
+  the comp you do worst against, and where you lose.
+- Everyone you've met, with your own notes and tags, and their skill (**Weak** to **Strong**) and
+  attitude (**Toxic** to **Great**) as you rate them. Your notes show up on tooltips, in the group
+  finder, and as a banner at the start of a match when someone you know is in it. A player you keep
+  meeting on the other side is marked as a rival on their nameplate and tooltip.
+- Milestones such as your 50th match of a format or a new longest win streak, and a recap of last
+  week's matches and World PvP.
+- Duel results, and your kills and deaths in the open world with War Mode on, or while flagged for PvP on a realm with no War Mode.
 - Automatic backups on logout, export and import to move your history between computers or characters,
   and CSV export for spreadsheets.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/wiki/xenulive/wow-pvp-history/images/shuffle-rounds.png" alt="A Solo Shuffle match, round by round" width="720">
+  <img src="screenshots/02-match-window.png" alt="A Solo Shuffle match, round by round" width="720">
 </p>
 
 ## Install
@@ -79,7 +82,7 @@ After a match, open your history any of these ways:
 
 - type `/pvph`
 - click the minimap button, or pick it from the addon menu beside the minimap
-- bind a key under **Key Bindings**, in the **AddOns** section, under **PvPHistory**
+- bind a key under **Key Bindings**, in the **PvPHistory** section
 
 The commands you'll use most:
 
@@ -159,3 +162,5 @@ The bundled Barlow Semi Condensed and IBM Plex Mono fonts are under the
 
 World of Warcraft is a trademark of Blizzard Entertainment, Inc. This addon is not affiliated with or
 endorsed by Blizzard.
+
+<!-- reviewed at 0.75.68 -->

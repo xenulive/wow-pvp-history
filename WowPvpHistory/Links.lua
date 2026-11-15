@@ -1,4 +1,4 @@
--- WowPvpHistory 0.75.26
+-- WowPvpHistory 0.75.68
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -125,7 +125,10 @@ local function register()
 	end
 
 	local ok=pcall(registry.RegisterCallback,registry,"SetItemRef",function(_,raw)
-		pcall(route,raw)
+		local routed,err=pcall(route,raw)
+		if not routed then
+			A.noteError(err,"link")
+		end
 	end)
 	return ok
 end

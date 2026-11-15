@@ -1,7 +1,7 @@
 ## Interface: 120105, 120100, 16001
 ## Title: PvPHistory
 ## Notes: A history of your PvP matches and the players in them.
-## Version: 0.75.26
+## Version: 0.75.68
 ## X-License: MIT
 ## X-Website: https://pvphistory.xenu.live
 ## X-Curse-Project-ID: 1739823
@@ -16,7 +16,7 @@
 ## AddonCompartmentFuncOnEnter: WowPvpHistory_OnAddonCompartmentEnter
 ## AddonCompartmentFuncOnLeave: WowPvpHistory_OnAddonCompartmentLeave
 
-# WowPvpHistory 0.75.26
+# WowPvpHistory 0.75.68
 # Author:  Xenu-Sentinels
 # Project: wow-pvp-history
 #          https://github.com/xenulive/wow-pvp-history
@@ -37,6 +37,7 @@ Hold.lua
 Match.lua
 Meter.lua
 Players.lua
+Rivals.lua
 Notes.lua
 Edits.lua
 Query.lua
@@ -62,6 +63,7 @@ FrameSummary.lua
 MatchHead.lua
 Frame.lua
 FrameRecap.lua
+FrameStart.lua
 FrameKeys.lua
 Compare.lua
 Dossier.lua

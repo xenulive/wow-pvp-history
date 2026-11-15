@@ -1,4 +1,4 @@
--- WowPvpHistory 0.75.26
+-- WowPvpHistory 0.75.68
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -743,7 +743,7 @@ local function paintSecond(reading,records,y,columnX,columnWidth,labelWidth,body
 	y=y-A.metric("compareGroupRow")
 	window.specHead:ClearAllPoints()
 	window.specHead:SetPoint("TOPLEFT",window.body,"TOPLEFT",0,y-4)
-	window.specHead:SetText("SPEC")
+	window.specHead:SetText(A.specWord():upper())
 	A.style(window.specHead,"label","dim")
 	window.specHead:Show()
 	for c,record in ipairs(records)do

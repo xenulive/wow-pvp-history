@@ -1,4 +1,4 @@
--- WowPvpHistory 0.75.26
+-- WowPvpHistory 0.75.68
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -279,7 +279,7 @@ local function sampleMates()
 	local mates={}
 	for i=1,#SAMPLE_MATES do
 		local ok,word,token=pcall(GetClassInfo,SAMPLE_MATES[i])
-		if ok and type(word)=="string"and A.canRead(word)and word~=""and type(token)=="string"then
+		if ok and A.readableString(word)and type(token)=="string"then
 			mates[i]={word=word,token=token}
 		end
 	end
@@ -343,7 +343,10 @@ local function build()
 		dragging=true
 		pcall(self.StartMoving,self)
 	end)
-	made:SetScript("OnHide",function()
+	made:SetScript("OnHide",function(self)
+		if dragging then
+			A.stopDrag(self)
+		end
 		dragging=false
 	end)
 	made:SetScript("OnDragStop",function(self)

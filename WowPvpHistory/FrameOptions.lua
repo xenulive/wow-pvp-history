@@ -1,4 +1,4 @@
--- WowPvpHistory 0.75.26
+-- WowPvpHistory 0.75.68
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -365,6 +365,18 @@ local SWITCHES={
 		set=function(on)return A.setSight(on)end,
 	},
 	{
+		key="rivals",
+		section="notes",
+		card="ON NAMEPLATES",
+		label="Mark rivals",
+		find="mark rivals when they appear met on the other side",
+		tip="Outside a battleground or an arena, mark the nameplate of a player you have met 3 or more "
+			.."times on the other side, name them once in chat, and add a line to their tooltip.",
+		get=function()return A.rivalsEnabled()end,
+		set=function(on)return A.setRivals(on)end,
+		needs=A.RIVALS_NEEDS,
+	},
+	{
 		key="duels",
 		section="recording",
 		card="WHAT IS RECORDED",
@@ -419,7 +431,8 @@ local SWITCHES={
 		section="recording",
 		card="WHAT IS RECORDED",
 		label="Record World PvP",
-		tip="With War Mode on, keep the kills and deaths of a stretch of open-world PvP as an outing. "
+		tip="With War Mode on, or flagged for PvP on a realm with no War Mode, keep the kills and deaths of a "
+			.."stretch of open-world PvP as an outing. "
 			.."Turning it off ends an outing already open.",
 		get=function()return A.worldEnabled()end,
 		set=function(on)return A.setWorld(on)end,
@@ -489,6 +502,26 @@ local SWITCHES={
 			.."you rest the pointer on the name, and in the player's own window.",
 		get=function()return A.realmsShown()end,
 		set=function(on)return A.setRealms(on,"settings")end,
+	},
+	{
+		key="killLine",
+		section="alerts",
+		card="IN THE OPEN WORLD",
+		label="Chat line after a world kill",
+		tip="After each player you kill in the open world, print their name, how many times you have "
+			.."killed them this outing and in all, and your record against them in matches.",
+		get=function()return A.killLineEnabled()end,
+		set=function(on)return A.setKillLine(on)end,
+	},
+	{
+		key="weekRecap",
+		section="aftermatch",
+		card="AFTER A MATCH",
+		label="Last week's recap at login",
+		tip="At the first login after the weekly reset, print what this character played the week "
+			.."before. The LAST WEEK cell on the History strip shows either way.",
+		get=function()return A.weekRecapEnabled()end,
+		set=function(on)return A.setWeekRecap(on)end,
 	},
 }
 
@@ -1287,6 +1320,42 @@ ROW_BUILDERS.announcementReset={
 	end,
 }
 
+ROW_BUILDERS.chatWindow={
+	build=function(frame,card)
+		local row=cardRow(card,"Messages print in",{
+			key="chatWindow",
+			find="messages print in chat window tab main chat pvphistory",
+			tip="The chat window PvPHistory's lines print in. A window closed later sends them back to "
+				.."the main chat. Make a PvPHistory tab opens a chat window of its own and chooses it.",
+		})
+		A.style(row.label,"cardText","text")
+		local choose=A.dropdown(row,A.chatWindowChoices(),function(value)
+			if A.setChatWindowChoice(value)then
+				outcome({A.chatWindowLines()[1]})
+			end
+		end)
+		atRight(row,choose)
+		hoverTip(choose,row.tipSpec)
+		local make=buildButton(row,"Make a PvPHistory tab",function()
+			if not A.makeChatTab()then
+				outcome({"no chat window could be opened: the client offers no timer"},"fault")
+			end
+		end)
+		atRight(row,make,choose)
+		hoverTip(make,row.tipSpec)
+		row.find=row.find.." make a pvphistory tab"
+		frame.chatWindowDropdown=choose
+		frame.chatTabButton=make
+		return row
+	end,
+}
+
+local function paintChatWindow(frame)
+	if frame.chatWindowDropdown then
+		A.setDropdownChoices(frame.chatWindowDropdown,A.chatWindowChoices(),A.chatWindowChoice())
+	end
+end
+
 ROW_BUILDERS.recordPause={
 	build=function(frame,card)
 		local row,button=buttonRow(card,"Pause recording","Pause an hour",function()
@@ -1720,8 +1789,7 @@ local PAGE_CARDS={
 	general={
 		{title="RESULTS ON SCREEN",rows={"overlayShown","overlayTwo","overlayCount","overlayOpacity",
 			"overlayCombat"}},
-		{title="MINIMAP AND LOGIN",rows={"minimap","minimapPosition","loginLine"}},
-		{title="GOAL",rows={"goalPlayed","goalWon"}},
+		{title="MINIMAP AND LOGIN",rows={"minimap","minimapPosition","loginLine","chatWindow"}},
 		{title="WINDOWS",rows={"rememberTab","rememberFilters","closeWithMain","geometryReset","announcementReset"},link="clientPanel"},
 	},
 	appearance={
@@ -1734,15 +1802,17 @@ local PAGE_CARDS={
 			"announceCrowd","announceTime","announceSize","announceOpacity","announcePosition"},
 			preview=true},
 		{title="IN A SOLO SHUFFLE",rows={"tally","tallyPosition"}},
+		{title="IN THE OPEN WORLD",rows={"killLine"}},
 	},
 	aftermatch={
-		{title="AFTER A MATCH",rows={"postGame","lossNudge","openAfterMatch","toast","toastSeconds","toastPosition"}},
+		{title="AFTER A MATCH",rows={"postGame","lossNudge","openAfterMatch","toast","toastSeconds","toastPosition","weekRecap"}},
 		{title="SOUNDS",rows={"soundBad","soundBest","soundSaved"}},
+		{title="GOAL",rows={"goalPlayed","goalWon"}},
 	},
 	notes={
 		{title="WHERE YOUR NOTES SHOW",rows={"tooltip","contextMenu"}},
 		{title="IN CHAT",rows={"chatMark"}},
-		{title="ON NAMEPLATES",rows={"sight"}},
+		{title="ON NAMEPLATES",rows={"sight","rivals"}},
 		{title="NOTE TEMPLATES",rows={"noteTemplate1","noteTemplate2","noteTemplate3","noteTemplate4",
 			"noteTemplate5"}},
 		{title="TIDY",rows={"tidy"}},
@@ -2922,6 +2992,7 @@ function A.refreshOptionsWindow(walk,finding)
 
 	A.containedPaint("options/theme",A.setSegmentChosen,window.themeSegment,A.theme())
 	A.containedPaint("options/clock",A.setSegmentChosen,window.clockSegment,A.clockSetting())
+	A.containedPaint("options/chat-window",paintChatWindow,window)
 	A.containedPaint("options/result-pair",paintResultPair,window)
 	A.containedPaint("options/announce-shape",function()
 		A.setSegmentChosen(window.announceShapeSegment,A.announceShape())

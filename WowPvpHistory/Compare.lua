@@ -1,4 +1,4 @@
--- WowPvpHistory 0.75.26
+-- WowPvpHistory 0.75.68
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -1105,7 +1105,8 @@ function A.compareLobbyTooltip(row,cell)
 	if type(row)~="table"or type(cell)~="table"or type(cell.each)~="table"or#cell.each<2 then
 		return nil
 	end
-	return("%s %s: %s"):format(row.spec,row.class or row.classToken,table.concat(cell.each,", "))
+	return("%s: %s"):format(tostring(A.specAndClass(row.spec,row.class or row.classToken)),
+		table.concat(cell.each,", "))
 end
 
 function A.compareRoundLines(records)
@@ -1179,7 +1180,8 @@ function A.compareLobbyLines(records,lobby)
 			end
 			parts[c]=("#%s %s"):format(A.matchIdText(record.id),text)
 		end
-		out[#out+1]=("lobby %s %s: %s"):format(row.spec,row.class or row.classToken,table.concat(parts,", "))
+		out[#out+1]=("lobby %s: %s"):format(tostring(A.specAndClass(row.spec,row.class or row.classToken)),
+			table.concat(parts,", "))
 	end
 	if lobby and lobby.shared then
 		local parts={}

@@ -1,4 +1,4 @@
--- WowPvpHistory 0.75.26
+-- WowPvpHistory 0.75.68
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -14,7 +14,7 @@ function A.canary()
 end
 
 function A.noteCanary(constants)
-	if type(A.sandboxed)=="function"and A.sandboxed()then
+	if A.sandboxed()then
 		return nil
 	end
 	local db=A.db()

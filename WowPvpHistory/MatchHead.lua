@@ -1,4 +1,4 @@
--- WowPvpHistory 0.75.26
+-- WowPvpHistory 0.75.68
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -8,7 +8,7 @@ local _,A=...
 local LADDER_SLOTS=10
 local CARD_SLOTS=6
 local CARD_NAMES=6
-local TEAM_CARD_PAIRS=4
+local TEAM_CARD_PAIRS=5
 local YOUR_LINE_CELLS=4
 
 function A.matchRatingParts(format,from,to)
@@ -195,6 +195,18 @@ local function rankOf(own,rows,field)
 	return above+1,held
 end
 
+local function honorCell(record,own)
+	if not A.clientHasNoRatedMode()then
+		return{key="honor",label="HONOR LEVEL",
+			value=type(own.honorLevel)=="number"and("%d"):format(own.honorLevel)or nil}
+	end
+	local level,title=A.pvpRank(record,own)
+	local number=level and("%d"):format(level)or nil
+	local form=PVP_RANK_NUMBER
+	local short=level and title and type(form)=="string"and form:format(level)or nil
+	return{key="honor",label="PVP RANK",value=title or number,short=short}
+end
+
 function A.yourLineHead(record)
 	if type(record)~="table"or record.format=="duel"or record.format=="world"
 		or type(record.participants)~="table"or type(record.character)~="string"then
@@ -246,8 +258,7 @@ function A.yourLineHead(record)
 		{key="share",label=split and"OF YOUR SIDE"or"OF THE LOBBY",value=A.percentText(share)},
 		{key="kb",label="KILLING BLOWS",value=type(own.kb)=="number"and("%d"):format(own.kb)or nil,
 			place=placeText(kbPlace,kbOf)},
-		{key="honor",label="HONOR LEVEL",
-			value=type(own.honorLevel)=="number"and("%d"):format(own.honorLevel)or nil},
+		honorCell(record,own),
 	}
 	local words,drawn={"YOUR LINE"},0
 	for i=1,#cells do
@@ -620,7 +631,7 @@ local function paintBanner(line,h)
 	line.bannerNote:SetText(detailText(h,true))
 	line.bannerNote:ClearAllPoints()
 	if place~=""then
-		A.style(line.bannerPlace,"heading","bright")
+		A.style(line.bannerPlace,h.format=="duel"and"nameHeading"or"heading","bright")
 		line.bannerPlace:SetText(place)
 		line.bannerPlace:ClearAllPoints()
 		line.bannerPlace:SetPoint("BOTTOMLEFT",line,"BOTTOMLEFT",pad,pad)
@@ -663,7 +674,7 @@ end
 local function paintHeadline(line,h)
 	local width=availableWidth(h)
 	local left=paintChip(line,h,width-A.metric("rowCellGap"),false)
-	A.style(line.headDetails,"bodyText","dim")
+	A.style(line.headDetails,h.format=="duel"and"nameText"or"bodyText","dim")
 	line.headDetails:SetText(detailText(h,false))
 	line.headDetails:ClearAllPoints()
 	line.headDetails:SetPoint("LEFT",line,"LEFT",0,0)
@@ -755,7 +766,7 @@ local function paintCardName(card,n,x,y,width,label,classToken,spec,faint,healer
 	end
 	icon:SetAlpha(faint and 0.6 or 1)
 	icon:Show()
-	A.style(name,"note","text")
+	A.style(name,"nameNote","text")
 	name:SetTextColor(A.classColor(classToken))
 	name:SetAlpha(faint and 0.6 or 1)
 	name:SetText(label)
@@ -1047,7 +1058,13 @@ local function paintYourLine(line,h)
 		label:SetWidth(math.max(1,cellWidth-gap))
 		label:Show()
 		A.style(value,"number",cell.value~=nil and"text"or"dim")
-		value:SetText(cell.value or"-")
+		local text=cell.value
+		if cell.short~=nil then
+			local cut=A.textRoom(value,text)>cellWidth-gap
+			text=cut and cell.short or text
+			h.rankForm=cut and"short"or"title"
+		end
+		value:SetText(text or"-")
 		value:ClearAllPoints()
 		value:SetPoint("TOPLEFT",line.yourBg,"TOPLEFT",x,figureTop)
 		value:Show()
@@ -1168,6 +1185,24 @@ function A.paintTeamCards(line,h)
 		end
 
 		y=y-A.fontSize("label")-A.metric("roundCardLine")
+		local spread,count=0,0
+		for c=1,#card.values do
+			if type(columns[c])=="table"then
+				local figure=values[c]
+				A.style(card.values[c],"number",figure~=nil and"text"or"dim")
+				A.style(card.labels[c],"label","dim")
+				spread=spread+A.textRoom(card.values[c],figure~=nil and tostring(figure)or"-")
+					+A.metric("rowMarkGap")+A.textRoom(card.labels[c],columns[c].short)
+				count=count+1
+			end
+		end
+		local room,wide=cardWidth-pad*2,A.metric("headGap")*2
+		local gaps=math.max(0,count-1)
+		local pairGap=spread+wide*gaps>room and A.metric("headGap")or wide
+		if s==1 then
+			h.cardPairs=count
+			h.cardFit=pairGap==wide and"wide"or(spread+pairGap*gaps>room and"over"or"tight")
+		end
 		local x=pad
 		for c=1,#card.values do
 			local value,label,column=card.values[c],card.labels[c],columns[c]
@@ -1185,7 +1220,7 @@ function A.paintTeamCards(line,h)
 				label:ClearAllPoints()
 				label:SetPoint("BOTTOMLEFT",value,"BOTTOMRIGHT",A.metric("rowMarkGap"),0)
 				label:Show()
-				x=x+A.textRoom(label,column.short)+A.metric("headGap")*2
+				x=x+A.textRoom(label,column.short)+pairGap
 			else
 				value:SetText("")
 				label:SetText("")
@@ -1335,6 +1370,8 @@ function A.traceMatchHead(id,rows,height,box)
 	local cut=0
 	local counts={spec=0,class=0,square=0,blank=0,rows=0,bots=0}
 	local lineCells,honor,stripes,healers=nil,0,0,0
+	local rankForm=nil
+	local cardPairs,cardFit=nil,nil
 	local function player(c)
 		if type(c)~="table"then
 			return
@@ -1355,6 +1392,7 @@ function A.traceMatchHead(id,rows,height,box)
 			player(type(joined)=="table"and joined.cells or nil)
 		elseif type(h)=="table"and h.kind=="yourLine"then
 			lineCells=h.drawn or 0
+			rankForm=h.rankForm
 		end
 		if type(c)=="table"and c.look=="team"then
 			team=true
@@ -1369,6 +1407,9 @@ function A.traceMatchHead(id,rows,height,box)
 		if type(h)=="table"and h.look=="team"then
 			team=true
 			teamCards=teamCards or h.kind=="objectives"
+			if h.kind=="objectives"then
+				cardPairs,cardFit=h.cardPairs,h.cardFit
+			end
 		end
 		if type(h)=="table"then
 			if h.kind=="heading"then
@@ -1413,6 +1454,8 @@ function A.traceMatchHead(id,rows,height,box)
 		dropped=cut>0 and cut or nil,
 		height=height,
 		teamCards=drewCards,
+		cardPairs=cardPairs,
+		cardFit=cardFit,
 		rows=team and counts.rows or nil,
 		icons=team and counts.spec or nil,
 		classIcons=team and(counts.class+counts.square)or nil,
@@ -1420,6 +1463,8 @@ function A.traceMatchHead(id,rows,height,box)
 		bots=team and counts.bots or nil,
 		lineCells=lineCells,
 		honor=honor,
+		honorAs=A.clientHasNoRatedMode()and"rank"or"honor",
+		rankForm=rankForm,
 		stripes=drawn,
 		stripesStored=stripes,
 		healers=healers,

@@ -1,4 +1,4 @@
--- WowPvpHistory 0.75.26
+-- WowPvpHistory 0.75.68
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -20,6 +20,8 @@ local OPEN_AFTER_MATCH_VARIABLE=declare("WOWPVPHISTORY_OPEN_AFTER_MATCH")
 local TOAST_VARIABLE=declare("WOWPVPHISTORY_TOAST")
 local TOAST_SECONDS_VARIABLE=declare("WOWPVPHISTORY_TOAST_SECONDS")
 local LOSS_NUDGE_VARIABLE=declare("WOWPVPHISTORY_LOSS_NUDGE")
+local CHAT_WINDOW_VARIABLE=declare("WOWPVPHISTORY_CHAT_WINDOW")
+local WEEK_RECAP_VARIABLE=declare("WOWPVPHISTORY_WEEK_RECAP")
 local CONTEXT_MENU_VARIABLE=declare("WOWPVPHISTORY_CONTEXT_MENU")
 local GROUP_NOTES_VARIABLE=declare("WOWPVPHISTORY_GROUP_NOTES")
 local ANNOUNCE_VARIABLE=declare("WOWPVPHISTORY_ANNOUNCE")
@@ -51,9 +53,11 @@ local HOLD_VARIABLE=declare("WOWPVPHISTORY_HOLD")
 local FINDER_VARIABLE=declare("WOWPVPHISTORY_FINDER")
 local FINDER_DOCK_VARIABLE=declare("WOWPVPHISTORY_FINDER_DOCK")
 local SIGHT_VARIABLE=declare("WOWPVPHISTORY_SIGHT")
+local RIVALS_VARIABLE=declare("WOWPVPHISTORY_RIVALS")
 local CHAT_MARK_VARIABLE=declare("WOWPVPHISTORY_CHAT_MARK")
 local TALLY_VARIABLE=declare("WOWPVPHISTORY_TALLY")
 local WORLD_VARIABLE=declare("WOWPVPHISTORY_WORLD")
+local KILL_LINE={variable=declare("WOWPVPHISTORY_KILL_LINE"),default=true}
 local RECORD_CHARACTER_VARIABLE=declare("WOWPVPHISTORY_RECORD_CHARACTER")
 local MMR_LINE_VARIABLE=declare("WOWPVPHISTORY_MMR_LINE")
 local SOUND_VARIABLES={
@@ -68,6 +72,7 @@ local POST_GAME_DEFAULT=true
 local OPEN_AFTER_MATCH_DEFAULT=true
 local TOAST_DEFAULT=true
 local LOSS_NUDGE_DEFAULT="off"
+local CHAT_WINDOW_DEFAULT="main"
 local CONTEXT_MENU_DEFAULT=true
 local GROUP_NOTES_DEFAULT=true
 local ANNOUNCE_DEFAULT=true
@@ -159,6 +164,11 @@ function A.notifyPostGameSetting()
 	return notify(POST_GAME_VARIABLE)
 end
 
+function A.notifyKillLineSetting()
+	traceSetting("kill-line",A.killLineEnabled)
+	return notify(KILL_LINE.variable)
+end
+
 function A.notifyOpenAfterMatchSetting()
 	traceSetting("after-match",A.openAfterMatchEnabled)
 	return notify(OPEN_AFTER_MATCH_VARIABLE)
@@ -178,9 +188,19 @@ function A.notifyToastLockSetting()
 	return notifyWindowOnly("toast-lock",A.toastLocked)
 end
 
+function A.notifyChatWindowSetting()
+	traceSetting("chat-window",A.chatWindowChoice)
+	return notify(CHAT_WINDOW_VARIABLE)
+end
+
 function A.notifyLossNudgeSetting()
 	traceSetting("loss-nudge",A.lossNudgeChoice)
 	return notify(LOSS_NUDGE_VARIABLE)
+end
+
+function A.notifyWeekRecapSetting()
+	traceSetting("week-recap",A.weekRecapEnabled)
+	return notify(WEEK_RECAP_VARIABLE)
 end
 
 function A.notifySoundSetting(kind)
@@ -196,6 +216,20 @@ end
 function A.notifySightSetting()
 	traceSetting("sight",A.sightEnabled)
 	return notify(SIGHT_VARIABLE)
+end
+
+function A.notifyRivalsSetting()
+	traceSetting("rivals",A.rivalsEnabled)
+	return notify(RIVALS_VARIABLE)
+end
+
+function A.addRivalsSettings(s,made,booleanType)
+	local rivals=s.RegisterProxySetting(made,RIVALS_VARIABLE,booleanType,
+		"Mark rivals when they appear",true,A.rivalsEnabled,A.setRivals)
+	s.CreateCheckbox(made,rivals,
+		"Outside a battleground or an arena, mark the nameplate of a player you have met 3 or more "
+		.."times on the other side, name them once in chat, and add a line to their tooltip. "
+		..A.RIVALS_NEEDS)
 end
 
 function A.notifyChatMarkSetting()
@@ -479,6 +513,21 @@ local function addAnnounceSliders(s,made)
 		A.windowScaleRange)
 end
 
+function A.addChatWindowSettings(s,made)
+	local chatWindow=s.RegisterProxySetting(made,CHAT_WINDOW_VARIABLE,s.VarType.String,
+		"Messages print in",CHAT_WINDOW_DEFAULT,A.chatWindowChoice,A.setChatWindowChoice)
+	local dropdown=s.CreateDropdown or s.CreateDropDown
+	dropdown(made,chatWindow,function()
+		local container=s.CreateControlTextContainer()
+		local choices=A.chatWindowChoices()
+		for i=1,#choices do
+			container:Add(choices[i].value,choices[i].label)
+		end
+		return container:GetData()
+	end,"The chat window PvPHistory's lines print in. A window closed later sends them back to the "
+		.."main chat.")
+end
+
 function A.addAfterMatchSettings(s,made,booleanType)
 	local toastSetting=s.RegisterProxySetting(made,TOAST_VARIABLE,booleanType,
 		"Result card after a match",TOAST_DEFAULT,A.toastEnabled,A.setToast)
@@ -502,6 +551,12 @@ function A.addAfterMatchSettings(s,made,booleanType)
 		end
 		return container:GetData()
 	end,"After this many losses in a row in one format, print one more line saying so, once per run.")
+
+	local weekRecap=s.RegisterProxySetting(made,WEEK_RECAP_VARIABLE,booleanType,
+		"Last week's recap at login",true,A.weekRecapEnabled,A.setWeekRecap)
+	s.CreateCheckbox(made,weekRecap,
+		"At the first login after the weekly reset, print what this character played the week before: "
+		.."rated and unrated matches, rating changes and World PvP outings.")
 end
 
 function A.registerMmrLineSetting(s,made,booleanType)
@@ -532,7 +587,8 @@ function A.registerRecordingSettings(s,made,booleanType)
 	local world=s.RegisterProxySetting(made,WORLD_VARIABLE,booleanType,
 		"Record World PvP",WORLD_DEFAULT,A.worldEnabled,A.setWorld)
 	s.CreateCheckbox(made,world,
-		"With War Mode on, keep the kills and deaths of a stretch of open-world PvP as an outing. "
+		"With War Mode on, or flagged for PvP on a realm with no War Mode, keep the kills and deaths of a "
+		.."stretch of open-world PvP as an outing. "
 		.."Turning it off ends an outing already open.")
 
 	local recordCharacter=s.RegisterProxySetting(made,RECORD_CHARACTER_VARIABLE,booleanType,
@@ -542,6 +598,14 @@ function A.registerRecordingSettings(s,made,booleanType)
 	s.CreateCheckbox(made,recordCharacter,
 		"Record matches, duels and World PvP on the character you are logged in on. Off stops "
 		.."recording on this character alone, and what is stored stays shown.")
+end
+
+function A.addKillLineSetting(s,made,booleanType)
+	local killLine=s.RegisterProxySetting(made,KILL_LINE.variable,booleanType,
+		"Chat line after a world kill",KILL_LINE.default,A.killLineEnabled,A.setKillLine)
+	s.CreateCheckbox(made,killLine,
+		"After each player you kill in the open world, print their name, how many times you have "
+		.."killed them this outing and in all, and your record against them in matches.")
 end
 
 local function register()
@@ -576,6 +640,7 @@ local function register()
 		"When you leave a match, open its window. It waits until you are out of combat.")
 
 	A.addAfterMatchSettings(s,made,booleanType)
+	A.addChatWindowSettings(s,made)
 
 	for _,kind in ipairs(A.soundKinds())do
 		local sound=s.RegisterProxySetting(made,SOUND_VARIABLES[kind],booleanType,A.soundLabel(kind),
@@ -598,6 +663,8 @@ local function register()
 	s.CreateCheckbox(made,sight,
 		"Outside a battleground or an arena, put a mark on the nameplate of a player you rated, "
 		.."tagged or wrote about, and name them once in chat when they appear.")
+	A.addRivalsSettings(s,made,booleanType)
+	A.addKillLineSetting(s,made,booleanType)
 
 	local chatMark=s.RegisterProxySetting(made,CHAT_MARK_VARIABLE,booleanType,
 		"Mark people you have written about in chat",CHAT_MARK_DEFAULT,
@@ -696,7 +763,7 @@ local function register()
 	local rememberFilters=s.RegisterProxySetting(made,REMEMBER_FILTERS_VARIABLE,booleanType,
 		"Remember the search and filters",REMEMBER_FILTERS_DEFAULT,A.rememberFilters,A.setRememberFilters)
 	s.CreateCheckbox(made,rememberFilters,
-		"Keep what you typed in the match list's search box and the spec, result and zone you "
+		("Keep what you typed in the match list's search box and the %s, result and zone you "):format(A.specWord())
 		.."picked when you log out or reload.")
 
 	A.registerMmrLineSetting(s,made,booleanType)

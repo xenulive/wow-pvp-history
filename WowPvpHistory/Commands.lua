@@ -1,4 +1,4 @@
--- WowPvpHistory 0.75.26
+-- WowPvpHistory 0.75.68
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -479,6 +479,17 @@ local NOTES_CONTROLS={
 		return("the players list shows players met %s"):format(word=="with"and"on your side"
 			or"against you")
 	end,
+	rivals=function(value)
+		local word=value and value:lower()or nil
+		if word~="on"and word~="off"then
+			return nil,"/pvph notes rivals <on||off>"
+		end
+		A.setNotesRivals(word=="on")
+		if word=="on"then
+			return"the players list shows rivals only, for this session"
+		end
+		return"the players list no longer narrows to rivals"
+	end,
 	search=function(value)
 		A.setNotesSearch(value)
 		if value==nil or value==""then
@@ -577,7 +588,8 @@ local function reportNotesWindow(word,rest)
 		local id=A.matchIdFromWord(word)
 		if not id then
 			A.say(("unknown notes command %q. /pvph notes opens the index, notes last scopes to the "
-				.."newest match and notes #<id> to a named one"):format(word))
+				.."newest match and notes #<id> to a named one, and sort, skill, attitude, format, side, rivals "
+				.."or search narrow the list"):format(word))
 			return
 		end
 		record=A.match(id)
@@ -2729,7 +2741,7 @@ local function reportSeason(msg,words)
 		return
 	end
 
-	A.say(("unknown season command %q. start, end, label, forget, or nothing at all"):format(word))
+	A.say(("unknown season command %q. start, end, label, forget, card, or nothing at all"):format(word))
 end
 
 local function reportSize()
@@ -2800,6 +2812,33 @@ local function reportReset(confirmed)
 			:format(pin.held,pin.held==1 and"match"or"matches",pin.matches))
 	else
 		A.say("nothing was pinned: this client provides no encoding surface")
+	end
+end
+
+local function fixtureShapeLines(report)
+	if report.compsCleared>0 then
+		A.say(("%d enemy %s met at least %d times, so the Comps segment has rows")
+			:format(report.compsCleared,report.compsCleared==1 and"comp was"or"comps were",
+				report.floor),"routine")
+	else
+		A.say(("no comp reached %d games at n=%d, so the comp table stays empty. Ask for more")
+			:format(report.floor,report.asked),"routine")
+	end
+
+	if report.seat=="healer"then
+		A.say("the generated shuffles are dealt from a healer seat, so each damage spec is with you "
+			.."three times and the other healer is against you in every round","routine")
+	else
+		A.say("the generated shuffles are dealt from a damage seat, so each other damage spec is "
+			.."with you twice and each healer three times","routine")
+	end
+	if report.sameSpec then
+		A.say("two of each shuffle lobby share a spec, so the table draws two rows under one label",
+			"routine")
+	end
+	if report.winning then
+		A.say("every generated shuffle round is won, so no shuffle comp has a losing or even record",
+			"routine")
 	end
 end
 
@@ -2891,6 +2930,12 @@ local function reportFixture(words)
 		end
 	end
 
+	local shaping=seat or(sameSpec and"samespec")or(winning and"winning")
+	if shaping and A.clientHasNoRatedMode()then
+		A.say(("fixture: this client has no Solo Shuffle for %s to shape"):format(shaping))
+		return
+	end
+
 	local report,refusal=A.generateFixture(asked,{seat=seat,sameSpec=sameSpec,unrated=unrated,
 		winning=winning})
 	if not report then
@@ -2899,7 +2944,8 @@ local function reportFixture(words)
 	end
 
 	local parts={}
-	for _,name in ipairs({"arena2","arena3","blitz","shuffle","arena-unrated","bg"})do
+	for _,name in ipairs({"arena2","arena3","blitz","shuffle","arena-unrated","bg","duel","world",
+		"unknown"})do
 		local count=report[name]or 0
 		if count>0 then
 			parts[#parts+1]=("%s %d"):format(A.formatLabel(name),count)
@@ -2943,29 +2989,8 @@ local function reportFixture(words)
 			report.written==1 and"record"or"records",table.concat(parts,", ")),"routine")
 	end
 
-	if report.compsCleared>0 then
-		A.say(("%d enemy %s met at least %d times, so the Comps segment has rows")
-			:format(report.compsCleared,report.compsCleared==1 and"comp was"or"comps were",
-				report.floor),"routine")
-	else
-		A.say(("no comp reached %d games at n=%d, so the comp table stays empty. Ask for more")
-			:format(report.floor,report.asked),"routine")
-	end
-
-	if report.seat=="healer"then
-		A.say("the generated shuffles are dealt from a healer seat, so each damage spec is with you "
-			.."three times and the other healer is against you in every round","routine")
-	else
-		A.say("the generated shuffles are dealt from a damage seat, so each other damage spec is "
-			.."with you twice and each healer three times","routine")
-	end
-	if report.sameSpec then
-		A.say("two of each shuffle lobby share a spec, so the table draws two rows under one label",
-			"routine")
-	end
-	if report.winning then
-		A.say("every generated shuffle round is won, so no shuffle comp has a losing or even record",
-			"routine")
+	if report.formatSet~="forever"then
+		fixtureShapeLines(report)
 	end
 	A.say("/pvph debug fixture clear confirm removes every one of them","routine")
 end
@@ -3052,7 +3077,7 @@ local function reportCsvImport(forced)
 			local result,why,token=A.csvImport(text,forced)
 			if not result then
 				A.say("csv import: "..tostring(why))
-				if not forced and token~="in-flight"and token~="sandbox"then
+				if not forced and(token=="count"or token=="checksum")then
 					A.say("/pvph import csv force imports it anyway, marking every record it creates")
 				end
 				return false
@@ -3481,8 +3506,9 @@ local function reportOptions(word,target,tail)
 			end
 			return
 		end
-		A.say(("unknown options command %q. client opens the game's own panel, and a page opens "
-			.."the settings on it: %s"):format(word,table.concat(sections,", ")))
+		A.say(("unknown options command %q. client opens the game's own panel, find, slot and close "
+			.."work on the open settings, and a page opens the settings on it: %s")
+			:format(word,table.concat(sections,", ")))
 		return
 	end
 
@@ -3631,7 +3657,7 @@ local function reportPostGame(word,figure)
 	end
 
 	if word then
-		A.say(("unknown postgame command %q. on or off"):format(word))
+		A.say(("unknown postgame command %q. on, off or nudge"):format(word))
 		return
 	end
 
@@ -4752,7 +4778,7 @@ local function reportDebug(word,one,two,words)
 	end
 
 	if word then
-		A.say(("unknown debug command %q. on, off, text, show, clear, export, fault, fixture or sandbox; "
+		A.say(("unknown debug command %q. on, off, text, show, clear, export, fault, fixture, sandbox or ceiling; "
 			.."in the sandbox announce, tooltip, group or gates"):format(word))
 		return
 	end
@@ -4831,7 +4857,9 @@ local USAGE={
 	"/pvph aftermatch     open the match's window once its instance is left. on or off; bare reads it",
 	"/pvph closeall       close every match and player window with the main window. on or off; bare reads it",
 	"/pvph sight          mark and name a player you wrote about when they appear. on or off; bare reads it",
+	"/pvph rivals         the players met 3 or more times against you, most first. on or off marks them; bare lists them",
 	"/pvph chatmark       a bar before the name of a player you wrote about in chat. on, off or sample; bare reads it",
+	"/pvph chat           which chat window the lines print in, and every window the General settings page offers",
 	"/pvph menu           write a note and a rating from the player right-click menu",
 	"/pvph tooltip        put the record, the last rating and the note on a unit tooltip",
 	"/pvph duel           record completed duels. on or off, and what the readout can see",
@@ -4859,6 +4887,7 @@ local USAGE={
 	"/pvph comps [fmt] [n]  the enemy comps you have faced, worst first. n opens a row",
 	"/pvph comps pairs [fmt] [n] | trios [fmt]  the enemy pairs, and the window on Pairs or back for this session; nothing is stored",
 	"/pvph bests [fmt]    your bests per spec on a tab: damage, healing, peak rating and MMR, fastest win",
+	"/pvph milestones [fmt]  your milestones on a tab, newest first: round match counts, longest win streaks, first wins against a comp",
 	"/pvph partners [fmt]  who you queued with on an arena tab: matches, won-lost, rating change and the last day",
 	"/pvph ask [format]   the cards the Stats half draws on that tab, over the stored scope",
 	"/pvph ask sort <card> <met||won||default>  reorder one card's table, as a header click does",
@@ -4867,6 +4896,7 @@ local USAGE={
 	"/pvph ask specs <on||off>  the specs view in place of the cards, for this session",
 	"/pvph ask specs sort <column>  reorder the specs view, as a header click does",
 	"/pvph fold <graph||details> <open||shut>  fold for this session; nothing is stored",
+	"/pvph fold graph stored  let the graph's session fold go, so the stored fold draws again",
 	"/pvph graph mmr <on||off>  whether the Stats graph draws the gray MMR line; bare prints the switch",
 	"/pvph session [<n> <open||shut>]  each History session's key, count and fold, on All the grid lines drawn; n counts from the newest, held for this session",
 	"/pvph session recap [format]  the newest session's record, rating, best win, worst comp met and who you played most with",
@@ -4876,6 +4906,7 @@ local USAGE={
 	"/pvph goal [<played> [won]||off]  the weekly goal of rated matches to play and win, 1 to 50 each;",
 	"                     bare reads it and this week's count, off removes it, and a played figure",
 	"                     alone clears the won one",
+	"/pvph lastweek       last week's rated and unrated matches, rating changes and World PvP outings on this character",
 	"/pvph region [fmt]   what the summary strip and graph work out to, block by block",
 	"/pvph region list    the match list's edges and where each drawn element stands",
 	"/pvph region band    where the History search box, its count and the three filters stand",
@@ -4921,6 +4952,7 @@ local USAGE={
 	"/pvph notes attitude <toxic||rude||neutral||friendly||great||none||off>  narrow the list to one attitude step",
 	"/pvph notes format <format||all>  narrow the list to players met in one format",
 	"/pvph notes side <with||against||all>  narrow the list to players met on one side",
+	"/pvph notes rivals <on||off>  narrow the list to rivals, most meetings against you first, for this session",
 	"/pvph notes search [text]  search the players list as the box does. No text clears it",
 	"/pvph card [name]    the group finder's name card for one name, none for your own. No name hides it",
 	"/pvph players        who has been played with and against, most matches first",
@@ -5089,8 +5121,10 @@ local TAKES_NO_WORD={
 	size="/pvph size takes no word after it",
 	backup="/pvph backup takes no word after it",
 	tiers="/pvph tiers takes no word after it",
+	lastweek="/pvph lastweek takes no word after it",
 	builds="/pvph builds takes no word after it",
 	help="/pvph help takes no word after it",
+	chat="/pvph chat takes no word after it. Messages print in on the General settings page chooses the window",
 	commands="/pvph commands takes no word after it",
 	undo="/pvph undo takes no word after it",
 }
@@ -5099,8 +5133,8 @@ local TAKES_ONE_WORD={about="copy",error="clear",tidy="confirm"}
 
 local LAST_WORD_READ={
 	repaint=2,appearance={colors=3,text=3,rows=3,realms=3,clock=3,["*"]=2},tab=2,minimap=2,alert=2,login=2,postgame={nudge=3,["*"]=2},toast={seconds=3,["*"]=2},
-	tooltip=2,groupnotes=2,menu=2,duel=2,world=2,record=2,pause=2,list=2,region=2,faults=2,bests=2,partners=2,
-	perf=2,aftermatch=2,closeall=2,sight=2,chatmark=2,meter=2,finder=2,sound=3,tally=2,star=2,
+	tooltip=2,groupnotes=2,menu=2,duel=2,world=2,record=2,pause=2,list=2,region=2,faults=2,bests=2,milestones=2,partners=2,
+	perf=2,aftermatch=2,closeall=2,sight=2,rivals=2,chatmark=2,meter=2,finder=2,sound=3,tally=2,star=2,
 	reset=2,summary=3,fold=3,graph=3,session={recap=3,["*"]=3},goal={off=2,["*"]=3},
 	announce={lock=3,unlock=3,time=3,size=3,opacity=3,shape=3,preview=3,crowd=3,
 		comp=3,rematch=3,last=2},
@@ -5322,8 +5356,21 @@ SlashCmdList["WOWPVPHISTORY"]=function(msg)
 		return
 	end
 
+	if first=="rivals"then
+		A.reportRivals(words[2]and words[2]:lower()or nil)
+		return
+	end
+
 	if first=="chatmark"then
 		A.reportChatMark(words[2]and words[2]:lower()or nil)
+		return
+	end
+
+	if first=="chat"then
+		local lines=A.chatWindowLines()
+		for i=1,#lines do
+			A.say(lines[i])
+		end
 		return
 	end
 
@@ -5600,8 +5647,16 @@ SlashCmdList["WOWPVPHISTORY"]=function(msg)
 	if first=="fold"then
 		local which=words[2]and words[2]:lower()or nil
 		local state=words[3]and words[3]:lower()or nil
+		if which=="graph"and state=="stored"then
+			A.dropGraphHold()
+			A.trace("fold",{source=which,state=state},"ui")
+			A.refreshWindow()
+			A.say("the graph draws its stored fold again; nothing is stored")
+			return
+		end
 		if(which~="graph"and which~="details")or(state~="open"and state~="shut")then
-			A.say("/pvph fold <graph||details> <open||shut>   folds for this session and stores nothing")
+			A.say("/pvph fold <graph||details> <open||shut>   folds for this session and stores nothing. "
+				.."/pvph fold graph stored lets the graph's session fold go")
 			return
 		end
 		A.holdFold(which,state=="shut")
@@ -5709,6 +5764,11 @@ SlashCmdList["WOWPVPHISTORY"]=function(msg)
 		return
 	end
 
+	if first=="lastweek"then
+		A.say(A.lastWeekReadout())
+		return
+	end
+
 	if first=="goal"then
 		local word=words[2]and words[2]:lower()or nil
 		local usage=("/pvph goal <played> [won] takes whole numbers from 1 to %d, or off. A played figure "
@@ -5783,6 +5843,11 @@ SlashCmdList["WOWPVPHISTORY"]=function(msg)
 
 	if first=="bests"then
 		A.reportBests(words[2]and words[2]:lower()or nil)
+		return
+	end
+
+	if first=="milestones"then
+		A.reportMilestones(words[2]and words[2]:lower()or nil)
 		return
 	end
 

@@ -1,4 +1,4 @@
--- WowPvpHistory 0.75.26
+-- WowPvpHistory 0.75.68
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -14,6 +14,7 @@ local SIGHT_MEMORY=64
 local MARK_SIZE=14
 
 local marks={}
+local rivalMarks={}
 
 local plateOf={}
 
@@ -32,10 +33,19 @@ function A.sightEnabled()
 	return not(type(db.ui)=="table"and db.ui.sight==false)
 end
 
-local function hideAll()
-	for _,mark in pairs(marks)do
+local function hideEach(held)
+	for _,mark in pairs(held)do
 		pcall(mark.Hide,mark)
 	end
+end
+
+local function hideAll()
+	hideEach(marks)
+	hideEach(rivalMarks)
+end
+
+function A.hideRivalMarks()
+	hideEach(rivalMarks)
 end
 
 function A.setSight(enabled)
@@ -72,18 +82,20 @@ end
 
 local function markedCount()
 	local n=0
-	for _,mark in pairs(marks)do
-		local ok,shown=pcall(mark.IsShown,mark)
-		if ok and shown then
-			n=n+1
+	for _,held in ipairs({marks,rivalMarks})do
+		for _,mark in pairs(held)do
+			local ok,shown=pcall(mark.IsShown,mark)
+			if ok and shown then
+				n=n+1
+			end
 		end
 	end
 	return n
 end
 
-local function traceSight(state,reason,source,noted)
+local function traceSight(state,reason,source,noted,rival)
 	A.trace("sight",{state=state,reason=reason,source=source,n=markedCount(),
-		carriesNote=noted})
+		carriesNote=noted,rival=rival})
 end
 
 local function contained(fn,...)
@@ -107,12 +119,16 @@ local function writtenAbout(guid)
 	return nil
 end
 
+local function carries(note)
+	return note~=nil and note.text~=nil
+end
+
 local function examine(token,source)
 	if not A.sightEnabled()then
 		traceSight("refused","switch",source)
 		return nil
 	end
-	if A.inMatchInstance()then
+	if A.inPvpInstance()then
 		traceSight("refused","instance",source)
 		return nil
 	end
@@ -135,25 +151,27 @@ local function examine(token,source)
 
 	local own=A.guardedCall(UnitGUID,"player")
 	if type(own)=="string"and A.canRead(own)and own==guid then
-		traceSight("refused","self",source)
+		traceSight("refused","self",source,nil,false)
 		return nil
 	end
 
 	local note=writtenAbout(guid)
-	if not note then
-		traceSight("refused","unwritten",source)
+	local rival=A.isRival(nil,guid)
+	local marked=rival and A.rivalsEnabled()
+	if not(note or marked)then
+		traceSight("refused",rival and"rivals-off"or"unwritten",source,nil,rival)
 		return nil
 	end
 
 	local group=A.groupGuids()
 	for i=1,#group do
 		if group[i]==guid then
-			traceSight("refused","group",source,note.text~=nil)
+			traceSight("refused","group",source,carries(note),rival)
 			return nil
 		end
 	end
 
-	return guid,note
+	return guid,note,marked,rival
 end
 
 local function remember(guid,now)
@@ -170,33 +188,45 @@ local function remember(guid,now)
 	end
 end
 
-local function speak(guid,note,source)
+local function speak(guid,note,marked,rival,source)
 	local now=clock()
 	local at=namedAt[guid]
 	if at~=nil and now-at<SIGHT_REPEAT_MINUTES*60 then
-		traceSight("refused","repeat",source,note.text~=nil)
+		traceSight("refused","repeat",source,carries(note),rival)
 		return
 	end
 	if lastLine~=nil and now-lastLine<SIGHT_QUIET_SECONDS then
-		traceSight("refused","quiet",source,note.text~=nil)
+		traceSight("refused","quiet",source,carries(note),rival)
 		return
 	end
 
 	remember(guid,now)
 	lastLine=now
-	A.say(A.sightLine(guid))
-	traceSight("said",nil,source,note.text~=nil)
+	local line=A.sightLine(guid)
+	local clause=marked and A.rivalClause(guid)or nil
+	if clause then
+		line=line.."  "..clause
+	end
+	A.say(line)
+	traceSight("said",nil,source,carries(note),rival)
 end
 
 local function hideMark(frame)
-	local mark=marks[frame]
-	if mark then
-		pcall(mark.Hide,mark)
+	for _,held in ipairs({marks,rivalMarks})do
+		local mark=held[frame]
+		if mark then
+			pcall(mark.Hide,mark)
+		end
 	end
 end
 
-local function showMark(frame)
-	local mark=marks[frame]
+local function showMark(frame,rival)
+	local held=rival and rivalMarks or marks
+	local other=(rival and marks or rivalMarks)[frame]
+	if other then
+		pcall(other.Hide,other)
+	end
+	local mark=held[frame]
 	if not mark then
 		local ok,made=pcall(frame.CreateTexture,frame,nil,"OVERLAY")
 		if not(ok and type(made)=="table")then
@@ -205,7 +235,11 @@ local function showMark(frame)
 		made:SetSize(MARK_SIZE,MARK_SIZE)
 		made:SetPoint("TOPRIGHT",frame,"TOPRIGHT",0,0)
 		made:SetTexture(A.ICON_TEXTURE)
-		marks[frame]=made
+		if rival then
+			local r,g,b=A.color("loss")
+			made:SetVertexColor(r,g,b)
+		end
+		held[frame]=made
 		mark=made
 	end
 	mark:Show()
@@ -219,17 +253,17 @@ local function onPlateAdded(token)
 		plateOf[token]=frame
 	end
 
-	local guid,note=examine(token,"plate")
-	if not(guid and note)then
+	local guid,note,marked,rival=examine(token,"plate")
+	if not guid then
 		return
 	end
 
-	if frame and showMark(frame)then
-		traceSight("marked",nil,"plate",note.text~=nil)
+	if frame and showMark(frame,note==nil)then
+		traceSight("marked",nil,"plate",carries(note),rival)
 	else
-		traceSight("refused","no-plate","plate",note.text~=nil)
+		traceSight("refused","no-plate","plate",carries(note),rival)
 	end
-	speak(guid,note,"plate")
+	speak(guid,note,marked,rival,"plate")
 end
 
 local function onPlateRemoved(token)
@@ -244,9 +278,9 @@ local function onPlateRemoved(token)
 end
 
 local function onTarget()
-	local guid,note=examine("target","target")
-	if guid and note then
-		speak(guid,note,"target")
+	local guid,note,marked,rival=examine("target","target")
+	if guid then
+		speak(guid,note,marked,rival,"target")
 	end
 end
 

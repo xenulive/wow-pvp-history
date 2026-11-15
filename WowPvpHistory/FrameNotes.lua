@@ -1,4 +1,4 @@
--- WowPvpHistory 0.75.26
+-- WowPvpHistory 0.75.68
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -18,6 +18,7 @@ local repFilter
 local attitudeFilter
 local formatFilter
 local sideFilter
+local rivalFilter=false
 
 local stagedFault=false
 
@@ -319,7 +320,7 @@ local function initRow(row,data)
 	row.label:SetPoint("TOPLEFT",row,"TOPLEFT",
 		A.metric("playerLane")+A.metric("playerLaneGap")+A.playersIconSize()+A.metric("chipGap"),-4)
 	row.label:SetPoint("RIGHT",row,"RIGHT",-select(2,figureEdges()),0)
-	A.style(row.label,"bodyMedium")
+	A.style(row.label,"nameMedium")
 	row.label:SetTextColor(A.classColor(identity.classToken))
 	local realm=A.realmDrawn(identity.realm,data.realmKept)
 	row.fullName=(realm==nil and identity.realm~=nil)and identity.full or nil
@@ -1132,7 +1133,7 @@ local function buildToolbar(frame)
 		pcall(self.ClearFocus,self)
 		A.setNotesSearch(nil)
 	end)
-	A.entryPlaceholder(frame.searchBox,"name, realm, spec, tag or note")
+	A.entryPlaceholder(frame.searchBox,("name, realm, %s, tag or note"):format(A.specWord()))
 
 	frame.sortTrack=A.segment(frame.toolbar,A.playerSorts(),function(value)
 		A.setNotesSort(value)
@@ -1147,6 +1148,10 @@ local function buildToolbar(frame)
 		A.setNotesSide(value)
 	end)
 	frame.sideFilter:SetPoint("LEFT",frame.formatFilter,"RIGHT",A.metric("pillGap"),0)
+	frame.rivalFilter=A.pill(frame.toolbar,"Rivals",function()
+		A.setNotesRivals(not rivalFilter)
+	end,A.metric("actionMin"))
+	frame.rivalFilter:SetPoint("LEFT",frame.sideFilter,"RIGHT",A.metric("pillGap"),0)
 
 	frame.repChip=A.pill(frame.toolbar,"",function()
 		A.toggleNotesRep(repFilter)
@@ -1176,6 +1181,7 @@ local function paintToolbar()
 	end
 	A.setDropdownChoices(window.formatFilter,held.choices,formatFilter)
 	A.setDropdownChoices(window.sideFilter,A.playerSideChoices(),sideFilter)
+	A.setPillSelected(window.rivalFilter,rivalFilter)
 
 	window.clearScope:ClearAllPoints()
 	local orderTop=-(A.metric("controlHeight")+A.metric("paneGap"))
@@ -1452,6 +1458,7 @@ local function topFloor()
 	local paneGap=A.metric("paneGap")
 	strip=strip+legendNeed()+paneGap*3+A.headerFloor(stripLabel("attitude"))
 	local search=A.metric("playerSearch")+2*(A.metric("pillGap")+A.metric("dropdownWidth"))
+		+A.metric("pillGap")+A.metric("actionMin")
 	local sorts=0
 	local segmentMin,segmentGap=A.metric("segmentMin"),A.metric("segmentGap")
 	for _,sort in ipairs(A.playerSorts())do
@@ -1683,6 +1690,10 @@ local function clearNarrowings()
 		cleared=cleared+1
 		sideFilter=nil
 	end
+	if rivalFilter then
+		cleared=cleared+1
+		rivalFilter=false
+	end
 	if scopeMatchId~=nil or scopeTidy~=nil then
 		cleared=cleared+1
 		scopeMatchId=nil
@@ -1691,15 +1702,27 @@ local function clearNarrowings()
 	return cleared
 end
 
-local function listRows(index)
+local function filteredView(index)
 	local view=A.playersView(viewState(index))
+	if not rivalFilter then
+		return view
+	end
+	local rows=A.rivalRows(view.rows)
+	view.rows=rows
+	view.shown=#rows
+	view.sections=#rows>0 and{{key="rivals",label="Rivals",rows=rows,count=#rows}}or{}
+	return view
+end
+
+local function listRows(index)
+	local view=filteredView(index)
 	local rows,selected=drawnRows(view)
 
 	local requested=selectedGuid~=nil and requestedGuid==selectedGuid
 	if not selected and requested and pendingReveal==selectedGuid then
 		local cleared=clearNarrowings()
 		if cleared>0 then
-			view=A.playersView(viewState(index))
+			view=filteredView(index)
 			rows,selected=drawnRows(view)
 		end
 		pcall(A.trace,"notesasked",{cleared=cleared,hidden=selected==nil},"ui")
@@ -1774,6 +1797,9 @@ local function emptyText()
 	end
 	if sideFilter~=nil then
 		filters[#filters+1]=sideFilter=="with"and"met on your side"or"met against you"
+	end
+	if rivalFilter then
+		filters[#filters+1]=("met %d or more times against you"):format(A.RIVAL_MEETINGS)
 	end
 	if searchText then
 		filters[#filters+1]=("matches %q"):format(searchText)
@@ -2179,7 +2205,7 @@ local function paintDossier(selected,index)
 	window.dossierName:SetTextColor(A.classColor(identity.classToken))
 	A.fitNameHead(window.dossierName,identity.bare or A.UNKNOWN_PLAYER,identity.realm,"dim")
 	A.style(window.dossierSub,"bodyText","dim")
-	local sub=dossier.specLine or"no spec recorded"
+	local sub=dossier.specLine or("no %s recorded"):format(A.specWord())
 	if type(A.debugTextEnabled)=="function"and A.debugTextEnabled()then
 		sub=sub.."  "..A.colorEscape("faint")..tostring(selected.guid).."|r"
 	end
@@ -2218,15 +2244,16 @@ local function paintIndex()
 end
 
 function A.refreshNotes(searchOnly)
+	local shown=window~=nil and(paintingToShow or A.notesWindowShown())
 	local index=nil
-	if window then
+	if shown then
 		index=paintIndex()
 	end
 
 	if not searchOnly and type(A.refreshPlayerWindows)=="function"then
 		A.containedPaint("notes/player-windows",A.refreshPlayerWindows,index)
 	end
-	if not window or not(paintingToShow or A.notesWindowShown())then
+	if not shown then
 		return false
 	end
 
@@ -2343,6 +2370,7 @@ function A.refreshNotes(searchOnly)
 		attitudeStep=attitudeFilter~=nil and tostring(attitudeFilter)or nil,
 		fmt=formatFilter,
 		sideFilter=sideFilter,
+		rivalFilter=rivalFilter,
 		players=view.strip.players,
 		unmet=view.strip.unmet,
 		trendRows=trendRows,
@@ -2498,6 +2526,16 @@ function A.setNotesSide(side)
 	return true
 end
 
+function A.setNotesRivals(on)
+	if type(on)~="boolean"then
+		return false
+	end
+	rivalFilter=on
+	requestedGuid=nil
+	A.refreshNotes()
+	return true
+end
+
 function A.setNotesSearch(text)
 	if text~=nil and type(text)~="string"then
 		return false
@@ -2513,7 +2551,7 @@ end
 
 function A.notesState()
 	return{sort=sortWord,dir=sortDir,rep=repFilter,attitude=attitudeFilter,format=formatFilter,
-		side=sideFilter,
+		side=sideFilter,rivals=rivalFilter,
 		text=searchText,scope=scopeMatchId,tidy=scopeTidy~=nil and#scopeTidy or nil}
 end
 
