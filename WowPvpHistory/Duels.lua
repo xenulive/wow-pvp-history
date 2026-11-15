@@ -1,4 +1,4 @@
--- WowPvpHistory 0.75.26
+-- WowPvpHistory 0.75.68
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -245,7 +245,7 @@ local function storeDuel(opened,result,ended)
 	end
 	if selfGuid then
 		record.character=selfGuid
-		participants[selfGuid]={name=A.unitNames("player")[1],side="with"}
+		participants[selfGuid]={name=A.ownFullName(),side="with"}
 		kept=kept+1
 	end
 

@@ -1,4 +1,4 @@
--- WowPvpHistory 0.75.26
+-- WowPvpHistory 0.75.68
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -583,7 +583,8 @@ local function repaintOthers()
 	if type(A.refreshNotes)=="function"then
 		pcall(A.refreshNotes)
 	end
-	if type(A.refreshCompareWindow)=="function"then
+	if type(A.refreshCompareWindow)=="function"and type(A.compareWindowShown)=="function"
+		and A.compareWindowShown()then
 		pcall(A.refreshCompareWindow)
 	end
 	if type(A.overlayRepaint)=="function"then
@@ -790,6 +791,10 @@ local ROLES={
 		names=true},
 	nameNote={file="BarlowSemiCondensed-Regular.ttf",scale="tiny",flags="",
 		fallback="GameFontDisableSmall",names=true},
+	nameHeading={file="BarlowSemiCondensed-SemiBold.ttf",scale="medium",fallback="GameFontNormal",
+		names=true},
+	nameCardText={file="BarlowSemiCondensed-Regular.ttf",scale="cardText",fallback="GameFontHighlight",
+		names=true},
 }
 
 local NAME_ALPHABETS={"roman","russian","korean","simplifiedchinese","traditionalchinese"}
@@ -1673,6 +1678,14 @@ local METRICS={
 	tileLabelGap=2,
 	tileValueGap=1,
 
+	startTileWidth=184,
+	startTilePad=10,
+	startTileLine=6,
+	startTileGap=8,
+	startGroupGap=16,
+	startLineGap=4,
+	startPanelLevel=10,
+
 	notesListWidth=450,
 
 	searchHeight=20,
@@ -1752,6 +1765,7 @@ local METRICS={
 	aboutWeekChart=140,
 	aboutWeekGap=8,
 	aboutWeekMin=36,
+	weekBarMax=24,
 	aboutCharRow=28,
 	aboutCharName=150,
 	aboutCharCount=44,
@@ -1936,7 +1950,7 @@ function A.rosterRowWidth(look,objectives)
 end
 
 function A.rosterHonorWidth()
-	local floor=A.headerFloor("HONOR")
+	local floor=A.headerFloor(A.honorHeader())
 	local cell=A.metric("rowHonor")
 	return floor>cell and floor or cell
 end
@@ -2261,6 +2275,7 @@ function A.compBandRoom(host,opts)
 	if type(host)~="number"or host<=0 then
 		return floor,stack
 	end
+	host=A.unitFigure(host)or host
 	local wanted=(type(opts.wanted)=="number"and opts.wanted>0)and opts.wanted or nil
 	local below=stack.below
 	if wanted~=nil and opts.table~=false then
@@ -2330,6 +2345,7 @@ function A.askBandRoom(host,parts)
 	if type(host)~="number"or host<=0 or wanted<=0 then
 		return 0
 	end
+	host=A.unitFigure(host)or host
 
 	local tableRow=positiveOrNought(parts.tableRow)>0 and parts.tableRow or METRICS.rowHeight
 	local spare=host-2-positiveOrNought(parts.heading)-4-positiveOrNought(parts.head)
@@ -2364,6 +2380,7 @@ function A.viewportRows(room,extent)
 	if type(room)~="number"or type(extent)~="number"or extent<=0 or room<=0 then
 		return 0,0
 	end
+	room=A.unitFigure(room)or room
 	local rows=math.floor(room/extent)
 	if rows<0 then
 		rows=0
@@ -2783,7 +2800,7 @@ local function ensureTextures(frame)
 	frame.styleTitle=frame:CreateTexture(nil,"BACKGROUND",nil,-6)
 	frame.styleTitle:SetPoint("TOPLEFT",frame,"TOPLEFT",0,0)
 	frame.styleTitle:SetPoint("TOPRIGHT",frame,"TOPRIGHT",0,0)
-	frame.styleTitle:SetHeight(24)
+	frame.styleTitle:SetHeight(A.themeMetric("titleBarBottom","flat"))
 
 	frame.styleEdges=A.hairlineEdges(frame)
 end

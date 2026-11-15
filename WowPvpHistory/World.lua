@@ -1,4 +1,4 @@
--- WowPvpHistory 0.75.26
+-- WowPvpHistory 0.75.68
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -54,6 +54,11 @@ local function pvpFlag(name)
 	return type(pvp)=="table"and readable(pvp[name])==true
 end
 
+local function noWarMode()
+	local pvp=C_PvP
+	return type(pvp)=="table"and readable(pvp.IsWarModeFeatureEnabled)==false
+end
+
 local function restricted()
 	return(A.pvpRestricted())
 end
@@ -68,7 +73,7 @@ local function clientRefusal()
 	if restricted()then
 		return"restricted"
 	end
-	if not pvpFlag("IsWarModeActive")then
+	if not(noWarMode()or pvpFlag("IsWarModeActive"))then
 		return"warmode"
 	end
 	return nil
@@ -87,6 +92,66 @@ end
 
 local function refusal()
 	return clientRefusal()or settingRefusal()
+end
+
+local REALM_RULES={
+	{key="pvp",member="PvPRuleset"},
+	{key="rp",member="RPRuleset"},
+	{key="hardcore",member="HardcoreRuleset"},
+}
+
+local function listed(list,key)
+	return list and(list..","..key)or key
+end
+
+function A.realmRules()
+	local read={}
+	local rules=C_GameRules
+	local ask=type(rules)=="table"and rules.IsGameRuleActive or nil
+	if type(ask)~="function"then
+		read.absent="call"
+		return nil,"no-call",read
+	end
+	local enum=type(Enum)=="table"and Enum.GameRule or nil
+	if type(enum)~="table"then
+		for i=1,#REALM_RULES do
+			read.absent=listed(read.absent,REALM_RULES[i].key)
+		end
+		return nil,"no-enum",read
+	end
+	local out
+	for i=1,#REALM_RULES do
+		local rule=REALM_RULES[i]
+		local id=enum[rule.member]
+		if id==nil then
+			read.absent=listed(read.absent,rule.key)
+		else
+			local ok,active=pcall(ask,id)
+			if not ok then
+				read.threw=listed(read.threw,rule.key)
+			elseif A.canRead(active)and active==true then
+				out=out or{}
+				out[rule.key]=true
+				read.on=listed(read.on,rule.key)
+			end
+		end
+	end
+	if out==nil then
+		return nil,"none-true",read
+	end
+	return out,nil,read
+end
+
+local rulesRead={}
+
+local function readRealmRules(record)
+	local ok,rules,_,read=pcall(A.realmRules)
+	if not ok then
+		rulesRead={threw="read"}
+		return
+	end
+	rulesRead=read or{}
+	record.realmRules=rules
 end
 
 local function openRecord(db)
@@ -145,7 +210,7 @@ local function open(db,now)
 		openedEpoch=now,
 		completedEpoch=now,
 		duration=0,
-		warMode=true,
+		warMode=not noWarMode()or nil,
 		kills=0,
 		deaths=0,
 		worldOpen=true,
@@ -160,14 +225,14 @@ local function open(db,now)
 	if map then
 		record.map=map
 	end
+	readRealmRules(record)
 
 	local participants,kept={},0
 	local selfGuid=A.ownGuid()
 	if selfGuid then
 		record.character=selfGuid
-		local ok,name=pcall(UnitName,"player")
 		participants[selfGuid]={
-			name=(ok and A.canRead(name)and type(name)=="string"and name~="")and name or nil,
+			name=A.ownFullName(),
 			side="with",
 		}
 		kept=1
@@ -251,7 +316,8 @@ local function count(kills,deaths,delta)
 	touch(record,now)
 
 	A.trace("world",{id=record.id,state=opened and"open"or"count",n=record.kills,
-		d=record.deaths,honorDelta=delta})
+		d=record.deaths,honorDelta=delta,realmRules=opened and rulesRead.on or nil,
+		rulesAbsent=opened and rulesRead.absent or nil,rulesThrew=opened and rulesRead.threw or nil})
 	armGap()
 end
 
@@ -319,12 +385,123 @@ local function pendingRow(record,guid)
 	return type(row)=="table"and row or nil
 end
 
-local function traceKill(record,state,source,tries,row,tok)
-	A.trace("worldkill",{id=record.id,state=state,source=source,tries=tries,
-		n=record.participantCount,cls=row.class~=nil,tok=tok})
+function A.killLineEnabled()
+	local db=A.db()
+	if not db then
+		return false
+	end
+	return type(db.ui)~="table"or db.ui.killLine~=false
 end
 
-local function resolve(record,guid,tries,tok)
+function A.setKillLine(enabled)
+	local db=A.db()
+	if not db then
+		return false
+	end
+	db.ui=db.ui or{}
+	if enabled==false then
+		db.ui.killLine=false
+	else
+		db.ui.killLine=nil
+	end
+	if A.notifyKillLineSetting then
+		A.notifyKillLineSetting()
+	end
+	return true
+end
+
+local REPEAT_SECONDS=1
+
+local lastBlowGuid,lastBlowAt
+
+local function blowClock()
+	local clock=readable(GetTime)
+	return type(clock)=="number"and clock or time()
+end
+
+local ORDINAL_SUFFIX={"st","nd","rd"}
+
+local function ordinal(n)
+	local teen=n%100>=11 and n%100<=13
+	return n..(not teen and ORDINAL_SUFFIX[n%10]or"th")
+end
+
+local function otherOutingDeaths(db,record,guid)
+	local sum=0
+	local matches=type(db)=="table"and db.matches or nil
+	if type(matches)~="table"then
+		return sum
+	end
+	for i=1,#matches do
+		local stored=matches[i]
+		local rows=type(stored)=="table"and stored~=record and stored.format=="world"
+			and stored.participants or nil
+		local row=type(rows)=="table"and rows[guid]or nil
+		if type(row)=="table"and type(row.deaths)=="number"then
+			sum=sum+row.deaths
+		end
+	end
+	return sum
+end
+
+local function matchesClause(db,guid)
+	local players=type(db)=="table"and db.players or nil
+	local wins,losses,draws=A.againstTally(type(players)=="table"and players[guid]or nil)
+	if wins==nil then
+		return nil
+	end
+	if draws>0 then
+		return("%d, %d and %d drawn against them in matches"):format(wins,losses,draws)
+	end
+	return("%d and %d against them in matches"):format(wins,losses)
+end
+
+local function killText(db,record,guid,row)
+	local name=A.readableString(row.name)
+	if name==nil then
+		local class=A.readableString(row.class)
+		if class==nil then
+			return nil
+		end
+		return(class:find("^[AEIOUaeiou]")and"Killed an "or"Killed a ")..class
+	end
+	local text="Killed "..A.listNameText(name)
+	local outing=type(row.deaths)=="number"and row.deaths or 1
+	if outing>1 then
+		text=text..", "..ordinal(outing).." time this outing"
+	end
+	local all=outing+otherOutingDeaths(db,record,guid)
+	if all~=outing then
+		text=text..(", %d in all"):format(all)
+	end
+	local matches=matchesClause(db,guid)
+	if matches then
+		text=text..", "..matches
+	end
+	return text
+end
+
+local function sayKill(db,record,guid,row,isRepeat)
+	if not A.killLineEnabled()then
+		return"off"
+	end
+	if isRepeat then
+		return"repeat"
+	end
+	local text=killText(db,record,guid,row)
+	if text==nil then
+		return"nameless"
+	end
+	A.say(text)
+	return"printed"
+end
+
+local function traceKill(record,state,source,tries,row,tok,line)
+	A.trace("worldkill",{id=record.id,state=state,source=source,tries=tries,
+		n=record.participantCount,cls=row.class~=nil,tok=tok,killLine=line})
+end
+
+local function resolve(record,guid,tries,tok,blow)
 	local row=pendingRow(record,guid)
 	if not row then
 		A.trace("worldkill",{id=record.id,state="refused",reason="closed",tries=tries})
@@ -336,14 +513,14 @@ local function resolve(record,guid,tries,tok)
 	local name=A.unitNameFromGuid(guid)
 	if name then
 		row.name=name
-		traceKill(record,"named","guid",tries,row,tok)
+		traceKill(record,"named","guid",tries,row,tok,sayKill(blow.db,record,guid,row,blow.again))
 		return
 	end
 
 	local after=C_Timer and C_Timer.After
 	if tries<=NAME_RETRIES and type(after)=="function"then
 		local scheduled=pcall(after,RETRY_SECONDS,function()
-			contained(resolve,record,guid,tries,tok)
+			contained(resolve,record,guid,tries,tok,blow)
 		end)
 		if scheduled then
 			return
@@ -354,10 +531,10 @@ local function resolve(record,guid,tries,tok)
 	local names=token and A.unitNames(token)or{}
 	if names[1]then
 		row.name=names[#names]
-		traceKill(record,"named",word,tries,row,tok)
+		traceKill(record,"named",word,tries,row,tok,sayKill(blow.db,record,guid,row,blow.again))
 		return
 	end
-	traceKill(record,"nameless",nil,tries,row,tok)
+	traceKill(record,"nameless",nil,tries,row,tok,sayKill(blow.db,record,guid,row,blow.again))
 end
 
 local function onPartyKill(attackerGuid,targetGuid)
@@ -435,15 +612,21 @@ local function onPartyKill(attackerGuid,targetGuid)
 
 	if opened then
 		A.trace("world",{id=record.id,state="open",source="partykill",n=record.kills,
-			d=record.deaths})
+			d=record.deaths,realmRules=rulesRead.on,rulesAbsent=rulesRead.absent,
+			rulesThrew=rulesRead.threw})
 	end
 	armGap()
 
+	local at=blowClock()
+	local blow={db=A.db(),again=lastBlowGuid==target and at-lastBlowAt<REPEAT_SECONDS}
+	lastBlowGuid,lastBlowAt=target,at
+
 	if row.name~=nil then
-		traceKill(record,"named",nil,0,row,readTraits(row,target))
+		local tok=readTraits(row,target)
+		traceKill(record,"named",nil,0,row,tok,sayKill(blow.db,record,target,row,blow.again))
 		return
 	end
-	resolve(record,target,0,nil)
+	resolve(record,target,0,nil,blow)
 end
 
 local function onKillsChanged()
@@ -472,11 +655,27 @@ local function onKillsChanged()
 	count(delta,0,delta)
 end
 
+local DEATH_REPEAT_SECONDS=2
+local lastDeadAt
+
 local function onDead()
+	local now=time()
+	if lastDeadAt and now-lastDeadAt<DEATH_REPEAT_SECONDS then
+		A.trace("world",{state="refused",reason="repeat-death",d=1})
+		return
+	end
+	lastDeadAt=now
 	local why=refusal()
 	if why then
 		A.trace("world",{state="refused",reason=why,d=1})
 		return
+	end
+	if noWarMode()then
+		closeIfStale(now)
+		if not openRecord()then
+			A.trace("world",{state="refused",reason="no-outing",d=1})
+			return
+		end
 	end
 	count(0,1,nil)
 end

@@ -1,4 +1,4 @@
--- WowPvpHistory 0.75.26
+-- WowPvpHistory 0.75.68
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -690,7 +690,7 @@ local function buildWindow(index)
 
 	A.closeOnEscape(name)
 
-	frame:SetScript("OnHide",function(self)
+	frame:HookScript("OnHide",function(self)
 		local readable,stillShown=pcall(self.IsShown,self)
 		if readable and stillShown then
 			A.trace("view",{source="player-hide",state="ignored"},"ui")
@@ -789,7 +789,7 @@ local function paintHead(frame,dossier)
 	A.style(frame.name,"dossierName")
 	frame.name:SetTextColor(A.classColor(identity.classToken))
 	A.style(frame.sub,"bodyText","dim")
-	frame.sub:SetText(dossier.specLine or"no spec recorded")
+	frame.sub:SetText(dossier.specLine or("no %s recorded"):format(A.specWord()))
 
 	frame.copyText,frame.murlokText=A.playerCopyTexts(frame.guid,dossier.entry)
 	frame.inPlayers:ClearAllPoints()
@@ -898,6 +898,7 @@ local function paintComments(frame,width)
 		row.commentIndex=comment.index
 		row.commentText=comment.text
 		A.style(row.stamp,"note","dimmer")
+		row.stamp:SetWidth(stamp)
 		local at=comment.at and tostring(comment.at)or nil
 		row.stamp:SetText(at and(A.stampWords(at)or A.minuteStamp(at))or"-")
 		A.style(row.text,"bodyText","text")

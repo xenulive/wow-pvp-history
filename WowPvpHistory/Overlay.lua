@@ -1,4 +1,4 @@
--- WowPvpHistory 0.75.26
+-- WowPvpHistory 0.75.68
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -714,9 +714,16 @@ local function build()
 	made.divider2:Hide()
 
 	made:SetScript("OnDragStart",function(self)
-		pcall(self.StartMoving,self)
+		self.dragging=pcall(self.StartMoving,self)or nil
+	end)
+	made:SetScript("OnHide",function(self)
+		if self.dragging then
+			A.stopDrag(self)
+			self.dragging=nil
+		end
 	end)
 	made:SetScript("OnDragStop",function(self)
+		self.dragging=nil
 		A.stopDrag(self)
 		local read=A.frameGeometry(self)
 		if read and read.point then
@@ -1184,7 +1191,7 @@ end
 
 function A.overlayPreview(on)
 	if on==false then
-		if not previewUp then
+		if not previewUp and previewOpacity==nil then
 			return false
 		end
 		previewUp=false

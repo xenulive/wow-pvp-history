@@ -1,4 +1,4 @@
--- WowPvpHistory 0.75.26
+-- WowPvpHistory 0.75.68
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -175,7 +175,7 @@ local function paintEntry(box)
 		box.edges[i]:SetColorTexture(A.color(edge))
 	end
 
-	A.style(box,"bodyText","text")
+	A.style(box,"nameText","text")
 
 	if box.controlPlaceholder then
 		local ok,held=pcall(box.GetText,box)
@@ -195,7 +195,8 @@ local function paintDropdown(button)
 	elseif button.controlOver then
 		tone="bright"
 	end
-	A.style(button.label,"bodyText",tone)
+	local role=button.controlRole or"bodyText"
+	A.style(button.label,role,tone)
 	button.caret:SetColorTexture(A.color(off and"dimmer"or"dim"))
 
 	if button.panel then
@@ -207,7 +208,7 @@ local function paintDropdown(button)
 			local row=button.rows[i]
 			row.bg:SetColorTexture(A.color("selection"))
 			row.wash:SetColorTexture(A.color("hover"))
-			A.style(row.label,"bodyText",row.dropdownChosen and"bright"or"text")
+			A.style(row.label,role,row.dropdownChosen and"bright"or"text")
 		end
 	end
 end
@@ -888,8 +889,10 @@ function A.dropdown(parent,choices,onPick)
 		end
 	end
 	button.closeDropdown=close
+	button:SetScript("OnHide",close)
 
 	local function sizeToChoices()
+		A.style(button.label,button.controlRole or"bodyText")
 		local widest=0
 		for i=1,#button.choices do
 			local room=A.textRoom(button.label,tostring(button.choices[i].label or""))
@@ -955,7 +958,7 @@ function A.dropdown(parent,choices,onPick)
 				row.label:SetPoint("RIGHT",row,"RIGHT",-pad,0)
 				row.label:SetJustifyH("LEFT")
 				row.label:SetWordWrap(false)
-				A.style(row.label,"bodyText","text")
+				A.style(row.label,button.controlRole or"bodyText","text")
 
 				row:SetScript("OnEnter",function(self)
 					self.wash:Show()
@@ -1216,7 +1219,7 @@ function A.styleTooltip(tooltip)
 end
 
 local function paintFinished(where,ok,...)
-	if not ok and type(A.noteError)=="function"then
+	if not ok then
 		local err=...
 		A.noteError(("%s did not paint: %s"):format(where,
 			err~=nil and tostring(err)or"the client gave no message"),where)
@@ -1234,9 +1237,7 @@ function A.hoverLine(owner,text)
 	end
 	pcall(function()
 		GameTooltip:SetOwner(owner,"ANCHOR_TOP")
-		if type(A.styleTooltip)=="function"then
-			A.styleTooltip(GameTooltip)
-		end
+		A.styleTooltip(GameTooltip)
 		local r,g,b=A.color("text")
 		GameTooltip:SetText(text,r,g,b,1,true)
 		GameTooltip:Show()

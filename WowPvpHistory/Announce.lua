@@ -1,4 +1,4 @@
--- WowPvpHistory 0.75.26
+-- WowPvpHistory 0.75.68
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -49,6 +49,9 @@ function A.setAnnounce(enabled)
 
 	if A.notifyAnnounceSetting then
 		A.notifyAnnounceSetting()
+	end
+	if enabled==false and A.announcePreviewEnd()then
+		A.trace("announce",{reason="preview-ended",source="switch"})
 	end
 	reconsider(enabled==false and"off"or"on")
 	return true
@@ -935,7 +938,7 @@ local function classFor(guid)
 		return nil
 	end
 	local ok,_,token=pcall(fn,guid)
-	if ok and type(token)=="string"and A.canRead(token)and token~=""then
+	if ok and A.readableString(token)then
 		return token
 	end
 	return nil
@@ -1252,6 +1255,9 @@ local function build()
 		if readable and stillShown then
 			A.trace("view",{source="banner-hide",state="ignored",kind=was},"ui")
 			return
+		end
+		if dragging then
+			A.stopDrag(self)
 		end
 		release(self)
 		if was~="plate"then
@@ -2755,13 +2761,10 @@ local function ownNames()
 		return nil,nil
 	end
 	local ok,own,realm=pcall(UnitName,"player")
-	if not(ok and type(own)=="string"and A.canRead(own)and own~="")then
+	if not(ok and A.readableString(own))then
 		return nil,nil
 	end
-	if type(realm)=="string"and A.canRead(realm)and realm~=""then
-		return own,own.."-"..realm
-	end
-	return own,nil
+	return own,A.qualifiedName(own,realm)
 end
 
 local function settled(fill)
@@ -3358,6 +3361,7 @@ local function buildToast()
 		if not pcall(self.StartMoving,self)then
 			return
 		end
+		self.dragging=true
 		if toastFadeStarted~=nil and type(GetTime)=="function"then
 			toastDragFrom=GetTime()
 			self:SetAlpha(1)
@@ -3365,6 +3369,7 @@ local function buildToast()
 	end)
 	frame:SetScript("OnDragStop",function(self)
 		A.stopDrag(self)
+		self.dragging=nil
 		if toastDragFrom~=nil and toastFadeStarted~=nil then
 			local now=GetTime()
 			toastFadeStarted=now-math.max(toastDragFrom-toastFadeStarted,RISE_SECONDS)
@@ -3381,6 +3386,10 @@ local function buildToast()
 	frame:SetScript("OnHide",function(self)
 		self:SetScript("OnUpdate",nil)
 		toastFadeStarted=nil
+		if self.dragging then
+			A.stopDrag(self)
+			self.dragging=nil
+		end
 		releaseToast(self)
 	end)
 	frame:Hide()

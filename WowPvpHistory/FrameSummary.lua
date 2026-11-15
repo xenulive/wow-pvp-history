@@ -1,4 +1,4 @@
--- WowPvpHistory 0.75.26
+-- WowPvpHistory 0.75.68
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -115,7 +115,7 @@ end
 function A.summaryHeightFought(rows,note,headline,reading)
 	local count=atLeastNought(rows)
 	local read=atLeastNought(reading)
-	local body=A.noteRowHeight()+A.metric("plotLabelDrop")+count*A.metric("opponentRow")
+	local body=A.metric("plotLabelDrop")+count*A.metric("opponentRow")
 	if note then
 		body=body+A.noteRowHeight()
 	end
@@ -447,8 +447,12 @@ function standing.build(region)
 		fill:Hide()
 		strip.goal.lines[i]={text=standing.text(strip,"stripTier","accent"),track=track,fill=fill}
 	end
+	strip.lastWeek={label=standing.text(strip,"stripLabel","label"),lines={}}
+	for i=1,2 do
+		strip.lastWeek.lines[i]=standing.text(strip,"stripTier","bright")
+	end
 	strip.rules={}
-	for i=1,standing.TILES+4 do
+	for i=1,standing.TILES+5 do
 		local rule=strip:CreateTexture(nil,"ARTWORK")
 		rule:Hide()
 		strip.rules[i]=rule
@@ -489,6 +493,10 @@ function standing.hideAll(strip)
 		line.text:Hide()
 		line.track:Hide()
 		line.fill:Hide()
+	end
+	strip.lastWeek.label:Hide()
+	for i=1,#strip.lastWeek.lines do
+		strip.lastWeek.lines[i]:Hide()
 	end
 	for i=1,#strip.bars do
 		strip.bars[i]:Hide()
@@ -960,6 +968,44 @@ function standing.placeGoal(strip,goal,x,width)
 	end
 end
 
+function standing.lastWeekReading()
+	local week,why=A.lastWeek(A.ownGuid())
+	if week==nil then
+		return nil,why
+	end
+	local lines=A.lastWeekLines(week)
+	if#lines==0 then
+		lines[1]="-"
+	end
+	return{label="LAST WEEK",lines=lines,ring=A.lastWeekRing(week)}
+end
+
+function standing.lastWeekWidth(strip,week)
+	local held=strip.lastWeek
+	local widest=A.textRoom(held.label,week.label)
+	for i,line in ipairs(week.lines)do
+		widest=math.max(widest,A.textRoom(held.lines[i],line))
+	end
+	return math.ceil(widest+A.metric("standingPad")*2)
+end
+
+function standing.placeLastWeek(strip,week,x,width)
+	local held=strip.lastWeek
+	local pad,gap=A.metric("standingPad"),A.metric("standingLineGap")
+	local left,room=x+pad,math.max(1,width-pad*2)
+	local lineHeight=A.fontSize("stripTier")
+	local block=A.fontSize("stripLabel")+#week.lines*(gap+lineHeight)
+	local y=math.floor((A.metric("standingStrip")-block)/2+0.5)
+	setColor(held.label,"label")
+	standing.place(strip,held.label,week.label,left,-y,room)
+	y=y+A.fontSize("stripLabel")
+	for i,line in ipairs(week.lines)do
+		setColor(held.lines[i],"bright")
+		standing.place(strip,held.lines[i],line,left,-(y+gap),room)
+		y=y+gap+lineHeight
+	end
+end
+
 function A.stripChangeText(change)
 	if change==0 then
 		return nil
@@ -1018,6 +1064,14 @@ function standing.paintCells(strip,reading,width,summary)
 		rateMetrics=standing.fill(rateHeld,rateCell)
 	end
 	local rateWidth=standing.rateWidth(rateMetrics,width)
+	local subForms=type(rateFigure)=="table"and rateFigure.subForms or nil
+	if rateHeld~=nil and rateCell~=nil and type(subForms)=="table"and#subForms>1 then
+		local fitted,index,measured=A.fittedForm(rateHeld.tier,rateWidth-A.metric("standingPad")*2,subForms)
+		rateCell.tier=fitted or(measured and subForms[#subForms])or subForms[1]
+		rateFigure.subForm=index or(measured and#subForms)or 1
+		rateFigure.subFit=fitted~=nil or not measured
+		rateMetrics=standing.fill(rateHeld,rateCell)
+	end
 	local rateX=width-rateWidth
 	local placed={}
 	local cellTexts={"label","rating","tier","change","high","highValue","peak","peakValue"}
@@ -1034,6 +1088,7 @@ function standing.paintCells(strip,reading,width,summary)
 	local stats,kept,trendRoom={},0,nil
 	local widths,dropped
 	local fixed,extras,goal,ring={},{},nil,{}
+	local lastWeek
 	local statWidth=A.metric("standingStat")
 	if reading.shape=="rated"then
 		for i=2,#(reading.figures or{})do
@@ -1047,8 +1102,11 @@ function standing.paintCells(strip,reading,width,summary)
 		local streakCell=standing.streakCell(reading,summary)
 		ring.streak=streakCell and streakCell.word or nil
 		goal=standing.goalReading(summary)
+		local lastWhy
+		lastWeek,lastWhy=standing.lastWeekReading()
 		A.switchPhase("stripCells",cellsStarted)
 		ring.goal=goal and goal.ring or"-"
+		ring.lastWeek=lastWeek and lastWeek.ring or lastWhy
 		for _,cell in ipairs({tierCell or streakCell,tierCell and streakCell or nil})do
 			local held=standing.heldOf(strip.extra[#extras+1])
 			local m=standing.fill(held,cell)
@@ -1066,6 +1124,9 @@ function standing.paintCells(strip,reading,width,summary)
 		end
 		if goal~=nil then
 			fixed[#fixed+1]={kind="goal",width=standing.goalWidth(strip,goal)}
+		end
+		if lastWeek~=nil then
+			fixed[#fixed+1]={kind="lastWeek",width=standing.lastWeekWidth(strip,lastWeek)}
 		end
 		local fixedWidths={}
 		for k=1,#fixed do
@@ -1123,14 +1184,17 @@ function standing.paintCells(strip,reading,width,summary)
 				x=x+entry.width
 			end
 		end
-		local right,goalEntry={},nil
+		local right,goalEntry,lastEntry={},nil,nil
 		for _,entry in ipairs(fixed)do
 			if entry.kind=="stat"then
 				right[entry.index]=entry
 			elseif entry.kind=="goal"then
 				goalEntry=entry
+			elseif entry.kind=="lastWeek"then
+				lastEntry=entry
 			end
 		end
+		right[#right+1]=lastEntry
 		right[#right+1]=goalEntry
 		for _,entry in ipairs(right)do
 			if entry.kept then
@@ -1153,6 +1217,13 @@ function standing.paintCells(strip,reading,width,summary)
 						placed[#placed+1]=strip.goal.lines[i].text
 					end
 					labels[#labels+1]=goal.label
+				elseif entry.kind=="lastWeek"and lastWeek~=nil then
+					standing.placeLastWeek(strip,lastWeek,ruleX+1,entry.width)
+					placed[#placed+1]=strip.lastWeek.label
+					for i=1,#lastWeek.lines do
+						placed[#placed+1]=strip.lastWeek.lines[i]
+					end
+					labels[#labels+1]=lastWeek.label
 				else
 					local figure=stats[entry.index]
 					local held=standing.heldOf(strip.stats[entry.index])
@@ -1169,6 +1240,7 @@ function standing.paintCells(strip,reading,width,summary)
 		for k=#fixed,kept+1,-1 do
 			local entry=fixed[k]
 			shed[#shed+1]=entry.kind=="goal"and goal~=nil and goal.label
+				or entry.kind=="lastWeek"and lastWeek~=nil and lastWeek.label
 				or entry.kind=="extra"and extras[entry.index].cell.label
 				or stats[entry.index].label or"?"
 		end
@@ -1210,6 +1282,7 @@ function standing.paintCells(strip,reading,width,summary)
 		barsShed=barsShed,
 		stripCut=(A.cutTexts(placed)),
 		nextTier=ring.nextTier,streak=ring.streak,goal=ring.goal,
+		lastWeek=ring.lastWeek,
 	}
 end
 
@@ -1283,6 +1356,7 @@ function standing.traceStrip(summary,reading,drew,height,body)
 		end
 	end
 	local layout=type(drew.layout)=="table"and drew.layout or{}
+	local rateFigure=reading.shape=="all"and(reading.figures or{})[1]or nil
 	pcall(A.trace,"strip",{format=summary.format,shape=drew.shape,bars=drew.bars,
 		reason=drew.reason,total=height,ground=drew.ground,tones=drew.tones,
 		last=lastFigure and lastFigure.drawn or nil,
@@ -1295,8 +1369,11 @@ function standing.traceStrip(summary,reading,drew,height,body)
 		inset=layout.inset,barWidth=layout.barWidth,
 		cells=layout.cells,outings=layout.outings,trendSlot=layout.trendSlot,
 		stripCut=layout.stripCut,stripBody=body,barsShed=layout.barsShed,
+		rateSubForm=rateFigure and rateFigure.subForm or nil,
+		rateSubFit=rateFigure and rateFigure.subFit or nil,
 		chipFill=layout.chipFill,chipEdge=layout.chipEdge,
-		nextTier=layout.nextTier,streak=layout.streak,goal=layout.goal},"ui")
+		nextTier=layout.nextTier,streak=layout.streak,goal=layout.goal,
+		weekRated=layout.lastWeek},"ui")
 end
 
 standing.CHIPS=6
@@ -1551,7 +1628,6 @@ function standing.paintOther(strip,held,data,width)
 		standing.place(strip,region.sub,tile[3],x,valueTop-A.fontSize("number")-3,each-8)
 	end
 	local x0=3*each
-	standing.place(strip,held.whyLabel,"WHY YOU LEFT",x0,-4)
 	local x,top,tall=x0,valueTop,A.fontSize("bodyText")+8
 	local drawn=0
 	local pad,gap=standing.CHIP_PAD,standing.CHIP_GAP
@@ -1585,6 +1661,7 @@ function standing.paintOther(strip,held,data,width)
 	if drawn==0 then
 		return 0
 	end
+	standing.place(strip,held.whyLabel,"WHY YOU LEFT",x0,-4)
 	return drawn,{chipFill=standing.CHIP_FILL,chipEdge=standing.CHIP_EDGE}
 end
 
@@ -2347,7 +2424,6 @@ end
 local KEY_SWATCH,KEY_GAP=14,5
 
 local POOLS={
-	ticks="BACKGROUND",
 	marks="BORDER",
 	mmr="BORDER",
 	lines="ARTWORK",
@@ -2797,17 +2873,12 @@ local function drawSeries(plot,series,showMmr,note)
 
 	local loose={}
 	for p=1,#panels do
-		if not panels[p].joined then
-			for i=panels[p].first,panels[p].last do
+		local joined=panels[p].joined
+		for i=panels[p].first,panels[p].last do
+			local before=joined and i>panels[p].first and A.seriesAdjacent(series[i-1],series[i])
+			local after=joined and i<panels[p].last and A.seriesAdjacent(series[i],series[i+1])
+			if not before and not after then
 				loose[#loose+1]=i
-			end
-		else
-			for i=panels[p].first,panels[p].last do
-				local before=i>panels[p].first and A.seriesAdjacent(series[i-1],series[i])
-				local after=i<panels[p].last and A.seriesAdjacent(series[i],series[i+1])
-				if not before and not after then
-					loose[#loose+1]=i
-				end
 			end
 		end
 	end
@@ -2846,7 +2917,6 @@ local function drawSeries(plot,series,showMmr,note)
 			label:SetText(tostring(value))
 		end
 	end
-	hidePoolFrom(plot,"ticks",1)
 	for i=ticksUsed+1,#plot.tickLabels do
 		plot.tickLabels[i]:Hide()
 	end
@@ -2978,7 +3048,7 @@ local function buildOpponentRow(parent,index)
 	row.name:SetPoint("LEFT",row,"LEFT",0,0)
 	row.name:SetJustifyH("LEFT")
 	row.name:SetWordWrap(false)
-	standing.keep(row,row.name,"bodyText","text")
+	standing.keep(row,row.name,"nameText","text")
 
 	row.record=row:CreateFontString(nil,"ARTWORK","GameFontHighlightSmall")
 	row.record:SetPoint("LEFT",row,"LEFT",210,0)
@@ -3155,7 +3225,6 @@ function A.buildSummaryRegion(parent,controlHost,scopeChoices,onScopePick,onDeta
 	region.plot:SetPoint("BOTTOMLEFT",region,"BOTTOMLEFT",0,0)
 	region.plot:SetPoint("BOTTOMRIGHT",region,"BOTTOMRIGHT",0,0)
 	region.plot.lines={}
-	region.plot.ticks={}
 	region.plot.marks={}
 	region.plot.mmr={}
 	region.plot.tickLabels={}
@@ -3239,8 +3308,7 @@ end
 local function paintHeadline(region,summary)
 	standing.restyle(region.headline)
 	if summary.rating~=nil then
-		local oneLadder=type(A.seriesSeasons)~="function"
-		or select(2,pcall(A.seriesSeasons,summary.series))==1
+		local oneLadder=select(2,pcall(A.seriesSeasons,summary.series))==1
 		local arc=summary.ratingFrom~=nil and#summary.series>1 and oneLadder
 			and not summary.ratingFromReset
 		region.fromValue:SetText(arc and tostring(summary.ratingFrom)or"")
@@ -3629,14 +3697,11 @@ local function foughtNoteText(shown,total)
 	return nil
 end
 
-local function plotNoteAnchor(label,legend)
+local function plotNoteAnchor(legend)
 	if legend then
-		return"TOPRIGHT","RIGHT",false
+		return"TOPRIGHT","RIGHT"
 	end
-	if label then
-		return"TOPLEFT","LEFT",true
-	end
-	return"TOPLEFT","LEFT",false
+	return"TOPLEFT","LEFT"
 end
 
 function A.plotShape(branch)
@@ -3852,7 +3917,7 @@ local function paintSeasonCard(region,held)
 	about[#about+1]=held.character
 	about[#about+1]=held.span
 	about[#about+1]=held.hours and(held.hours.." played")or nil
-	A.style(card.title,"label","text")
+	A.style(card.title,"nameText","text")
 	card.title:SetText("YOUR SEASON  "..table.concat(about,", "))
 	card.title:ClearAllPoints()
 	card.title:SetPoint("TOPLEFT",card,"TOPLEFT",pad,-pad)
@@ -3872,7 +3937,7 @@ local function paintSeasonCard(region,held)
 		if cell~=nil then
 			local y=-pad-A.metric("segmentHeight")-(i-1)*A.metric("readingRow")
 			A.style(row.key,"label","dim")
-			A.style(row.text,"note","text")
+			A.style(row.text,cell.role or"note","text")
 			row.key:SetText(cell.key)
 			row.key:SetWidth(keyRoom)
 			row.key:ClearAllPoints()
@@ -3899,6 +3964,7 @@ local function paintSeasonCard(region,held)
 	local width=A.listHostWidth(false)-pad*2
 	local weeks=math.min(#(held.path or{}),SEASON_CARD_BARS)
 	local slot=weeks>0 and width/weeks or 0
+	local barWidth=math.max(1,math.min(A.metric("weekBarMax"),math.floor(slot*0.6)))
 	local drawn=0
 	for i=1,SEASON_CARD_BARS do
 		local bar,step=card.bars[i],held.path and held.path[i]
@@ -3907,7 +3973,7 @@ local function paintSeasonCard(region,held)
 			bar:SetColorTexture(tierTone(held.format,step.rating))
 			bar:ClearAllPoints()
 			bar:SetPoint("BOTTOMLEFT",card,"BOTTOMLEFT",pad+(i-1)*slot,pad)
-			bar:SetSize(math.max(1,math.floor(slot*0.6)),math.max(2,SEASON_CARD_PATH*(0.25+0.75*share)-pad))
+			bar:SetSize(barWidth,math.max(2,SEASON_CARD_PATH*(0.25+0.75*share)-pad))
 			bar:Show()
 			drawn=drawn+1
 		else
@@ -4107,20 +4173,16 @@ local function setRegionPlot(region,branch,height,format,headline,reading,lines,
 		region.plotSpan:SetShown(folded)
 	end
 
-	local noteAt,noteJustify,ownLine=plotNoteAnchor(drawing,legend)
+	local noteAt,noteJustify=plotNoteAnchor(legend)
 	region.plotNote:ClearAllPoints()
 	region.plotNote:SetPoint(noteAt,region.plot,noteAt,0,0)
 	region.plotNote:SetJustifyH(noteJustify)
-	if folded then
-		ownLine=false
-	end
 
-	local drop=ownLine and A.noteRowHeight()or 0
 	region.plotLabel:ClearAllPoints()
-	region.plotLabel:SetPoint("TOPLEFT",region.plot,"TOPLEFT",0,-drop)
+	region.plotLabel:SetPoint("TOPLEFT",region.plot,"TOPLEFT",0,0)
 	for i=1,#region.opponents do
 		local row=region.opponents[i]
-		local at=drop+A.metric("plotLabelDrop")+(i-1)*A.metric("opponentRow")
+		local at=A.metric("plotLabelDrop")+(i-1)*A.metric("opponentRow")
 		row:ClearAllPoints()
 		row:SetPoint("TOPLEFT",region.plot,"TOPLEFT",0,-at)
 		row:SetPoint("TOPRIGHT",region.plot,"TOPRIGHT",0,-at)
@@ -4145,7 +4207,6 @@ local function setRegionPlot(region,branch,height,format,headline,reading,lines,
 			note=noteRow,
 			noteAt=noteAt,
 			short=region.stripShort,
-			bare=region.stripBare,
 			room=region.stripRoom,
 			tones=region.stripTones,
 			asides=region.stripAsides,
@@ -4483,7 +4544,14 @@ function A.paintSummaryRegion(region,summary,scope,reading)
 		region.scope:SetShown(true)
 		if type(A.setDropdownChoices)=="function"and type(A.scopeChoicesFor)=="function"then
 			pcall(function()
-				A.setDropdownChoices(region.scope,A.scopeChoicesFor(summary.format),scope)
+				local choices=A.scopeChoicesFor(summary.format)
+				A.setDropdownChoices(region.scope,choices,scope)
+				local words={}
+				for i=1,#choices do
+					words[i]=tostring(choices[i].value)
+				end
+				A.trace("scope",{format=summary.format,scopeChoices=table.concat(words,","),
+					scopeWord=tostring(scope)},"ui")
 			end)
 		end
 	end
@@ -4499,7 +4567,7 @@ function A.paintSummaryRegion(region,summary,scope,reading)
 		region.reading:Hide()
 		region.plot:Hide()
 		region.cardRoom=paintSeasonCard(region,nil)
-		region.stripShort,region.stripBare=nil,nil
+		region.stripShort=nil
 		A.paintStandingStrip(region,summary,reading.standing)
 		return true
 	end
@@ -4634,8 +4702,6 @@ function A.paintSummaryRegion(region,summary,scope,reading)
 
 	region.stripShort=short
 
-	region.stripBare=nil
-
 	if stripHead then
 		region.standingShape=type(stripDrew)=="table"and stripDrew.shape or nil
 	else
@@ -4662,7 +4728,6 @@ function A.paintSummaryRegion(region,summary,scope,reading)
 				tiles=A.tileHeight(),
 				note=0,
 				short=region.stripShort,
-				bare=region.stripBare,
 				room=region.stripRoom,
 				tones=region.stripTones,
 				asides=region.stripAsides,
@@ -4674,7 +4739,7 @@ function A.paintSummaryRegion(region,summary,scope,reading)
 	region.plot:Show()
 
 	pcall(A.trace,"summary",{format=summary.format,follow=summary.followed==true,
-		bound=summary.matches,seasonCard=cardHeld~=nil,
+		bound=summary.matches,outings=summary.outings,seasonCard=cardHeld~=nil,
 		cells=cardHeld and#cardHeld.cells or 0,
 		cardFold=cardFoldsDetails and"details"or"none"},"ui")
 
@@ -4712,7 +4777,7 @@ function A.paintSummaryRegion(region,summary,scope,reading)
 
 		setRegionPlot(region,"fought",A.summaryHeightFought(shown,fought~=nil,
 			headline,readingHeight),summary.format,headline,
-			readingHeight,readingCount)
+			readingHeight,readingCount,nil,false)
 		return true
 	end
 
@@ -5251,7 +5316,7 @@ local function regionFaultsPinned()
 		end
 	end
 
-	if type(A.lastStripRow)=="function"and type(A.overlapFaults)=="function"then
+	if type(A.overlapFaults)=="function"then
 		local blocks,where=A.lastStripRow()
 		if type(blocks)=="table"then
 			for _,said in ipairs(A.overlapFaults(blocks,(where or"the").." strip"))do
@@ -5570,7 +5635,8 @@ function A.overviewRecordText(record)
 	if type(record)~="table"then
 		return""
 	end
-	local parts={("%d %s"):format(record.matches or 0,(record.matches or 0)==1 and"match"or"matches")}
+	local counted=A.matchesAndOutingsText({matches=record.matches or 0,outings=record.outings or 0})
+	local parts={counted or"0 matches"}
 	local wins,losses=record.wins or 0,record.losses or 0
 	local rate=select(4,A.winRecord({wins=wins,decided=wins+losses+(record.draws or 0),
 		draws=record.draws or 0}))
@@ -6016,7 +6082,7 @@ function A.paintStatsOverview(frame,overview,season,bound,settled,choice)
 	end
 	local offset=scroll:GetVerticalScroll()
 	local figures={weeks=#weeks,cells=drawn,blank=blank,draws=record.draws or 0,
-		n=#formats,drew="BY WEEK,WHEN YOU WIN",
+		outings=record.outings or 0,n=#formats,drew="BY WEEK,WHEN YOU WIN",
 		rowHeights=table.concat(heightsText,","),nameForm=namesFit and"long"or"short",
 		ratingForm=tiersFit and"tier"or"rating",chart=chart,cell=cellHeight,
 		weekBar=#weeks>0 and barWidth or nil,weekStep=#weeks>0 and step or nil,
@@ -6025,7 +6091,7 @@ function A.paintStatsOverview(frame,overview,season,bound,settled,choice)
 		viewHeight=measured and viewHeight or nil,contentHeight=contentHeight,scrollable=scrollable,
 		offset=type(offset)=="number"and offset or 0,range=range,contentWidth=width}
 	A.trace("stats-overview",{weeks=figures.weeks,dropped=figures.dropped,cells=figures.cells,blank=figures.blank,
-		draws=figures.draws,n=figures.n,drew=figures.drew,rowHeights=figures.rowHeights,
+		draws=figures.draws,outings=figures.outings,n=figures.n,drew=figures.drew,rowHeights=figures.rowHeights,
 		nameForm=figures.nameForm,ratingForm=figures.ratingForm,chart=chart,cell=cellHeight,
 		weekBar=figures.weekBar,weekStep=figures.weekStep,
 		weekWidth=A.unitFigure(figures.weekWidth),rangeWord=figures.rangeWord,

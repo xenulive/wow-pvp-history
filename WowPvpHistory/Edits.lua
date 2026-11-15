@@ -1,4 +1,4 @@
--- WowPvpHistory 0.75.26
+-- WowPvpHistory 0.75.68
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -335,7 +335,9 @@ function A.supersedeTypedResults(db)
 		local record=list[i]
 		local manual=type(record)=="table"and record.manual or nil
 		if type(manual)=="table"and manual.result~=nil and A.resultCaptured(record)then
-			manual.resultSuperseded=manual.result
+			if manual.resultSuperseded==nil then
+				manual.resultSuperseded=manual.result
+			end
 			manual.result=nil
 			moved=moved+1
 		end

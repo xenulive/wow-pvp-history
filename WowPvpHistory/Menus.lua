@@ -1,4 +1,4 @@
--- WowPvpHistory 0.75.26
+-- WowPvpHistory 0.75.68
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -87,27 +87,30 @@ local function resolve(contextData)
 	return nil,nil
 end
 
-function A.clientPlayerName(guid)
+local function readClientName(guid)
 	local fn=GetPlayerInfoByGUID
 	if type(fn)~="function"then
-		return nil
+		return nil,false
 	end
 
 	local ok,_,_,_,_,_,rawName,rawRealm=pcall(fn,guid)
 	if not ok then
-		return nil
+		return nil,false
 	end
 
 	local name=A.readableString(rawName)
 	if not name then
-		return nil
+		return nil,false
 	end
 
-	local realm=A.readableString(rawRealm)
-	if not realm then
-		return name
+	if A.surnameClient()then
+		return name,A.readableString(rawRealm)~=nil
 	end
-	return("%s-%s"):format(name,realm)
+	return A.qualifiedName(name,rawRealm)or name,false
+end
+
+function A.clientPlayerName(guid)
+	return(readClientName(guid))
 end
 
 local function playerName(guid)
@@ -293,7 +296,8 @@ local function modify(tag,root,contextData)
 	end
 
 	build(root,guid)
-	traceTag(tag,path)
+	local _,realmLeft=readClientName(guid)
+	A.trace("menu",{source=tag,reason=path,realmLeft=realmLeft},"data")
 end
 
 local BINDINGS={
@@ -399,7 +403,10 @@ local function register()
 	for i=1,#TAGS do
 		local tag=TAGS[i]
 		local ok=pcall(menu.ModifyMenu,tag,function(_,root,contextData)
-			pcall(modify,tag,root,contextData)
+			local built,err=pcall(modify,tag,root,contextData)
+			if not built then
+				A.noteError(err,"menu")
+			end
 		end)
 		if ok then
 			took=took+1

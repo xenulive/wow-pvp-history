@@ -1,4 +1,4 @@
--- WowPvpHistory 0.75.26
+-- WowPvpHistory 0.75.68
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -38,7 +38,7 @@ local function capturedWin(record)
 	return outcome=="win"and not typed
 end
 
-function A.bestFigures(record)
+function A.bestFigures(record,refused)
 	local out={}
 	if type(record)~="table"then
 		return out
@@ -54,7 +54,9 @@ function A.bestFigures(record)
 		out.healing=own.healing
 	end
 	if not A.ladderSilent(own)then
-		if record.rated==true and type(own.rating)=="number"and type(own.ratingChange)=="number"then
+		if A.oneLadder(record.format)and A.movesRating(record.format)and A.recordOnLadder(record.format,record)
+			and type(own.rating)=="number"and type(own.ratingChange)=="number"
+			and not(type(refused)=="table"and refused[record]~=nil)then
 			out.rating=own.rating+own.ratingChange
 		end
 		if type(own.mmrPost)=="number"and own.mmrPost>0 then
@@ -102,9 +104,10 @@ function A.bestsTally(format,season,character,bound)
 	end
 
 	local admitted,states={},{}
+	local follow=A.paintFollowSet(format,season,character,bound)
 	for i=1,#db.matches do
 		local record=db.matches[i]
-		if type(record)=="table"and A.recordInFormat(record,format)
+		if type(record)=="table"and(follow==nil or follow[record]==true)and A.recordInFormat(record,format)
 			and A.bestsViewOffered(record.format)
 			and(season==nil or A.recordInSeason(record,season))
 			and A.recordedBy(record,character)and A.recordSince(record,bound)
@@ -122,6 +125,7 @@ function A.bestsTally(format,season,character,bound)
 	end
 
 	local leftOut,anyRating,anyMmr=0,false,false
+	local refused=A.ladderRefusals(format,season,character)
 	for i=1,#admitted do
 		local record=admitted[i]
 		local own=ownRow(record)or{}
@@ -136,7 +140,7 @@ function A.bestsTally(format,season,character,bound)
 			order[#order+1]=row
 		end
 		row.matches=row.matches+1
-		local figures=A.bestFigures(record)
+		local figures=A.bestFigures(record,refused)
 		if figures.fastest~=nil and openedKey(record)~=opened then
 			figures.fastest=nil
 			leftOut=leftOut+1
@@ -198,7 +202,8 @@ function A.bestsColumnSet(figures,needs)
 		local need=type(needs[key])=="number"and needs[key]>0 and(math.ceil(needs[key])+MEASURE_MARGIN)or 0
 		return math.max(A.headerFloor(head),need)
 	end
-	local columns={{key="name",name="SPEC",metric="askName",width=width("name","SPEC")}}
+	local head=A.specWord():upper()
+	local columns={{key="name",name=head,metric="askName",width=width("name",head)}}
 	for i=1,#figures do
 		columns[#columns+1]={key=figures[i].key,name=figures[i].head,metric="askRate",
 			align="RIGHT",width=width(figures[i].key,figures[i].head)}
@@ -253,7 +258,7 @@ function A.bestsAnswer(format,season,character,bound,measure)
 	end
 	answer.columns=A.bestsColumnSet(figures,needs)
 	answer.rows,answer.under=rows,{}
-	answer.group="YOUR BESTS, BY SPEC"
+	answer.group="YOUR BESTS, BY "..A.specWord():upper()
 	answer.opened=opened
 	answer.leftOut=leftOut
 	if#rows==0 then
@@ -305,7 +310,8 @@ function A.newBests(record)
 	if not(db and type(db.matches)=="table")then
 		return{},0,"unranked"
 	end
-	local mine=A.bestFigures(record)
+	local refused=A.ladderRefusals(record.format,nil,record.character)
+	local mine=A.bestFigures(record,refused)
 	local _,opened=A.bestsTally(record.format,nil,record.character,nil)
 	if openedKey(record)~=opened then
 		mine.fastest=nil
@@ -318,7 +324,7 @@ function A.newBests(record)
 			local otherOwn=ownRow(other)
 			if otherOwn~=nil and otherOwn.spec==spec then
 				earlier=earlier+1
-				local figures=A.bestFigures(other)
+				local figures=A.bestFigures(other,refused)
 				if figures.fastest~=nil and openedKey(other)~=opened then
 					figures.fastest=nil
 				end
@@ -353,4 +359,210 @@ function A.newBestLine(set)
 		parts[i]=("%s %s"):format(set[i].word,tostring(set[i].text))
 	end
 	return"new best: "..table.concat(parts,", ")
+end
+
+local MILESTONE_COUNTS={[10]=true,[25]=true,[50]=true}
+
+local MILESTONE_STREAK_FLOOR=3
+local MILESTONE_COMP_FLOOR=2
+
+local function roundCount(count)
+	return MILESTONE_COUNTS[count]==true or(count>=100 and count%100==0)
+end
+
+local function milestoneResult(record)
+	local outcome,typed,derived=A.recordVerdict(record)
+	if typed then
+		return"typed"
+	end
+	if outcome==nil then
+		return"break"
+	end
+	if A.recordLevel(record,outcome,derived)then
+		return"draw"
+	end
+	return(outcome=="win"or outcome=="loss")and outcome or"break"
+end
+
+local function addMilestone(out,kind,record,format,count,comp)
+	local milestone={kind=kind,format=format,character=record.character,count=count,
+		comp=comp,record=record,id=record.id,
+		stamp=record.openedAt or record.completedAt or record.endedAt}
+	out[#out+1]=milestone
+	return milestone
+end
+
+local function countComp(out,state,record,format,result)
+	local key,members=A.compKey(record)
+	if key==nil then
+		return
+	end
+	local comp=state.comps[key]
+	if comp==nil then
+		comp={losses=0}
+		state.comps[key]=comp
+	end
+	if comp.settled then
+		return
+	end
+	if result=="loss"then
+		comp.losses=comp.losses+1
+		return
+	end
+	comp.settled=true
+	if result=="win"and comp.losses>=MILESTONE_COMP_FLOOR then
+		addMilestone(out,"comp",record,format,comp.losses,A.compText(members))
+	end
+end
+
+local function milestonesWalk(character,format)
+	local out={}
+	local db=A.db()
+	if not(db and type(db.matches)=="table")then
+		return out
+	end
+	local states={}
+	for i=1,#db.matches do
+		local record=db.matches[i]
+		if type(record)=="table"and A.recordInFormat(record,format)and A.recordedBy(record,character)
+			and A.bestsViewOffered(record.format)and not A.isFixtureRecord(record)and not botVenue(record)then
+			local recordFormat=record.format or"unknown"
+			local stateKey=tostring(record.character).."|"..recordFormat
+			local state=states[stateKey]
+			if state==nil then
+				state={count=0,run=0,longest=0,comps={}}
+				states[stateKey]=state
+			end
+
+			state.count=state.count+1
+			if roundCount(state.count)then
+				addMilestone(out,"count",record,recordFormat,state.count)
+			end
+
+			local result=milestoneResult(record)
+			if result=="win"then
+				state.run=state.run+1
+			elseif result~="typed"then
+				state.run=0
+				state.runMilestone=nil
+			end
+			if result=="win"and state.run>state.longest then
+				state.longest=state.run
+				if state.run>=MILESTONE_STREAK_FLOOR then
+					if state.runMilestone~=nil then
+						state.runMilestone.superseded=true
+					end
+					state.runMilestone=addMilestone(out,"streak",record,recordFormat,state.run)
+				end
+			end
+
+			if result~="typed"and result~="break"and A.compFormat(recordFormat)and not A.compRounds(recordFormat)then
+				countComp(out,state,record,recordFormat,result)
+			end
+		end
+	end
+	local kept={}
+	for i=1,#out do
+		if not out[i].superseded then
+			kept[#kept+1]=out[i]
+		end
+	end
+	return kept
+end
+
+function A.milestones(character,format)
+	return A.paintHeld("milestones",milestonesWalk,character,format)
+end
+
+function A.milestoneText(milestone)
+	if type(milestone)~="table"then
+		return nil
+	end
+	local label=A.formatLabel(milestone.format)
+	if milestone.kind=="count"then
+		return("%dth %s"):format(milestone.count,label)
+	end
+	if milestone.kind=="streak"then
+		return("longest %s win streak: %d"):format(label,milestone.count)
+	end
+	return("first win against %s after %d losses"):format(tostring(milestone.comp),milestone.count)
+end
+
+function A.newMilestones(record)
+	local set,kinds,count={},{},0
+	if type(record)~="table"or not A.bestsViewOffered(record.format)or A.isFixtureRecord(record)then
+		return set,count
+	end
+	local all=A.milestones(record.character,record.format or"unknown")
+	for i=1,#all do
+		if all[i].record==record then
+			set[#set+1]=all[i]
+			if not kinds[all[i].kind]then
+				kinds[all[i].kind]=true
+				count=count+1
+			end
+		end
+	end
+	return set,count
+end
+
+function A.milestoneLine(set)
+	if type(set)~="table"or#set==0 then
+		return nil
+	end
+	local parts={}
+	for i=1,#set do
+		parts[i]=A.milestoneText(set[i])
+	end
+	return"milestone: "..table.concat(parts,", ")
+end
+
+local function milestoneListText(milestone)
+	return(A.stampWords(milestone.stamp)or"-").."  "..A.milestoneText(milestone)
+end
+
+function A.milestoneElements(character,format,room,height)
+	local list=A.milestones(character,format)
+	local out={{detail={kind="specMetHead",key="MILESTONES",
+		text=#list>0 and tostring(#list)or"none yet",
+		keyWidth=A.readingKeyColumn({"MILESTONES"})},height=height,room=room}}
+	for i=#list,1,-1 do
+		out[#out+1]={detail={kind="specMet",id=list[i].id,stay=true,
+			text=milestoneListText(list[i])},height=height,room=room}
+	end
+	return out,#list
+end
+
+function A.milestoneLines(character,format)
+	local list=A.milestones(character,format)
+	local lines={}
+	for i=#list,1,-1 do
+		lines[#lines+1]=milestoneListText(list[i])
+			..(list[i].id~=nil and(", #"..tostring(list[i].id))or"")
+	end
+	return lines
+end
+
+function A.reportMilestones(format)
+	local character=A.windowCharacter()
+	if A.refuseUnstoredFormat(format,character)then
+		return
+	end
+	format=format or A.windowFormat()
+	if format~=nil and not A.bestsViewOffered(format)then
+		A.say(("%s keeps no milestones: its records carry no scoreboard row of yours")
+			:format(A.formatLabel(format)))
+		return
+	end
+	local ok,lines=pcall(A.milestoneLines,character,format)
+	if not ok then
+		A.say("the milestones could not be read: "..tostring(lines))
+		return
+	end
+	A.say(("milestones on %s, all time: %d (left-early matches, generated records and matches against bots"
+		.." count toward none)")
+		:format(format and A.formatLabel(format)or"every format",#lines))
+	for i=1,#lines do
+		A.say("  "..lines[i])
+	end
 end

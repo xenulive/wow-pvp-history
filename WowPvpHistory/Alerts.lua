@@ -1,4 +1,4 @@
--- WowPvpHistory 0.75.26
+-- WowPvpHistory 0.75.68
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -237,14 +237,6 @@ local function contained(fn)
 	end
 end
 
-function A.inMatchInstance()
-	if type(GetInstanceInfo)~="function"then
-		return false
-	end
-	local ok,_,instanceType=pcall(GetInstanceInfo)
-	return ok and A.canRead(instanceType)and(instanceType=="pvp"or instanceType=="arena")
-end
-
 local function traceAlert(reason,n,restriction,noted,found)
 	A.trace("alert",{reason=reason,n=n,restriction=restriction,noted=noted,
 		found=found})
@@ -318,7 +310,7 @@ local function heldOff()
 		traceAlert("restriction",nil,reading)
 		return true
 	end
-	if A.inMatchInstance()then
+	if A.inPvpInstance()then
 		traceAlert("instance")
 		return true
 	end
@@ -494,6 +486,20 @@ function A.matchKnownClause(record)
 	end
 	local found=known.found or 0
 	return(", %d met before"):format(found),found
+end
+
+function A.afterMatchBestsLine(record,bestsSet)
+	local bestLine=A.newBestLine(bestsSet)
+	local ok,set,kinds=pcall(A.newMilestones,record)
+	if not ok then
+		A.noteError(set,"harvest.milestones")
+		return bestLine,nil
+	end
+	local milestoneLine=A.milestoneLine(set)
+	if bestLine and milestoneLine then
+		return bestLine.."; "..milestoneLine,kinds
+	end
+	return bestLine or milestoneLine,kinds
 end
 
 function A.matchLinkLine(record)

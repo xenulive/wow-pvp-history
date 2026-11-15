@@ -1,4 +1,4 @@
--- WowPvpHistory 0.75.26
+-- WowPvpHistory 0.75.68
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -94,7 +94,20 @@ function A.tooltipBlock(tooltip,guid)
 			drew.lastSeen=true
 		end
 	end
-	return#items,drew
+
+	local n=#items
+	drew.rivalLine=false
+	if A.rivalsEnabled()then
+		local meetings,entry=A.rivalMeetings(guid)
+		if meetings~=nil and meetings>=A.RIVAL_MEETINGS then
+			local lr,lg,lb=A.color("loss")
+			local vr,vg,vb=A.color("text")
+			tooltip:AddDoubleLine("Rival",A.rivalPhrase(meetings,entry),lr,lg,lb,vr,vg,vb)
+			drew.rivalLine=true
+			n=n+1
+		end
+	end
+	return n,drew
 end
 
 local function append(tooltip)
@@ -121,7 +134,8 @@ local function append(tooltip)
 	local n,drew=A.tooltipBlock(tooltip,guid)
 	if n>0 and drew then
 		A.trace("tooltip",{reason="appended",n=n,header=drew.header,pairs=drew.pairs,
-			noteLine=drew.noteLine,tagLine=drew.tagLine,lastSeen=drew.lastSeen},"data")
+			noteLine=drew.noteLine,tagLine=drew.tagLine,lastSeen=drew.lastSeen,
+			rivalLine=drew.rivalLine},"data")
 		return
 	end
 
@@ -164,7 +178,7 @@ function A.tooltipSample(guid,name)
 	A.trace("tooltip",{source="sample",reason=n>0 and"appended"or"none",n=n,
 		switch=A.tooltipEnabled()and"on"or"off",header=drew and drew.header,
 		pairs=drew and drew.pairs,noteLine=drew and drew.noteLine,tagLine=drew and drew.tagLine,
-		lastSeen=drew and drew.lastSeen},"data")
+		lastSeen=drew and drew.lastSeen,rivalLine=drew and drew.rivalLine},"data")
 	return n
 end
 
@@ -189,7 +203,10 @@ local function register()
 	end
 
 	return(pcall(processor.AddTooltipPostCall,kind,function(tooltip)
-		pcall(append,tooltip)
+		local ok,err=pcall(append,tooltip)
+		if not ok then
+			A.noteError(err,"tooltip")
+		end
 	end))
 end
 

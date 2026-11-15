@@ -1,4 +1,4 @@
--- WowPvpHistory 0.75.26
+-- WowPvpHistory 0.75.68
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -153,7 +153,7 @@ local function specWords(record)
 	if type(spec)~="string"then
 		return nil
 	end
-	return type(class)=="string"and spec.." "..class or spec
+	return A.specAndClass(spec,class)
 end
 
 function A.talentsLabel(record)
@@ -288,9 +288,11 @@ function A.buildTally(format,season,character,bound,onlySpec,onlyClass)
 		return order,considered,before,unread,specCount
 	end
 
+	local follow=A.paintFollowSet(format,season,character,bound)
 	for i=1,#db.matches do
 		local record=db.matches[i]
-		local admitted=type(record)=="table"and A.recordInFormat(record,format)
+		local admitted=type(record)=="table"and(follow==nil or follow[record]==true)
+			and A.recordInFormat(record,format)
 			and A.buildsViewOffered(record.format)
 			and(season==nil or A.recordInSeason(record,season))
 			and A.recordedBy(record,character)and A.recordSince(record,bound)
@@ -417,7 +419,7 @@ function A.buildsAnswer(format,season,character,bound)
 	end
 	answer.rows,answer.under=rows,{}
 	answer.numbered=numbered
-	answer.group=mixed and"YOUR BUILDS, BY SPEC"or"YOUR BUILDS"
+	answer.group=mixed and("YOUR BUILDS, BY "..A.specWord():upper())or"YOUR BUILDS"
 	answer.considered=considered
 	answer.before=before
 	answer.unread=unread

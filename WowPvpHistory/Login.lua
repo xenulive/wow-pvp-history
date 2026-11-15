@@ -1,4 +1,4 @@
--- WowPvpHistory 0.75.26
+-- WowPvpHistory 0.75.68
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -49,12 +49,10 @@ function A.loginLines()
 		add("nothing is stored: the account-wide database did not load, so no match "
 			.."can be recorded","fault")
 	else
-		if type(A.lastErrorLines)=="function"then
-			local lines=A.lastErrorLines(A.savedDB()or db)
-			if type(lines)=="table"then
-				for i=1,#lines do
-					add(lines[i],"fault")
-				end
+		local lines=A.lastErrorLines(A.savedDB()or db)
+		if type(lines)=="table"then
+			for i=1,#lines do
+				add(lines[i],"fault")
 			end
 		end
 	end
@@ -87,7 +85,7 @@ function A.rememberCharacter()
 	if type(UnitName)~="function"then
 		return false
 	end
-	local ok,name=pcall(UnitName,"player")
+	local ok,name,second=pcall(UnitName,"player")
 	local isString=ok and type(name)=="string"
 	local readable=isString and A.canRead(name)
 	if isString and not readable then
@@ -106,7 +104,7 @@ function A.rememberCharacter()
 		realm=type(held)=="table"and held.realm or nil
 	end
 	db.characters[guid]={
-		name=name,
+		name=A.fullName(name,second),
 		realm=realm,
 		at=A.stamp(),
 	}
@@ -141,6 +139,12 @@ local function announce()
 	elseif type(recap)=="string"then
 		A.say(recap,"routine")
 	end
+	local okWeek,week=pcall(A.weekRecapLogin)
+	if not okWeek then
+		A.noteError(week,"login.weekrecap")
+	elseif type(week)=="string"then
+		A.say(week,"routine")
+	end
 end
 
 A.on("PLAYER_LOGIN",function()
@@ -149,8 +153,15 @@ A.on("PLAYER_LOGIN",function()
 		A.noteError(err,"login.character")
 	end
 	pcall(A.pruneSessionFolds)
+	local adopted,adoptErr=pcall(A.adoptAccountChatWindow)
+	if not adopted then
+		A.noteError(adoptErr,"login.chatwindow")
+	end
 	announce()
 end)
+
+A.SAMPLE_PROMPT="Show me a sample"
+A.SAMPLE_TERM="The sample lasts until a /reload or your next match."
 
 local WELCOME_NAME="WowPvpHistoryWelcome"
 local WELCOME_WIDTH,WELCOME_PAD=440,16
@@ -204,11 +215,17 @@ local function answered(action)
 end
 
 function A.welcomeSample()
+	local refused=A.fixtureRefusal(0)
+	if refused~=nil and refused~="too-many"then
+		A.trace("fixture",{state="refused",reason=refused},"data")
+		A.say("sample: "..A.fixtureRefusalText(refused))
+		return false,refused
+	end
 	A.startSandbox()
 	local report,refusal=A.generateFixture()
 	if not report then
 		A.say("sample: "..A.fixtureRefusalText(refusal))
-		return false
+		return false,refusal
 	end
 	A.say(("sample: %d made-up matches to look around. Your history is untouched, and /reload or your "
 		.."next match ends the sample"):format(report.written or 0))
@@ -239,7 +256,7 @@ local function buildWelcome()
 		.."player and choose Rate and note to remember them.")
 	frame.body=body
 
-	frame.sample=A.pill(frame,"Show me a sample",function()
+	frame.sample=A.pill(frame,A.SAMPLE_PROMPT,function()
 		answered("sample")
 		A.welcomeSample()
 	end)
@@ -255,7 +272,7 @@ local function buildWelcome()
 	foot:SetJustifyH("LEFT")
 	foot:SetWordWrap(true)
 	A.style(foot,"cardLabel","dim")
-	foot:SetText("The sample lasts until a /reload or your next match.")
+	foot:SetText(A.SAMPLE_TERM)
 	frame.foot=foot
 
 	local bodyH=body:GetStringHeight()or 0

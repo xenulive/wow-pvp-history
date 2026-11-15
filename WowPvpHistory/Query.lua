@@ -1,4 +1,4 @@
--- WowPvpHistory 0.75.26
+-- WowPvpHistory 0.75.68
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -644,7 +644,7 @@ function A.historyFigures()
 	local stored=db.matches
 	for i=1,#stored do
 		local record=stored[i]
-		if type(record)=="table"and record.format~=nil then
+		if type(record)=="table"then
 			earliest(record)
 		end
 	end
@@ -693,7 +693,8 @@ function A.historyFigures()
 					realms=realms+1
 				end
 			end
-			return#list,realms>0 and("on %d %s"):format(realms,realms==1 and"realm"or"realms")or nil
+			return#list,realms>0 and not A.surnameClient()
+				and("on %d %s"):format(realms,realms==1 and"realm"or"realms")or nil
 		end)
 	end
 
@@ -986,7 +987,8 @@ end
 local SEARCH_HELP={
 	{feature="commas",line="Separate terms with commas. A match has to carry every one."},
 	{feature="fields",line="A term finds a name, a map, or a spec with its class, as in Frost Mage.",
-		world="A term finds a name, a class or a zone."},
+		world="A term finds a name, a class, a zone, or a realm kind, as in Hardcore.",
+		forever="A term finds a name, a map, or a class, as in Mage."},
 	{feature="exclude",line="A term opening with - or ! leaves those matches out."},
 	{feature="fold",line="Letters with accents, and Cyrillic, match in either case."},
 	{feature="starred",line="* keeps your starred matches.",starred=true},
@@ -994,10 +996,11 @@ local SEARCH_HELP={
 
 function A.searchHelpLines(world)
 	local out,features={"How to search"},{}
+	local forever=A.clientHasNoRatedMode()
 	for i=1,#SEARCH_HELP do
 		local row=SEARCH_HELP[i]
 		if not(world and row.starred)then
-			out[#out+1]=world and row.world or row.line
+			out[#out+1]=(world and row.world)or(forever and row.forever)or row.line
 			features[#features+1]=row.feature
 		end
 	end
@@ -1023,21 +1026,17 @@ local function walkFields(record,fields,needle)
 	if type(record.map)=="table"and offerField(fields,needle,record.map.name)then
 		return true
 	end
+	if offerField(fields,needle,A.realmKindWords(record))then
+		return true
+	end
 	if offerField(fields,needle,record.opponentName)then
 		return true
 	end
 	if type(record.participants)=="table"then
 		for _,p in pairs(record.participants)do
-			if type(p)=="table"then
-				if offerField(fields,needle,p.name)then
-					return true
-				end
-				local spec=type(p.spec)=="string"and p.spec~=""and p.spec or nil
-				local class=type(p.class)=="string"and p.class~=""and p.class or nil
-				local label=spec and class and("%s %s"):format(spec,class)or spec or class
-				if offerField(fields,needle,label)then
-					return true
-				end
+			if type(p)=="table"and(offerField(fields,needle,p.name)
+				or offerField(fields,needle,A.specAndClass(p.spec,p.class)))then
+				return true
 			end
 		end
 	end
@@ -1079,6 +1078,19 @@ function A.searchMatches(record,terms)
 		end
 	end
 	return true
+end
+
+function A.realmKindWords(record)
+	local rules=type(record)=="table"and record.realmRules or nil
+	if type(rules)~="table"then
+		return nil
+	end
+	local pvp,rp,hardcore=rules.pvp==true,rules.rp==true,rules.hardcore==true
+	local kind=(rp and pvp and"RP-PvP")or(rp and"RP")or(pvp and"PvP")or nil
+	if kind==nil then
+		return hardcore and"Hardcore realm"or nil
+	end
+	return(hardcore and"Hardcore "or"")..kind.." realm"
 end
 
 function A.recordZone(record)
@@ -3292,6 +3304,11 @@ local OBJECTIVE_SHORT={
 	["Artifacts Collected"]="RELICS",
 	["Crystal Captures"]="CRYSTAL",
 	["Rounds Won"]="WINS",
+	["Towers Assaulted"]="TOWERS",
+	["Towers Defended"]="TW HELD",
+	["Graveyards Assaulted"]="GRAVES",
+	["Graveyards Defended"]="GY HELD",
+	["Secondary Objectives"]="OTHER",
 }
 
 local function columnCarried(record,column)
@@ -3743,7 +3760,7 @@ function A.objectiveTotals(record)
 		return nil
 	end
 
-	local split=type(A.rosterSplit)=="function"and A.rosterSplit(record)or nil
+	local split=A.rosterSplit(record)
 	if not split then
 		return nil
 	end
@@ -3800,6 +3817,10 @@ local function qualifiedName(record,guid,name,quiet)
 		end
 		return name
 	end
+	if A.surnameClient()then
+		A.trace("realm",{id=record.id,state="bare",reason="surname-client"},"ui")
+		return name
+	end
 	local realm=A.ownRealm()
 	if not realm then
 		A.trace("realm",{id=record.id,state="bare",reason="no-realm"},"ui")
@@ -3840,6 +3861,36 @@ function A.chipText(cell)
 	return spec
 end
 
+function A.honorHeader()
+	return A.clientHasNoRatedMode()and"RANK"or"HONOR"
+end
+
+function A.pvpRank(_record,participant)
+	if type(participant)~="table"or not A.clientHasNoRatedMode()then
+		return nil
+	end
+	local level=participant.honorLevel
+	if type(level)~="number"or level<1 or level>14 or level~=math.floor(level)then
+		return nil
+	end
+	local faction=participant.faction
+	local ranks=type(Enum)=="table"and Enum.PvPRanks or nil
+	local first=type(ranks)=="table"and ranks.Rank_1 or nil
+	if type(first)~="number"or(faction~=0 and faction~=1)then
+		return level,nil
+	end
+	local title=_G[("PVP_RANK_%d_%d"):format(first+level-1,faction)]
+	return level,(type(title)=="string"and title~="")and title or nil
+end
+
+function A.pvpRankText(level,title)
+	if type(level)~="number"or type(title)~="string"then
+		return nil
+	end
+	local form=PVP_RANK_NUMBER_AND_TITLE
+	return type(form)=="string"and form:format(level,title)or nil
+end
+
 function A.participantCells(record,entry,sides,columns)
 	local guid,p=entry.guid,entry.p
 
@@ -3864,6 +3915,7 @@ function A.participantCells(record,entry,sides,columns)
 		side=(sides and p.faction~=nil)
 			and(p.faction==sides.own and"yours"or"theirs")or nil,
 		classToken=p.classToken,class=p.class,spec=p.spec,race=p.race,
+		faction=p.faction,
 		specLabel=(type(p.spec)=="string"and p.spec~="")
 			and A.chipText({spec=p.spec,class=p.class})or nil,
 		role=A.roleText(roleMask),
@@ -3894,7 +3946,9 @@ local function participantLine(record,entry,sides,precomputed)
 	local who={}
 	clause(who,c.race)
 	clause(who,c.class)
-	clause(who,c.spec)
+	if A.specAndClass(c.spec,c.class)~=A.readableString(c.class)then
+		clause(who,c.spec)
+	end
 	if#who>0 then
 		put(parts,table.concat(who," "))
 	end
@@ -3918,7 +3972,11 @@ local function participantLine(record,entry,sides,precomputed)
 
 	local honor={}
 	clause(honor,c.honor,"honor %s")
-	clause(honor,c.honorLevel,"honorlevel %s")
+	if A.clientHasNoRatedMode()then
+		clause(honor,(A.pvpRank(nil,c)),"rank %s")
+	else
+		clause(honor,c.honorLevel,"honorlevel %s")
+	end
 	if#honor>0 then
 		put(parts,table.concat(honor," "))
 	end
@@ -4058,13 +4116,11 @@ function A.seasonCounterLines(counters)
 				end
 				if first and record.format=="shuffle"then
 					local won,played,face=nil,nil,nil
-					if type(A.roundsVerdict)=="function"then
-						local ok,answered,got,count=pcall(A.roundsVerdict,record)
-						if ok then
-							face=answered
-							if answered~=nil and answered~="unsummed"then
-								won,played=got,count
-							end
+					local ok,answered,got,count=pcall(A.roundsVerdict,record)
+					if ok then
+						face=answered
+						if answered~=nil and answered~="unsummed"then
+							won,played=got,count
 						end
 					end
 					if face=="unsummed"then
@@ -4259,6 +4315,11 @@ function A.resultLetter(record)
 	if type(record)~="table"then
 		return"-"
 	end
+	local decided=A.effectiveResult(record)
+	local letter=RESULT_LETTER[decided]
+	if letter~=nil then
+		return letter
+	end
 	if not A.storesResult(record.format)then
 		local verdict,won=A.roundsVerdict(record)
 		if verdict=="unsummed"then
@@ -4267,8 +4328,7 @@ function A.resultLetter(record)
 			return tostring(won)
 		end
 	end
-	local decided=A.effectiveResult(record)
-	return RESULT_LETTER[decided]or"-"
+	return"-"
 end
 
 function A.matchVerdict(record)
@@ -5312,6 +5372,7 @@ function A.outingHeadLines(record,head)
 		end
 	end
 	detail(zone or"-",zone and"text"or"dim",true)
+	detail(A.realmKindWords(record),"dim")
 	local from=A.clockWords(record.openedAt)
 	local to=A.clockWords(record.completedAt)
 	if from~=nil and to~=nil then
@@ -5394,8 +5455,7 @@ function A.windowHeadLines(record,head,provenance)
 	end
 	detail(spanText(record.duration),"dim")
 	if own and type(own.spec)=="string"and own.spec~=""then
-		detail(type(own.class)=="string"and own.class~=""and(own.spec.." "..own.class)
-			or own.spec,"dim")
+		detail(A.specAndClass(own.spec,own.class)or own.spec,"dim")
 	end
 	detail(A.durationCaveat(record.openedState),"caveat")
 	detail(record.outcome,"caveat")
@@ -5517,7 +5577,7 @@ function A.rosterLook(record)
 end
 
 function A.teamWords(record)
-	local verdict=type(A.matchVerdict)=="function"and A.matchVerdict(record)or nil
+	local verdict=A.matchVerdict(record)
 	local words=type(verdict)=="table"and verdict.words or nil
 	if words=="WON"then
 		return"WON","LOST"
@@ -5612,7 +5672,8 @@ function A.scoreSortWords(key,up,index,opts)
 	local columns=type(opts)=="table"and opts.columns or nil
 	local named=key=="objective"and type(columns)=="table"and type(columns[slot])=="table"
 		and columns[slot].short or nil
-	local column=SCORE_SORT_WORDS[key]or named or("objective %d"):format(slot)
+	local column=(key=="honor"and A.honorHeader())or SCORE_SORT_WORDS[key]or named
+		or("objective %d"):format(slot)
 	return("by %s%s, %s"):format(column,within,up and"low to high"or"high to low")
 end
 
@@ -5799,6 +5860,7 @@ function A.detailLines(record,pane)
 	put(headParts,head.result and(head.mark and(head.result.." "..head.mark)or head.result))
 	put(headParts,head.badge)
 	put(headParts,head.place)
+	put(headParts,A.realmKindWords(record))
 	put(headParts,head.delta)
 	if#headParts>0 and not pane then
 		lines[#lines+1]=table.concat(headParts,"  ")
@@ -6011,7 +6073,7 @@ function A.detailLines(record,pane)
 			opposites=A.lobbyOpposites(lobbyTally,lobbyRead)
 		end
 
-		local refusal=type(A.roundWinsRefusal)=="function"and A.roundWinsRefusal(record)or nil
+		local refusal=A.roundWinsRefusal(record)or nil
 		for _,said in ipairs(A.lobbyCaption(claim,lobbyRead,lobbyTotal,opposites,lobbyTyped,
 			{refusal=refusal,pane=pane==true,threw=lobbyThrew}))do
 			lines[#lines+1]="  "..said
@@ -6130,7 +6192,12 @@ function A.detailLines(record,pane)
 				maxHealing=h
 			end
 		end
-		if p.spec~=nil then filled.spec=true end
+		local spec,class=A.readableString(p.spec),A.readableString(p.class)
+		if spec~=nil and(class==nil or spec:lower()~=class:lower())then
+			filled.spec=true
+		elseif spec~=nil then
+			filled.specIsClass=true
+		end
 		if p.role~=nil then filled.role=true end
 		if type(p.killingBlows)=="number"then filled.kb=true end
 	end
@@ -6193,7 +6260,7 @@ function A.detailLines(record,pane)
 			if faction~=nil then
 				local which=faction==sides.own and"yours"or"theirs"
 				sideCount[which]=(sideCount[which]or 0)+1
-				if type(A.isBotGuid)=="function"and A.isBotGuid(roster[i].guid)then
+				if A.isBotGuid(roster[i].guid)then
 					sideBots[which]=(sideBots[which]or 0)+1
 				end
 			end
@@ -6267,20 +6334,20 @@ function A.detailLines(record,pane)
 	return lines,guids,cells,heads
 end
 
-function A.matchCountText(entry,pane)
+function A.matchCountText(entry)
 	local matches=type(entry)=="table"and entry.matches or nil
 	if type(matches)~="number"then
 		return"no recorded match"
 	end
 	local text=matchNoun(matches)
 
-	if A.playerAllGenerated(entry)and not pane then
+	if A.playerAllGenerated(entry)then
 		text=text..", all generated"
 	end
 	return text
 end
 
-local function sideText(key,bucket,pane)
+local function sideText(key,bucket)
 	if type(bucket)~="table"or(bucket.count or 0)==0 then
 		return nil
 	end
@@ -6293,7 +6360,7 @@ local function sideText(key,bucket,pane)
 
 	local text=("%d %s, won %d of %d decided%s"):format(count,label,wins,decided,drawnClause(bucket))
 	local byHand=bucket.manualDecided or 0
-	if byHand>0 and not pane then
+	if byHand>0 then
 		text=text..(", %d entered by hand"):format(byHand)
 	end
 	return text
@@ -6315,14 +6382,14 @@ local function foldsIntoSides(entry,guid,counted)
 	return counted==matches and not A.isSelfPlayer(guid)
 end
 
-local function countClause(entry,guid,counted,pane)
+local function countClause(entry,guid,counted)
 	if foldsIntoSides(entry,guid,counted)then
-		return(A.playerAllGenerated(entry)and not pane)and"all generated"or nil
+		return A.playerAllGenerated(entry)and"all generated"or nil
 	end
-	return A.matchCountText(entry,pane)
+	return A.matchCountText(entry)
 end
 
-local function splitParts(entry,guid,pane)
+local function splitParts(entry,guid)
 	local parts={}
 	local counted=0
 	if A.isSelfPlayer(guid)then
@@ -6330,7 +6397,7 @@ local function splitParts(entry,guid,pane)
 		if type(bucket)=="table"and(bucket.decided or 0)>0 then
 			local text=("won %d of %d decided%s"):format(bucket.wins or 0,bucket.decided,drawnClause(bucket))
 			local byHand=bucket.manualDecided or 0
-			if byHand>0 and not pane then
+			if byHand>0 then
 				text=text..(", %d entered by hand"):format(byHand)
 			end
 			put(parts,text)
@@ -6339,7 +6406,7 @@ local function splitParts(entry,guid,pane)
 	end
 	for _,key in ipairs(SIDES)do
 		local bucket=entry[key]
-		local text=sideText(key,bucket,pane)
+		local text=sideText(key,bucket)
 		if text~=nil then
 			put(parts,text)
 			counted=counted+((type(bucket)=="table"and bucket.count)or 0)
@@ -6793,12 +6860,10 @@ local function shuffleSeats(record)
 			seats[row.guid]=row.seats
 		end
 	end
-	if type(A.roundResult)=="function"then
-		for r=1,count do
-			local answered,won,_,typed=pcall(A.roundResult,record,r)
-			if answered and type(won)=="boolean"and not typed then
-				results[r]=won
-			end
+	for r=1,count do
+		local answered,won,_,typed=pcall(A.roundResult,record,r)
+		if answered and type(won)=="boolean"and not typed then
+			results[r]=won
 		end
 	end
 	return seats,results,count
@@ -7827,7 +7892,7 @@ function A.encounterLine(encounter)
 	out.result=out.result or"-"
 	out.resultTone=out.resultTone or"dim"
 	local change,tone=nil,nil
-	if type(record)=="table"and type(A.ratingDelta)=="function"then
+	if type(record)=="table"then
 		change,tone=A.ratingDelta(record)
 	end
 	out.change=change or"-"
@@ -7980,20 +8045,19 @@ function A.nameCard(name,now,homeRealm)
 	end
 
 	if type(UnitName)=="function"then
-		local ok,own,ownRealm=pcall(UnitName,"player")
-		if ok and type(own)=="string"and A.canRead(own)and own~=""then
-			if not(type(ownRealm)=="string"and A.canRead(ownRealm)and ownRealm~="")then
-				ownRealm=A.ownRealm()
-			end
-			if name==own or(ownRealm~=nil and name==own.."-"..ownRealm)then
-				return{kind="self",name=own,via="own-name"}
+		local ok,own,second=pcall(UnitName,"player")
+		if ok and A.readableString(own)then
+			local full=A.fullName(own,second)
+			local ownRealm=not A.surnameClient()and A.readableString(second)or A.ownRealm()
+			if name==own or name==full or(ownRealm~=nil and name==own.."-"..ownRealm)then
+				return{kind="self",name=full,via="own-name"}
 			end
 		end
 	end
 
 	local key,via=name,"full"
 	if not name:find("-",1,true)then
-		if type(homeRealm)=="string"and A.canRead(homeRealm)and homeRealm~=""then
+		if A.readableString(homeRealm)then
 			key,via=name.."-"..homeRealm,"home"
 		else
 			via="bare"

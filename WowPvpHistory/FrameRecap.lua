@@ -1,4 +1,4 @@
--- WowPvpHistory 0.75.26
+-- WowPvpHistory 0.75.68
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -19,14 +19,17 @@ function A.recapBandDrawn(frame)
 	return(type(frame)=="table"and frame.recapDrawn)and A.recapCardBand()or 0
 end
 
-function A.recapCellFloor(index)
-	local label=A.sessionRecapLabels()[index]
+local function labelFloor(label)
 	return label and(A.headerFloor(label)+A.metric("roundCardPad")*2)or 0
+end
+
+function A.recapCellFloor(index)
+	return labelFloor(A.sessionRecapLabels()[index])
 end
 
 function A.recapCellsNeed(count)
 	local need=A.metric("roundCardGap")*(count-1)
-	for i=1,count do
+	for _,i in ipairs(A.recapKept(count))do
 		need=need+A.recapCellFloor(i)
 	end
 	return need
@@ -176,13 +179,13 @@ local function recapCellWidths(card,cells,count,width)
 		if type(held.members)=="table"and#held.members>0 then
 			comps[#comps+1]=i
 		else
-			widths[i]=math.max(A.recapCellFloor(i),pad*2+A.textRoom(cell.value,held.text))
+			widths[i]=math.max(labelFloor(cells[i].label),pad*2+A.textRoom(cell.value,held.text))
 			plain=plain+widths[i]
 		end
 	end
 	local step,needs={},{}
 	local function needAt(i)
-		return math.max(A.recapCellFloor(i),compCellNeed(card,card.cells[i],cells[i],CHIP_FORMS[step[i]]))
+		return math.max(labelFloor(cells[i].label),compCellNeed(card,card.cells[i],cells[i],CHIP_FORMS[step[i]]))
 	end
 	for _,i in ipairs(comps)do
 		step[i]=1
@@ -212,13 +215,13 @@ local function recapCellWidths(card,cells,count,width)
 	end
 	local keep=plain
 	for _,i in ipairs(comps)do
-		keep=keep+A.recapCellFloor(i)
+		keep=keep+labelFloor(cells[i].label)
 		cells[i].form="icons"
 		chips[cells[i].key]="icons"
 	end
 	for i=1,count do
 		if keep>width or widths[i]==nil then
-			widths[i]=A.recapCellFloor(i)
+			widths[i]=labelFloor(cells[i].label)
 		end
 	end
 	return widths,"floors",chips
@@ -253,6 +256,14 @@ local function paintCell(card,cell,held,x,width)
 		hideComp(cell)
 		if held.key=="best"or held.key=="worst"then
 			return 0,0
+		end
+		local from=held.match~=nil and A.matchLineText(held.match)or nil
+		if from~=nil then
+			cell.hit.lines={held.label,from}
+			cell.hit:ClearAllPoints()
+			cell.hit:SetPoint("TOPLEFT",cell.bg,"TOPLEFT",0,0)
+			cell.hit:SetPoint("BOTTOMRIGHT",cell.bg,"BOTTOMRIGHT",0,0)
+			cell.hit:Show()
 		end
 		return nil
 	end
@@ -308,8 +319,12 @@ function A.paintRecapCard(frame,format,history,sessions,character,now)
 	card.span:SetPoint("LEFT",card.heading,"RIGHT",A.metric("rowCellGap"),0)
 	card.span:Show()
 
-	local cells=A.sessionRecapCells(recap)
-	local count=math.min(#cells,A.recapCellsFit(width))
+	local all=A.sessionRecapCells(recap)
+	local count=math.min(#all,A.recapCellsFit(width))
+	local cells={}
+	for _,i in ipairs(A.recapKept(count))do
+		cells[#cells+1]=all[i]
+	end
 	local gap=A.metric("roundCardGap")
 	local widths,fit,chips=recapCellWidths(card,cells,count,width)
 	local need=gap*(count-1)
@@ -331,8 +346,9 @@ function A.paintRecapCard(frame,format,history,sessions,character,now)
 	card:Show()
 	frame.recapDrawn=true
 
+	local _,cellSet=A.recapCellSet()
 	A.trace("recap",{key=key,matches=recap.matches,record=A.sessionRecapRecordText(recap.record),
-		change=recap.change,cells=count,reason="none",bestMembers=drawn.best,bestNames=named.best,
+		change=recap.change,cells=count,cellSet=cellSet,reason="none",bestMembers=drawn.best,bestNames=named.best,
 		worstMembers=drawn.worst,worstNames=named.worst,fit=fit,bestChips=chips.best,
 		worstChips=chips.worst},"ui")
 	return count

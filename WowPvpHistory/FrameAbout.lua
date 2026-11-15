@@ -1,4 +1,4 @@
--- WowPvpHistory 0.75.26
+-- WowPvpHistory 0.75.68
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -288,12 +288,16 @@ function A.aboutWeeks(now,room)
 	end
 
 	local current=A.weekOpening(now)
+	local newestFirst={}
+	local monday=current
+	while monday~=nil and monday>=first and#newestFirst<600 do
+		newestFirst[#newestFirst+1]={monday=monday,count=counts[monday]or 0,
+			current=monday==current,label=A.weekDayLabel(monday)}
+		monday=A.weekOpening(monday-7*86400+43200)
+	end
 	local bars={}
-	local monday=first
-	while monday~=nil and monday<=current and#bars<600 do
-		bars[#bars+1]={monday=monday,count=counts[monday]or 0,current=monday==current,
-			label=A.weekDayLabel(monday)}
-		monday=A.weekOpening(monday+7*86400+43200)
+	for i=#newestFirst,1,-1 do
+		bars[#bars+1]=newestFirst[i]
 	end
 	if#bars==0 then
 		return nil,"after-now",undated
@@ -754,26 +758,28 @@ local function paintRight(half,x,width)
 		for _,bar in ipairs(bars)do
 			most=math.max(most,bar.count)
 		end
-		local barW=math.floor((inner-barGap*(#bars-1))/#bars)
+		local slotW=math.floor((inner-barGap*(#bars-1))/#bars)
+		local barW=math.min(slotW,A.metric("weekBarMax"))
+		local barInset=math.floor((slotW-barW)/2)
 		for i,slot in ipairs(half.weeks)do
 			local bar=bars[i]
 			if bar then
-				local bx=pad+(i-1)*(barW+barGap)
+				local bx=pad+(i-1)*(slotW+barGap)
 				local h=bar.count>0 and math.max(math.floor(track*bar.count/most+0.5),1)or 0
 				local foot=y+chart-labelH-4
 				A.style(slot.label,"rowNote","dim")
 				slot.label:SetText(bar.label or"")
-				slot.label:SetWidth(barW)
+				slot.label:SetWidth(slotW)
 				at(slot.label,half,bx,foot+4)
 				A.style(slot.count,"numberMicro","dim")
 				slot.count:SetText(tostring(bar.count))
-				slot.count:SetWidth(barW)
+				slot.count:SetWidth(slotW)
 				at(slot.count,half,bx,foot-h-countH-2)
 				if h>0 then
 					local r,g,b=A.color("accent")
 					slot.fill:SetColorTexture(r,g,b,bar.current and 1 or 0.45)
 					slot.fill:SetSize(barW,h)
-					at(slot.fill,half,bx,foot-h)
+					at(slot.fill,half,bx+barInset,foot-h)
 					slot.fill:Show()
 				else
 					slot.fill:Hide()
@@ -822,7 +828,7 @@ local function paintRight(half,x,width)
 	for i,row in ipairs(half.characters)do
 		local held=characters[i]
 		if held then
-			A.style(row.name,"cardText","text")
+			A.style(row.name,"nameCardText","text")
 			A.style(row.spec,"rowNote","dim")
 			local need=A.textRoom(row.name,held.name or"")+6+A.textRoom(row.spec,held.spec or"")
 			nameW=math.max(nameW,need)
@@ -842,10 +848,10 @@ local function paintRight(half,x,width)
 	for i,row in ipairs(half.characters)do
 		local held=characters[i]
 		if held then
-			A.style(row.name,"cardText","text")
+			A.style(row.name,"nameCardText","text")
 			row.name:SetTextColor(A.classColor(held.classToken))
 			row.name:SetText(held.name or"")
-			at(row.name,half,pad,y+(charH-A.fontSize("cardText"))/2)
+			at(row.name,half,pad,y+(charH-A.fontSize("nameCardText"))/2)
 			A.style(row.spec,"rowNote","dim")
 			row.spec:SetText(held.spec or"")
 			local nameRoom=math.min(A.textRoom(row.name,held.name or""),nameW)
@@ -1034,7 +1040,7 @@ end
 function A.aboutCopyLink()
 	local site=A.aboutFacts().rows[3].value
 	local opened=site~="-"and A.showCopyBox(about,"Website","Ctrl+C copies the address; paste it into a browser.",
-		site)or false
+		site,"website")or false
 	A.trace("about",{state="copy",copy=opened and true or false},"ui")
 	return opened
 end

@@ -1,4 +1,4 @@
--- WowPvpHistory 0.75.26
+-- WowPvpHistory 0.75.68
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -6,7 +6,7 @@
 local _,A=...
 
 local keys={held=nil,combat=false,enabled=false,propagating=nil,listing=false,
-	frame=nil,restoreQueued=false,hintForm=nil}
+	frame=nil,restoreQueued=false,hintForm=nil,hintDrawn=false}
 
 local HANDLED={
 	UP="move",DOWN="move",HOME="move",END="move",
@@ -257,11 +257,7 @@ local function move(scroller,walk,key,at)
 	return HANDLED[key],"none"
 end
 
-local function fold(scroller,entry,opening)
-	local heading=headingOf(scroller.rows,entry.index)
-	if heading==nil then
-		return opening and"unfold"or"fold","no-row"
-	end
+local function fold(scroller,heading,opening)
 	if(heading.open==true)==opening then
 		return"edge","none"
 	end
@@ -291,24 +287,25 @@ local function press(frame,key)
 		propagate(frame,true)
 		return action,"focus"
 	end
-	propagate(frame,false)
-	queueRestore(frame)
 	local scroller=listOf()
 	local walk=scroller and walkable(scroller.rows)or{}
-	if#walk==0 then
+	local at=#walk>0 and placeOf(walk)or nil
+	local stepping=action=="move"or action=="page"
+	local heading=scroller~=nil and at~=nil and(action=="fold"or action=="unfold")
+		and headingOf(scroller.rows,walk[at].index)or nil
+	if#walk==0 or(not stepping and at==nil)or((action=="fold"or action=="unfold")and heading==nil)then
+		propagate(frame,true)
 		return action,"no-row"
 	end
-	local at=placeOf(walk)
-	if action=="move"or action=="page"then
+	propagate(frame,false)
+	queueRestore(frame)
+	if stepping then
 		return move(scroller,walk,key,at)
-	end
-	if at==nil then
-		return action,"no-row"
 	end
 	if action=="open"then
 		return enter(scroller,walk[at])
 	end
-	return fold(scroller,walk[at],action=="unfold")
+	return fold(scroller,heading,action=="unfold")
 end
 
 local function onKeyDown(frame,key)
@@ -340,9 +337,10 @@ local function hintText()
 	return HINT_WORDS,"words"
 end
 
-function A.paintKeyHint(frame,listing,under)
+function A.paintKeyHint(frame,listing,under,rowCount)
 	local active=listing~=false and A.windowBody()=="history"
 	keys.listing=active
+	keys.hintDrawn=false
 	keys.frame=frame
 	if not frame.keysWired then
 		frame.keysWired=true
@@ -360,6 +358,12 @@ function A.paintKeyHint(frame,listing,under)
 		sync(frame,false)
 		return 0
 	end
+	if rowCount==0 then
+		hint:Hide()
+		sync(frame,true)
+		return 0
+	end
+	keys.hintDrawn=true
 	local height=A.keyHintBand()
 	local pad=A.metric("rowLabelPad")
 	hint:ClearAllPoints()
@@ -420,7 +424,14 @@ local function matchKeyDown(frame,key)
 		matchPropagate(frame,true)
 		return
 	end
-	if matchPropagate(frame,false)and type(C_Timer)=="table"and type(C_Timer.After)=="function"then
+	local okN,before,after=pcall(A.matchStepNeighbours,frame)
+	local target=after
+	if direction=="prev"then
+		target=before
+	end
+	if not okN or target==nil then
+		matchPropagate(frame,true)
+	elseif matchPropagate(frame,false)and type(C_Timer)=="table"and type(C_Timer.After)=="function"then
 		C_Timer.After(0,function()
 			matchPropagate(frame,true)
 		end)
@@ -460,7 +471,7 @@ A.on("PLAYER_REGEN_ENABLED",function()
 	keys.combat=false
 	local frame=keys.frame
 	if frame~=nil and keys.listing then
-		if frame.keyHint then
+		if frame.keyHint and keys.hintDrawn then
 			frame.keyHint:Show()
 		end
 		sync(frame,true)

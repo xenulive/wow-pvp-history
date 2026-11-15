@@ -1,4 +1,4 @@
--- WowPvpHistory 0.75.26
+-- WowPvpHistory 0.75.68
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -159,11 +159,9 @@ local function ownName()
 	if A.sandboxed()and A.fixtureCharacterName then
 		return A.fixtureCharacterName()
 	end
-	if type(UnitName)=="function"then
-		local ok,name=pcall(UnitName,"player")
-		if ok and A.canRead(name)and type(name)=="string"and name~=""then
-			return name
-		end
+	local name=A.ownFullName()
+	if name then
+		return name
 	end
 	local db=A.db()
 	local guid=A.ownGuid()
@@ -439,6 +437,19 @@ local function tipOrNil()
 				drop(self,"hide")
 			end
 		end)
+		A.registerPlacedWindow(f,"BOTTOMRIGHT",0,0,nil,{
+			place=function()
+				A.resetFinderPosition()
+				return nil
+			end,
+			stored=function()
+				local held=A.finderPosition()
+				if held then
+					return held.point,held.x,held.y
+				end
+				return nil
+			end,
+		})
 		return f
 	end)
 	if ok and type(made)=="table"then

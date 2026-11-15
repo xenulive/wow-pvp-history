@@ -1,4 +1,4 @@
--- WowPvpHistory 0.75.26
+-- WowPvpHistory 0.75.68
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -66,6 +66,7 @@ local FIELDS={
 	"noteAt",
 	"noted",
 	"carriesNote",
+	"rival","rivalLine","rivalFilter",
 	"outcome","mark","carriesRating","chatEvent",
 	"art","textureRead","alpha","level","levelAbove","cursorSet",
 	"tinted","gripSeat","gripX","gripY",
@@ -87,6 +88,9 @@ local FIELDS={
 	"seat",
 	"selfName",
 	"selfClass","healerSeats",
+	"formatSet",
+	"honorAs","rankForm",
+	"cardPairs","cardFit",
 	"gridOpen",
 	"roundsLeft","roundsPartial",
 	"mmrRead","mmrDash","mmrMulti","mmrFlat",
@@ -94,7 +98,7 @@ local FIELDS={
 	"list",
 	"listTook","met","dossier","panel","listUp","metUp","listW","listH","metW","metH",
 	"bandH","bandUp",
-	"short","bare",
+	"short",
 	"room",
 	"tones",
 	"ground",
@@ -187,6 +191,8 @@ local FIELDS={
 	"delta","offset","landed","first","firstAfter","content","extent","snapTo","wheelN",
 	"d",
 	"tries","cls","tok",
+	"killLine",
+	"realmRules","rulesAbsent","rulesThrew",
 	"measured","drawnWidth","reserved",
 	"roundsRoom","roundsNeed","roundsMeasured",
 	"cols",
@@ -229,6 +235,7 @@ local FIELDS={
 	"drainMean","drainMax","samples",
 	"peak","session",
 	"window",
+	"fell",
 	"foldUs","newUs","foldBytes","newBytes","calls","between",
 	"cardNote","cardTags","cardTagLines","cardW","cardH",
 	"cardMetLast",
@@ -275,6 +282,7 @@ local FIELDS={
 	"tabLabel","tabAsked","tabFloor","tabWidth",
 	"outings","marks",
 	"stripBody","barsShed",
+	"rateSubForm","rateSubFit",
 	"chipFill","chipEdge",
 	"headIcon",
 	"cellOpens",
@@ -298,8 +306,12 @@ local FIELDS={
 	"keep","freed","carried",
 	"keys","unknown",
 	"cardShown","roomCard",
+	"tileSet","tileKeys",
 	"change",
 	"bestMembers","worstMembers","bestNames","worstNames","bestChips","worstChips",
+	"cellSet",
+	"specWord",
+	"scopeChoices","scopeWord",
 	"comp","compGames","compRecord","compReason",
 	"rematch","rematchReason","rematchWeak",
 	"compBand","rematchLine","metLines",
@@ -315,7 +327,9 @@ local FIELDS={
 	"share",
 	"trendRows",
 	"streak","nudge","rosterLink","best",
+	"milestones",
 	"nextTier","goal","tierDistance",
+	"weekRated","weekStart",
 	"stripCells",
 	"followSet","detailFigures","seasonPace","seasonFigures",
 	"present",
@@ -331,6 +345,8 @@ local FIELDS={
 	"gridCut",
 	"over","readScroll","heightRoom",
 	"widgetX","widgetY","stripX","stripY",
+	"hostRoom",
+	"realmLeft",
 }
 
 function A.debugFields()
@@ -424,16 +440,16 @@ typed("string",{
 	"action","rowKeys","hiddenRows","fit","sameRows","tab","foldedRows",
 	"reason0","reason1","formFrom","rowKind","chipFill","chipEdge","placedFrom",
 	"metSide","headForm","selfClass","headRole",
-	"mmrLine","readingKeys","pick","path",
+	"mmrLine","readingKeys","pick","path","fell",
 })
 typed("boolean",{
 	"pairsRead",
 	"rated","capped","head","named","pinned","evicted","listTook","met","dossier","panel",
-	"listUp","metUp","bandUp","bare","typed","shared","held","unlocked","lockdown",
+	"listUp","metUp","bandUp","typed","shared","held","unlocked","lockdown",
 	"storeLockdown","saved","groundShown","noteLine","tagLine","lastSeen","marked","search",
 	"lastFit","cls","roundsMeasured","shownUnder","graphFolded","cardNote","reached","cards","teamCards",
 	"default","copy","created","hidden",
-	"rating","carriesNote","columnDrawn","rateClause",
+	"rating","carriesNote","columnDrawn","rateClause","rival","rivalLine","rivalFilter",
 	"loadoutRead","heroRead","copyShown","loadShown",
 	"carriesRating","levelAbove","cursorSet","tinted",
 	"closed","written","mapRead","ended","scrolled","scrollable","pointStored",
@@ -461,8 +477,9 @@ typed("boolean",{"centered"})
 typed("number string",{"offsetX","offsetY"})
 typed("number",{"keep","freed","carried","keys","unknown"})
 typed("boolean",{"cardShown","roomCard"})
+typed("string",{"tileSet","tileKeys"})
 typed("number",{"change","bestMembers","worstMembers","bestNames","worstNames"})
-typed("string",{"bestChips","worstChips"})
+typed("string",{"bestChips","worstChips","cellSet","specWord","scopeChoices","scopeWord"})
 typed("string",{"comp","compRecord","compReason","rematchReason"})
 typed("number",{"compGames","rematch","rematchWeak","metLines"})
 typed("boolean",{"compBand","rematchLine"})
@@ -477,16 +494,26 @@ typed("boolean",{"remembered"})
 typed("number",{"share","trendRows"})
 typed("string",{"streak","nudge"})
 typed("boolean",{"rosterLink","best"})
-typed("string",{"goal"})
+typed("number",{"milestones"})
+typed("string",{"goal","weekRated"})
+typed("number",{"weekStart"})
 typed("number",{"stripCells","followSet","detailFigures","seasonPace","seasonFigures"})
 typed("string",{"cardFold","graphFoldBy","recommended","active"})
 typed("boolean",{"present"})
 typed("string",{"tonight","secondFormat","secondRecords"})
+typed("string",{"killLine","realmRules","rulesAbsent","rulesThrew"})
 typed("number",{"renumbered","cut","headTop","titleBottom","keyWidth","keyCut","gridCut","over","heightRoom"})
 typed("boolean",{"readScroll"})
 typed("number",{"titleSize","titleBoxTop","titleBoxBottom","barTop","barBottom","clearAbove","clearBelow"})
 typed("boolean",{"titleMeasured","titleFit"})
 typed("number",{"widgetX","widgetY","stripX","stripY"})
+typed("number",{"hostRoom"})
+typed("boolean",{"realmLeft"})
+typed("string",{"formatSet","honorAs","rankForm"})
+typed("number",{"cardPairs"})
+typed("string",{"cardFit"})
+typed("number",{"rateSubForm"})
+typed("boolean",{"rateSubFit"})
 
 function A.debugFieldType(key)
 	local set=FIELD_TYPES[key]
@@ -1174,10 +1201,8 @@ A.on("PLAYER_LOGIN",function()
 		ringDefault=A.debugDefault and"on"or"off",
 	})
 
-	if type(A.traceRefusedEvents)=="function"then
-		A.traceRefusedEvents()
-	end
+	A.traceRefusedEvents()
 
-	local repairs=type(A.loadRepairs)=="function"and A.loadRepairs()or{}
+	local repairs=A.loadRepairs()or{}
 	A.traceRepairs(repairs)
 end)

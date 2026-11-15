@@ -1,4 +1,4 @@
--- WowPvpHistory 0.75.26
+-- WowPvpHistory 0.75.68
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -6,7 +6,9 @@
 local ADDON,A=...
 
 local TITLE="PvPHistory Builds"
-local EMPTY="No recorded matches on this spec yet"
+local function emptyText()
+	return("No recorded matches on this %s yet"):format(A.specWord())
+end
 
 local FRAME_NAME=ADDON.."TalentBuilds"
 local LOOK="blizzard"
@@ -74,6 +76,9 @@ local function seasonLabel(word)
 end
 
 local function seasonChoices(character)
+	if A.seasonsHidden()then
+		return{{value="all",label=seasonLabel("all")}}
+	end
 	local out={{value="season",label=seasonLabel("season")},{value="all",label=seasonLabel("all")}}
 	local db=A.db()
 	local matches=db and type(db.matches)=="table"and db.matches or{}
@@ -134,6 +139,9 @@ end
 
 function A.talentBuildsReading(formatWord,seasonWord)
 	seasonWord=seasonWord or"season"
+	if A.seasonsHidden()then
+		seasonWord="all"
+	end
 	local spec,token=activeSpec()
 	local character=A.ownGuid()
 	local season=seasonArg(seasonWord)
@@ -144,7 +152,7 @@ function A.talentBuildsReading(formatWord,seasonWord)
 	end
 	if spec==nil then
 		reading.brackets={{value="all",label="All  0"}}
-		reading.empty=EMPTY
+		reading.empty=emptyText()
 		return reading
 	end
 
@@ -192,7 +200,7 @@ function A.talentBuildsReading(formatWord,seasonWord)
 	end
 	reading.note=A.buildsNote(before,unread)
 	if#order==0 then
-		reading.empty=reading.note or EMPTY
+		reading.empty=reading.note or emptyText()
 	end
 	return reading
 end
@@ -403,16 +411,23 @@ paint=function()
 		return
 	end
 	local place=placeButton(tab)
+	if not panel:IsShown()then
+		last={anchor=place}
+		A.trace("talent-builds",{rows=0,state="shut",anchor=place},"ui")
+		return
+	end
 	local reading=A.talentBuildsReading(held.format,held.season)
 	last=reading
-	local open=panel:IsShown()
-	if open then
-		A.withTheme(LOOK,layout,reading)
-	end
-	local state=open and(#reading.rows==0 and"empty"or"open")or"shut"
+	A.withTheme(LOOK,layout,reading)
+	local state=#reading.rows==0 and"empty"or"open"
 	reading.state,reading.anchor=state,place
+	local words={}
+	for i=1,#reading.seasons do
+		words[i]=tostring(reading.seasons[i].value)
+	end
 	A.trace("talent-builds",{spec=reading.spec and("%s/%s"):format(reading.spec,reading.classToken)or"none",
 		format=reading.formatWord,season=seasonArg(reading.seasonWord),rows=#reading.rows,
+		scopeChoices=table.concat(words,","),
 		recommended=reading.recommended or"none",active=reading.active or"none",state=state,
 		anchor=place},"ui")
 end
@@ -512,10 +527,10 @@ local function install()
 	bar:EnableMouse(true)
 	bar:RegisterForDrag("LeftButton")
 	bar:SetScript("OnDragStart",function()
-		panel:StartMoving()
+		A.startDrag(panel)
 	end)
 	bar:SetScript("OnDragStop",function()
-		panel:StopMovingOrSizing()
+		A.stopDrag(panel)
 	end)
 
 	panel.foot=A.lineText(panel,"bodyText")
@@ -534,6 +549,7 @@ local function install()
 	end
 
 	panel:SetScript("OnHide",schedule)
+	A.stopDragOnHide(panel,nil,"builds")
 	tab:HookScript("OnShow",schedule)
 	tab:HookScript("OnHide",hidePanel)
 	if type(PlayerSpellsFrame.HookScript)=="function"then

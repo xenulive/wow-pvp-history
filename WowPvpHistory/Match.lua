@@ -1,4 +1,4 @@
--- WowPvpHistory 0.75.26
+-- WowPvpHistory 0.75.68
 -- Author:  Xenu-Sentinels
 -- Project: wow-pvp-history
 --          https://github.com/xenulive/wow-pvp-history
@@ -103,10 +103,7 @@ function A.recordingName(guid)
 	if type(held)~="table"or type(held.name)~="string"or held.name==""then
 		return nil
 	end
-	if type(held.realm)=="string"and held.realm~=""then
-		return held.name.."-"..held.realm
-	end
-	return held.name
+	return A.readerCharacterName(held.name,held.realm)
 end
 
 function A.mutedCharacters()
@@ -432,7 +429,12 @@ local function onState(event)
 		record=nil
 	end
 
-	if name==nil or name=="Inactive"then
+	if name==nil then
+		A.trace("transition",{reason="unread",source=event})
+		return
+	end
+
+	if name=="Inactive"then
 		if A.perfHalt then
 			A.perfHalt()
 		end
@@ -552,7 +554,12 @@ local function resume()
 
 	local name=A.stateName(A.matchState())
 
-	if name==nil or name=="Inactive"then
+	if name==nil then
+		A.trace("resume",{state="kept",reason="unread"})
+		return
+	end
+
+	if name=="Inactive"then
 		abandon(db)
 		A.trace("resume",{state="abandoned",reason="inactive"})
 		return
